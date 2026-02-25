@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users              User[]
+  trucks             Truck[]
+  trips              Trip[]
+  announcements      Announcement[]
+  announcementDrafts AnnouncementDraft[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?  @unique
+  phone     String?  @unique
+  password  String?
+  role      Role
+  language  String   @default("en")
+  companyId String
+  createdAt DateTime @default(now())
+
+  company            Company             @relation(fields: [companyId], references: [id])
+  tripsAsDriver      Trip[]              @relation("DriverTrips")
+  tripsAsDispatcher  Trip[]              @relation("DispatcherTrips")
+  messages           Message[]
+  comments           TripComment[]
+  alarmsSent         Alarm[]             @relation("AlarmDispatcher")
+  alarmsReceived     Alarm[]             @relation("AlarmDriver")
+  uploadedDocuments  TripDocument[]
+  announcementReads  AnnouncementRead[]
+  announcements      Announcement[]
+  announcementDrafts AnnouncementDraft[]
+  currentTruck       Truck?              @relation("CurrentDriver")
+  otpCodes           OtpCode[]
+}
+
+enum Role {
+  TEAMLEAD
+  DISPATCHER
+  DRIVER
+}
+enum Language {
+  UK
+  EN
+  PL
+  LT
+}
+
+model Truck {
+  id              String      @id @default(uuid())
+  number          String
+  status          TruckStatus @default(AVAILABLE)
+  notes           String?
+  companyId       String
+  currentDriverId String?     @unique
+  createdAt       DateTime    @default(now())
+
+  company       Company @relation(fields: [companyId], references: [id])
+  currentDriver User?   @relation("CurrentDriver", fields: [currentDriverId], references: [id])
+  trips         Trip[]
+}
+
+enum TruckStatus {
+  AVAILABLE
+  ON_TRIP
+  REPAIR
+}
+
+model Trip {
+  id           String     @id @default(uuid())
+  title        String
+  status       TripStatus @default(ASSIGNED)
+  dispatcherId String
+  driverId     String
+  truckId      String
+  companyId    String
+  createdAt    DateTime   @default(now())
+
+  dispatcher User          @relation("DispatcherTrips", fields: [dispatcherId], references: [id])
+  driver     User          @relation("DriverTrips", fields: [driverId], references: [id])
+  truck      Truck         @relation(fields: [truckId], references: [id])
+  company    Company       @relation(fields: [companyId], references: [id])
+  documents  TripDocument[]
+  messages   Message[]
+  comments   TripComment[]
+  alarms     Alarm[]
+}
+
+enum TripStatus {
+  ASSIGNED
+  ACCEPTED
+  ON_WAY
+  ON_SITE
+  LOADED
+  DELIVERED
+}
+
+model TripDocument {
+  id         String   @id @default(uuid())
+  tripId     String
+  fileUrl    String
+  fileName   String
+  uploadedBy String
+  createdAt  DateTime @default(now())
+
+  trip     Trip @relation(fields: [tripId], references: [id])
+  uploader User @relation(fields: [uploadedBy], references: [id])
+}
+
+model Message {
+  id                String   @id @default(uuid())
+  tripId            String
+  senderId          String
+  content           String
+  translatedContent String?
+  createdAt         DateTime @default(now())
+
+  trip   Trip @relation(fields: [tripId], references: [id])
+  sender User @relation(fields: [senderId], references: [id])
+}
+
+model TripComment {
+  id        String   @id @default(uuid())
+  tripId    String
+  driverId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  trip   Trip @relation(fields: [tripId], references: [id])
+  driver User @relation(fields: [driverId], references: [id])
+}
+
+model Alarm {
+  id           String   @id @default(uuid())
+  tripId       String
+  driverId     String
+  dispatcherId String
+  time         DateTime
+  note         String?
+  createdAt    DateTime @default(now())
+
+  trip       Trip @relation(fields: [tripId], references: [id])
+  driver     User @relation("AlarmDriver", fields: [driverId], references: [id])
+  dispatcher User @relation("AlarmDispatcher", fields: [dispatcherId], references: [id])
+}
+
+model Announcement {
+  id        String             @id @default(uuid())
+  companyId String
+  createdBy String
+  title     String
+  content   String
+  target    AnnouncementTarget
+  createdAt DateTime           @default(now())
+
+  company Company            @relation(fields: [companyId], references: [id])
+  creator User               @relation(fields: [createdBy], references: [id])
+  reads   AnnouncementRead[]
+}
+
+enum AnnouncementTarget {
+  ALL_DRIVERS
+  ALL_DISPATCHERS
+  ALL
+}
+
+model AnnouncementRead {
+  id             String   @id @default(uuid())
+  announcementId String
+  userId         String
+  readAt         DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+}
+
+model AnnouncementDraft {
+  id         String             @id @default(uuid())
+  companyId  String
+  createdBy  String
+  title      String
+  content    String
+  target     AnnouncementTarget
+  isTemplate Boolean            @default(false)
+  createdAt  DateTime           @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  creator User    @relation(fields: [createdBy], references: [id])
+}
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
