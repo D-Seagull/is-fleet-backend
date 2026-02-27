@@ -1,4 +1,12 @@
-import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Param,
+  Patch,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
@@ -12,7 +20,7 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
-  @Roles('TEAMLEAD')
+  @Roles('ADMIN', 'TEAMLEAD')
   @Post('dispatcher')
   createDispatcher(
     @GetUser('companyId') companyId: string,
@@ -21,7 +29,7 @@ export class UsersController {
     return this.usersService.createDispatcher(companyId, dto);
   }
 
-  @Roles('DISPATCHER', 'TEAMLEAD')
+  @Roles('ADMIN', 'DISPATCHER', 'TEAMLEAD')
   @Post('driver')
   createDriver(
     @GetUser('companyId') companyId: string,
@@ -30,9 +38,19 @@ export class UsersController {
     return this.usersService.createDriver(companyId, dto);
   }
 
-  @Roles('TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
   @Get()
   getUsers(@GetUser('companyId') companyId: string) {
     return this.usersService.getCompanyUsers(companyId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Patch(':id/deactivate')
+  deactivate(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.usersService.deactivate(id, companyId, role);
   }
 }

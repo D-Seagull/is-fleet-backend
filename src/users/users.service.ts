@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
@@ -48,5 +52,26 @@ export class UsersService {
         createdAt: true,
       },
     });
+  }
+  async deactivate(id: string, companyId: string, requesterRole: string) {
+    const user = await this.prisma.user.findFirst({
+      where: requesterRole === 'ADMIN' ? { id } : { id, companyId },
+    });
+    if (!user) throw new NotFoundException('Користувач не знайдений');
+
+    if (user.role === 'TEAMLEAD' && requesterRole !== 'ADMIN') {
+      throw new ForbiddenException('Тільки адмін може деактивувати тімліда');
+    }
+
+    if (user.role === 'DISPATCHER' && requesterRole === 'DISPATCHER') {
+      throw new ForbiddenException('Диспетчер не може деактивувати диспетчера');
+    }
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    return { message: `User ${user.name} deactivated!` };
   }
 }

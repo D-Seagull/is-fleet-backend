@@ -27,6 +27,7 @@ model User {
   password  String?
   role      Role
   language  String   @default("en")
+   isActive  Boolean  @default(true)
   companyId String
   createdAt DateTime @default(now())
 
@@ -46,6 +47,7 @@ model User {
 }
 
 enum Role {
+  ADMIN
   TEAMLEAD
   DISPATCHER
   DRIVER
@@ -59,7 +61,7 @@ enum Language {
 
 model Truck {
   id              String      @id @default(uuid())
-  number          String
+  plate          String
   status          TruckStatus @default(AVAILABLE)
   notes           String?
   companyId       String

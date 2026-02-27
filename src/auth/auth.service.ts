@@ -15,6 +15,20 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
   ) {}
+  async adminLogin(dto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (!user || user.role !== 'ADMIN') {
+      throw new UnauthorizedException('Немає доступу');
+    }
+
+    const valid = await bcrypt.compare(dto.password, user.password!);
+    if (!valid) throw new UnauthorizedException('Невірний email або пароль');
+
+    return this.signToken(user.id, user.role, user.companyId);
+  }
 
   async register(dto: RegisterDto) {
     // Перевіряємо чи існує email
