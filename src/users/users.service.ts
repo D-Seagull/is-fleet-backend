@@ -40,31 +40,43 @@ export class UsersService {
     return result;
   }
 
-  async getCompanyUsers(companyId: string) {
+  async getCompanyUsers(companyId: string | null) {
     return this.prisma.user.findMany({
-      where: { companyId },
+      where: companyId ? { companyId } : {},
       select: {
         id: true,
         name: true,
         email: true,
         phone: true,
         role: true,
+        isActive: true,
         createdAt: true,
+        company: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
   }
-  async deactivate(id: string, companyId: string, requesterRole: string) {
+  async deactivate(
+    id: string,
+    companyId: string | null,
+    requesterRole: string,
+  ) {
     const user = await this.prisma.user.findFirst({
-      where: requesterRole === 'ADMIN' ? { id } : { id, companyId },
+      where: companyId ? { id, companyId } : { id },
     });
-    if (!user) throw new NotFoundException('Користувач не знайдений');
+    if (!user) throw new NotFoundException('User not found');
 
     if (user.role === 'TEAMLEAD' && requesterRole !== 'ADMIN') {
-      throw new ForbiddenException('Тільки адмін може деактивувати тімліда');
+      throw new ForbiddenException('Only an admin can deactivate this user');
     }
 
     if (user.role === 'DISPATCHER' && requesterRole === 'DISPATCHER') {
-      throw new ForbiddenException('Диспетчер не може деактивувати диспетчера');
+      throw new ForbiddenException(
+        'You do not have permission to deactivate this user',
+      );
     }
 
     await this.prisma.user.update({

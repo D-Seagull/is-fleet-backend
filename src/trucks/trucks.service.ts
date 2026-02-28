@@ -36,7 +36,7 @@ export class TrucksService {
         },
       },
     });
-    if (!truck) throw new NotFoundException('Вантажівка не знайдена');
+    if (!truck) throw new NotFoundException('truck not found');
     return truck;
   }
 

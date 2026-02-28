@@ -65,7 +65,7 @@ export class TripsService {
     const trip = await this.prisma.trip.findFirst({
       where: { id, driverId },
     });
-    if (!trip) throw new ForbiddenException('Немає доступу до цього рейсу');
+    if (!trip) throw new ForbiddenException('No access to this trip');
     return this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
