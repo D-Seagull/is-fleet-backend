@@ -8,6 +8,7 @@ import { TrucksModule } from './trucks/trucks.module';
 import { TripsModule } from './trips/trips.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { DocumentsModule } from './documents/documents.module';
+import { MessagesModule } from './messages/messages.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { DocumentsModule } from './documents/documents.module';
     TripsModule,
     CloudinaryModule,
     DocumentsModule,
+    MessagesModule,
   ],
   controllers: [],
   providers: [],
