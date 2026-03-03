@@ -35,8 +35,9 @@ export class MessagesGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() tripId: string,
   ) {
-    await client.join(tripId);
-    console.log(`Client ${client.id} joined trip ${tripId}`);
+    const normalizedId = tripId.replace(/"/g, '');
+    await client.join(normalizedId);
+    console.log(`Client ${client.id} joined trip ${normalizedId}`);
   }
 
   @SubscribeMessage('sendMessage')

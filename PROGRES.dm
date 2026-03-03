@@ -28,3 +28,11 @@
 - Крок 11 — Next.js фронтенд
 - Крок 12 — React Native мобільний
 - Крок 13 — Деплой
+
+{
+  "tripId": "7da29028-b1aa-4073-bdb3-02298c2debfb",
+  "content": "Вантаж завантажено",
+  "senderId": "9c24e246-6863-4380-90ee-ea9ebf930836",
+  "translate": true
+}
+

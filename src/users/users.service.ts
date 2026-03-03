@@ -20,6 +20,7 @@ export class UsersService {
         email: dto.email,
         password: hash,
         role: 'DISPATCHER',
+        language: dto.language ?? 'EN',
         companyId,
       },
     });
@@ -33,6 +34,7 @@ export class UsersService {
         name: dto.name,
         phone: dto.phone,
         role: 'DRIVER',
+        language: dto.language ?? 'EN',
         companyId,
       },
     });

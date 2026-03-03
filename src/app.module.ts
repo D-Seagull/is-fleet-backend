@@ -9,6 +9,8 @@ import { TripsModule } from './trips/trips.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { DocumentsModule } from './documents/documents.module';
 import { MessagesModule } from './messages/messages.module';
+import { TranslationService } from './translation/translation.service';
+import { TranslationModule } from './translation/translation.module';
 
 @Module({
   imports: [
@@ -24,8 +26,9 @@ import { MessagesModule } from './messages/messages.module';
     CloudinaryModule,
     DocumentsModule,
     MessagesModule,
+    TranslationModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [TranslationService],
 })
 export class AppModule {}

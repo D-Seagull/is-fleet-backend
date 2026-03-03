@@ -1,8 +1,12 @@
-import { IsString } from 'class-validator';
+import { IsEnum, IsString } from 'class-validator';
+import { Language } from '@prisma/client';
 export class CreateDriverDto {
   @IsString()
   name: string;
 
   @IsString()
   phone: string;
+
+  @IsEnum(Language)
+  language?: Language;
 }

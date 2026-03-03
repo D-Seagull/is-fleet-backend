@@ -1,4 +1,5 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsString, MinLength } from 'class-validator';
+import { Language } from '@prisma/client';
 
 export class CreateDispatcherDto {
   @IsString()
@@ -10,4 +11,7 @@ export class CreateDispatcherDto {
   @IsString()
   @MinLength(6)
   password: string;
+
+  @IsEnum(Language)
+  language?: Language;
 }
