@@ -13,9 +13,5 @@ export class UpdateTruckDto {
 
   @IsString()
   @IsOptional()
-  notes?: string;
-
-  @IsString()
-  @IsOptional()
   currentDriverId?: string;
 }

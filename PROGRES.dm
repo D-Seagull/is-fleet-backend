@@ -10,6 +10,7 @@
 - Translate: Google Translate API
 - Push: Firebase FCM
 - Auth: JWT + Twilio (OTP)
+- Email: Nodemailer + Outlook SMTP
 - Deploy: Railway + Vercel + Supabase
 
 ## Зроблено ✅
@@ -19,20 +20,14 @@
 - Крок 4 — Вантажівки (CRUD)
 - Крок 5 — Рейси (CRUD, статуси)
 - Крок 6 — Документи (Cloudinary)
-
-## Залишилось
 - Крок 7 — Чат (Socket.io)
 - Крок 8 — Переклад (Google Translate API)
+
+## Залишилось
 - Крок 9 — Коментарі і будильник (FCM)
-- Крок 10 — Розсилки
-- Крок 11 — Next.js фронтенд
-- Крок 12 — React Native мобільний
-- Крок 13 — Деплой
-
-{
-  "tripId": "7da29028-b1aa-4073-bdb3-02298c2debfb",
-  "content": "Вантаж завантажено",
-  "senderId": "9c24e246-6863-4380-90ee-ea9ebf930836",
-  "translate": true
-}
-
+- Крок 10 — Розсилки (оголошення, чернетки, шаблони)
+- Крок 10.5 — Заявка на аванс (email на бухгалтерію)
+- Крок 11 — Swagger документація + базові тести
+- Крок 12 — Next.js фронтенд
+- Крок 13 — React Native мобільний
+- Крок 14 — Деплой

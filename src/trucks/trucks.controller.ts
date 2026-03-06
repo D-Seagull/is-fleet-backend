@@ -15,6 +15,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import { CreateTruckNoteDto } from './dto/create-truck-note.dto';
 
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('trucks')
@@ -53,5 +54,28 @@ export class TrucksController {
   @Delete(':id')
   remove(@Param('id') id: string, @GetUser('companyId') companyId: string) {
     return this.trucksService.remove(id, companyId);
+  }
+  /***Notes */
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Post(':id/notes')
+  createNote(
+    @Param('id') truckId: string,
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @Body() dto: CreateTruckNoteDto,
+  ) {
+    return this.trucksService.createNote(truckId, companyId, userId, dto);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get(':id/notes')
+  getNotes(@Param('id') truckId: string) {
+    return this.trucksService.getNotes(truckId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Delete('notes/:id')
+  removeNote(@Param('id') id: string, @GetUser('id') userId: string) {
+    return this.trucksService.removeNote(id, userId);
   }
 }

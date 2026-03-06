@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTruckDto } from './dto/create-truck.dto';
 import { UpdateTruckDto } from './dto/update-truck.dto';
+import { CreateTruckNoteDto } from './dto/create-truck-note.dto';
 
 @Injectable()
 export class TrucksService {
@@ -54,5 +55,46 @@ export class TrucksService {
       where: { id },
     });
     return { message: `Truck ${truck.plate} removed!` };
+  }
+
+  /*Notes */
+  async createNote(
+    truckId: string,
+    companyId: string,
+    userId: string,
+    dto: CreateTruckNoteDto,
+  ) {
+    const truck = await this.findOne(truckId, companyId);
+    if (!truck) return;
+    return this.prisma.truckNote.create({
+      data: {
+        truckId,
+        userId,
+        content: dto.content,
+      },
+      include: {
+        user: { select: { id: true, name: true, role: true } },
+      },
+    });
+  }
+
+  async getNotes(truckId: string) {
+    return this.prisma.truckNote.findMany({
+      where: { truckId },
+      include: {
+        user: { select: { id: true, name: true, role: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async removeNote(id: string, userId: string) {
+    const note = await this.prisma.truckNote.findFirst({
+      where: { id, userId },
+    });
+    if (!note) throw new NotFoundException('Note not found');
+
+    await this.prisma.truckNote.delete({ where: { id } });
+    return { message: 'Note deleted' };
   }
 }

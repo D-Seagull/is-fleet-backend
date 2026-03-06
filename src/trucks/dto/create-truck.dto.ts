@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class CreateTruckDto {
   @IsString()
@@ -6,5 +6,5 @@ export class CreateTruckDto {
 
   @IsString()
   @IsOptional()
-  notes?: string;
+  currentDriverId?: string;
 }
