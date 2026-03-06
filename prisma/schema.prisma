@@ -164,7 +164,8 @@ model Alarm {
   time         DateTime
   note         String?
   createdAt    DateTime @default(now())
-
+  isSent       Boolean  @default(false)
+  
   trip       Trip @relation(fields: [tripId], references: [id])
   driver     User @relation("AlarmDriver", fields: [driverId], references: [id])
   dispatcher User @relation("AlarmDispatcher", fields: [dispatcherId], references: [id])

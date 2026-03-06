@@ -11,6 +11,8 @@ import { DocumentsModule } from './documents/documents.module';
 import { MessagesModule } from './messages/messages.module';
 import { TranslationService } from './translation/translation.service';
 import { TranslationModule } from './translation/translation.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { AlarmsModule } from './alarms/alarms.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { TranslationModule } from './translation/translation.module';
     DocumentsModule,
     MessagesModule,
     TranslationModule,
+    ScheduleModule.forRoot(),
+    AlarmsModule,
   ],
   controllers: [],
   providers: [TranslationService],
