@@ -13,6 +13,8 @@ import { TranslationService } from './translation/translation.service';
 import { TranslationModule } from './translation/translation.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AlarmsModule } from './alarms/alarms.module';
+import { AnnouncementsModule } from './announcements/announcements.module';
+import { GroupsModule } from './groups/groups.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { AlarmsModule } from './alarms/alarms.module';
     TranslationModule,
     ScheduleModule.forRoot(),
     AlarmsModule,
+    AnnouncementsModule,
+    GroupsModule,
   ],
   controllers: [],
   providers: [TranslationService],

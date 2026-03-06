@@ -11,7 +11,7 @@ model Company {
   id        String   @id @default(uuid())
   name      String
   createdAt DateTime @default(now())
-
+  groups Group[]
   users              User[]
   trucks             Truck[]
   trips              Trip[]
@@ -40,7 +40,9 @@ model User {
    isActive  Boolean  @default(true)
   companyId String
   createdAt DateTime @default(now())
- truckNotes TruckNote[]
+  groupsCreated    Group[]           @relation("GroupCreator")
+  groupDispatchers GroupDispatcher[]
+  truckNotes TruckNote[]
   company            Company             @relation(fields: [companyId], references: [id])
   tripsAsDriver      Trip[]              @relation("DriverTrips")
   tripsAsDispatcher  Trip[]              @relation("DispatcherTrips")
@@ -80,7 +82,8 @@ model Truck {
   companyId       String
   currentDriverId String?     @unique
   createdAt       DateTime    @default(now())
-
+  
+  groups GroupTruck[]
   company       Company @relation(fields: [companyId], references: [id])
   currentDriver User?   @relation("CurrentDriver", fields: [currentDriverId], references: [id])
   trips         Trip[]
@@ -179,7 +182,9 @@ model Announcement {
   content   String
   target    AnnouncementTarget
   createdAt DateTime           @default(now())
-
+  
+  groupId String?
+  group   Group?  @relation(fields: [groupId], references: [id])
   company Company            @relation(fields: [companyId], references: [id])
   creator User               @relation(fields: [createdBy], references: [id])
   reads   AnnouncementRead[]
@@ -224,4 +229,41 @@ model OtpCode {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
+}
+enum GroupType {
+  TRUCKS
+  DISPATCHERS
+}
+
+model Group {
+  id        String    @id @default(uuid())
+  name      String
+  type      GroupType
+  companyId String
+  createdBy String
+  createdAt DateTime  @default(now())
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  creator       User           @relation("GroupCreator", fields: [createdBy], references: [id])
+  trucks        GroupTruck[]
+  dispatchers   GroupDispatcher[]
+  announcements Announcement[]
+}
+
+model GroupTruck {
+  id      String @id @default(uuid())
+  groupId String
+  truckId String
+
+  group Group @relation(fields: [groupId], references: [id])
+  truck Truck @relation(fields: [truckId], references: [id])
+}
+
+model GroupDispatcher {
+  id           String @id @default(uuid())
+  groupId      String
+  dispatcherId String
+
+  group      Group @relation(fields: [groupId], references: [id])
+  dispatcher User  @relation(fields: [dispatcherId], references: [id])
 }
