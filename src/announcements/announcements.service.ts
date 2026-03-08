@@ -57,13 +57,20 @@ export class AnnouncementsService {
     });
   }
 
-  async findDrafts(companyId: string | null, isTemplate: boolean = false) {
-    return this.prisma.announcementDraft.findMany({
-      where: companyId ? { companyId, isTemplate } : { isTemplate },
+  async findDrafts(
+    companyId: string | null,
+    isTemplate: boolean = false,
+    userId: string,
+  ) {
+    const drafts = await this.prisma.announcementDraft.findMany({
+      where: companyId
+        ? { companyId, isTemplate, createdBy: userId }
+        : { isTemplate, createdBy: userId },
       orderBy: { createdAt: 'desc' },
     });
+    if (!drafts.length) throw new NotFoundException('Чернеток не знайдено');
+    return drafts;
   }
-
   async publishDraft(draftId: string, companyId: string, userId: string) {
     const draft = await this.prisma.announcementDraft.findFirst({
       where: { id: draftId },

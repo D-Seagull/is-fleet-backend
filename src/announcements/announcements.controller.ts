@@ -60,11 +60,13 @@ export class AnnouncementsController {
   @Get('drafts')
   findDrafts(
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
     @Query('isTemplate') isTemplate: string,
   ) {
     return this.announcementsService.findDrafts(
       companyId,
       isTemplate === 'true',
+      userId,
     );
   }
 
