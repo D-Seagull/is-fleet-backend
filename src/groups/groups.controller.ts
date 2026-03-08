@@ -45,13 +45,13 @@ export class GroupsController {
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
   @Get('trucks')
   findAllTrucks(@GetUser('companyId') companyId: string) {
-    return this.groupsService.findAllTrucks(companyId);
+    return this.groupsService.findAllTrucksGroups(companyId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD')
   @Get('dispatchers')
   findAllDispatchers(@GetUser('companyId') companyId: string) {
-    return this.groupsService.findAllDispatchers(companyId);
+    return this.groupsService.findAllDispatchersGroups(companyId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')

@@ -155,7 +155,7 @@ export class GroupsService {
     });
     return { message: 'Диспетчер видалений з групи' };
   }
-  async findAllTrucks(companyId: string | null) {
+  async findAllTrucksGroups(companyId: string | null) {
     return await this.prisma.group.findMany({
       where: companyId ? { companyId, type: 'TRUCKS' } : { type: 'TRUCKS' },
       include: {
@@ -176,7 +176,7 @@ export class GroupsService {
     });
   }
 
-  async findAllDispatchers(companyId: string | null) {
+  async findAllDispatchersGroups(companyId: string | null) {
     return await this.prisma.group.findMany({
       where: companyId
         ? { companyId, type: 'DISPATCHERS' }
