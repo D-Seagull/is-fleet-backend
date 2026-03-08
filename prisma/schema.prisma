@@ -187,6 +187,7 @@ model Announcement {
   isTemplate Boolean            @default(false)
   createdAt  DateTime           @default(now())
   groupId    String?
+  updatedAt DateTime @updatedAt
 
   group   Group?             @relation(fields: [groupId], references: [id])
   company Company            @relation(fields: [companyId], references: [id])

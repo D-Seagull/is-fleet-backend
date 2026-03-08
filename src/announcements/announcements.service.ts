@@ -1,14 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { CreateDraftDto } from './dto/create-draft.dto';
+import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
+import { MessagesGateway } from 'src/messages/messages.gateway';
 
 @Injectable()
 export class AnnouncementsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private messagesGateway: MessagesGateway,
+  ) {}
 
   async create(companyId: string, userId: string, dto: CreateAnnouncementDto) {
-    return this.prisma.announcement.create({
+    const announcement = await this.prisma.announcement.create({
       data: {
         title: dto.title,
         content: dto.content,
@@ -18,11 +27,56 @@ export class AnnouncementsService {
         createdBy: userId,
       },
     });
+
+    // знаходимо отримувачів
+    let recipients: { id: string }[] = [];
+
+    if (dto.groupId) {
+      // по групі
+      const group = await this.prisma.group.findFirst({
+        where: { id: dto.groupId },
+        include: {
+          trucks: { include: { truck: { select: { currentDriverId: true } } } },
+          dispatchers: { select: { dispatcherId: true } },
+        },
+      });
+
+      if (group?.type === 'TRUCKS') {
+        recipients = group.trucks
+          .filter((t) => t.truck.currentDriverId)
+          .map((t) => ({ id: t.truck.currentDriverId! }));
+      } else if (group?.type === 'DISPATCHERS') {
+        recipients = group.dispatchers.map((d) => ({ id: d.dispatcherId }));
+      }
+    } else {
+      // по target
+      const where: any = { companyId };
+      if (dto.target === 'ALL_DRIVERS') where.role = 'DRIVER';
+      if (dto.target === 'ALL_DISPATCHERS') where.role = 'DISPATCHER';
+
+      recipients = await this.prisma.user.findMany({
+        where,
+        select: { id: true },
+      });
+    }
+
+    // відправляємо кожному в чат
+    for (const recipient of recipients) {
+      this.messagesGateway.server.to(recipient.id).emit('newAnnouncement', {
+        title: announcement.title,
+        content: announcement.content,
+        createdAt: announcement.createdAt,
+      });
+    }
+
+    return announcement;
   }
 
-  async findAll(companyId: string | null) {
+  async findAll(companyId: string | null, userId: string) {
     return this.prisma.announcement.findMany({
-      where: companyId ? { companyId } : {},
+      where: companyId
+        ? { companyId, createdBy: userId }
+        : { createdBy: userId },
       include: {
         creator: { select: { id: true, name: true, role: true } },
         reads: { select: { userId: true, readAt: true } },
@@ -94,7 +148,75 @@ export class AnnouncementsService {
 
     return announcement;
   }
+  async update(id: string, userId: string, dto: UpdateAnnouncementDto) {
+    const announcement = await this.prisma.announcement.findFirst({
+      where: { id },
+      include: {
+        group: {
+          include: {
+            trucks: {
+              include: { truck: { select: { currentDriverId: true } } },
+            },
+            dispatchers: { select: { dispatcherId: true } },
+          },
+        },
+      },
+    });
+    if (!announcement) throw new NotFoundException('Оголошення не знайдено');
 
+    if (announcement.createdBy !== userId) {
+      throw new ForbiddenException('Можна редагувати тільки свої оголошення');
+    }
+
+    const updated = await this.prisma.announcement.update({
+      where: { id },
+      data: {
+        title: dto.title,
+        content: dto.content,
+      },
+    });
+
+    let recipients: { id: string }[] = [];
+
+    if (announcement.groupId && announcement.group) {
+      console.log('group type:', announcement.group.type);
+      if (announcement.group.type === 'TRUCKS') {
+        recipients = announcement.group.trucks
+          .filter((t) => t.truck.currentDriverId)
+          .map((t) => ({ id: t.truck.currentDriverId! }));
+      } else if (announcement.group.type === 'DISPATCHERS') {
+        recipients = announcement.group.dispatchers.map((d) => ({
+          id: d.dispatcherId,
+        }));
+      }
+    } else {
+      const where: any = { companyId: announcement.companyId };
+      if (announcement.target === 'ALL_DRIVERS') where.role = 'DRIVER';
+      if (announcement.target === 'ALL_DISPATCHERS') where.role = 'DISPATCHER';
+
+      console.log('target:', announcement.target);
+      console.log('where:', where);
+
+      recipients = await this.prisma.user.findMany({
+        where,
+        select: { id: true },
+      });
+    }
+
+    console.log('recipients:', recipients);
+
+    for (const recipient of recipients) {
+      console.log('emitting to:', recipient.id);
+      this.messagesGateway.server.to(recipient.id).emit('announcementUpdated', {
+        id: updated.id,
+        title: updated.title,
+        content: updated.content,
+        updatedAt: new Date(),
+      });
+    }
+
+    return updated;
+  }
   async removeDraft(id: string) {
     const draft = await this.prisma.announcementDraft.findFirst({
       where: { id },

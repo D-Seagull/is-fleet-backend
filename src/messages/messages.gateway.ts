@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -20,10 +21,23 @@ export class MessagesGateway
   @WebSocketServer()
   server: Server;
 
-  constructor(private messagesService: MessagesService) {}
+  constructor(
+    private messagesService: MessagesService,
+    private jwtService: JwtService,
+  ) {}
 
   handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
+    try {
+      const token = client.handshake.query.userId as string;
+      const payload = this.jwtService.verify(token, {
+        secret: process.env.JWT_SECRET,
+      });
+      const userId = payload.sub as string;
+      void client.join(userId);
+      console.log(`Client ${client.id} joined personal room: ${userId}`);
+    } catch {
+      console.log(`Client connected without valid token: ${client.id}`);
+    }
   }
 
   handleDisconnect(client: Socket) {

@@ -7,6 +7,7 @@ import {
   Body,
   UseGuards,
   Query,
+  Patch,
 } from '@nestjs/common';
 import { AnnouncementsService } from './announcements.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -15,6 +16,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('announcements')
@@ -33,8 +35,11 @@ export class AnnouncementsController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Get()
-  findAll(@GetUser('companyId') companyId: string) {
-    return this.announcementsService.findAll(companyId);
+  findAll(
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+  ) {
+    return this.announcementsService.findAll(companyId, userId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
@@ -78,6 +83,16 @@ export class AnnouncementsController {
     @GetUser('id') userId: string,
   ) {
     return this.announcementsService.publishDraft(draftId, companyId, userId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @GetUser('id') userId: string,
+    @Body() dto: UpdateAnnouncementDto,
+  ) {
+    return this.announcementsService.update(id, userId, dto);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
