@@ -8,16 +8,17 @@ datasource db {
 }
 
 model Company {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
-  groups Group[]
+  id                 String              @id @default(uuid())
+  name               String
+  createdAt          DateTime            @default(now())
+  groups             Group[]
   users              User[]
   trucks             Truck[]
   trips              Trip[]
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
 }
+
 model TruckNote {
   id        String   @id @default(uuid())
   truckId   String
@@ -30,19 +31,19 @@ model TruckNote {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String?  @unique
-  phone     String?  @unique
-  password  String?
-  role      Role
-  language  Language  @default(EN)
-   isActive  Boolean  @default(true)
-  companyId String
-  createdAt DateTime @default(now())
-  groupsCreated    Group[]           @relation("GroupCreator")
-  groupDispatchers GroupDispatcher[]
-  truckNotes TruckNote[]
+  id                 String              @id @default(uuid())
+  name               String
+  email              String?             @unique
+  phone              String?             @unique
+  password           String?
+  role               Role
+  language           Language            @default(EN)
+  isActive           Boolean             @default(true)
+  companyId          String
+  createdAt          DateTime            @default(now())
+  groupsCreated      Group[]             @relation("GroupCreator")
+  groupDispatchers   GroupDispatcher[]
+  truckNotes         TruckNote[]
   company            Company             @relation(fields: [companyId], references: [id])
   tripsAsDriver      Trip[]              @relation("DriverTrips")
   tripsAsDispatcher  Trip[]              @relation("DispatcherTrips")
@@ -64,6 +65,7 @@ enum Role {
   DISPATCHER
   DRIVER
 }
+
 enum Language {
   UK
   EN
@@ -74,18 +76,19 @@ enum Language {
   HI
   RU
 }
+
 model Truck {
   id              String      @id @default(uuid())
-  plate          String
+  plate           String
   status          TruckStatus @default(AVAILABLE)
-  truckNotes TruckNote[]
+  truckNotes      TruckNote[]
   companyId       String
   currentDriverId String?     @unique
   createdAt       DateTime    @default(now())
-  
-  groups GroupTruck[]
-  company       Company @relation(fields: [companyId], references: [id])
-  currentDriver User?   @relation("CurrentDriver", fields: [currentDriverId], references: [id])
+
+  groups        GroupTruck[]
+  company       Company      @relation(fields: [companyId], references: [id])
+  currentDriver User?        @relation("CurrentDriver", fields: [currentDriverId], references: [id])
   trips         Trip[]
 }
 
@@ -105,10 +108,10 @@ model Trip {
   companyId    String
   createdAt    DateTime   @default(now())
 
-  dispatcher User          @relation("DispatcherTrips", fields: [dispatcherId], references: [id])
-  driver     User          @relation("DriverTrips", fields: [driverId], references: [id])
-  truck      Truck         @relation(fields: [truckId], references: [id])
-  company    Company       @relation(fields: [companyId], references: [id])
+  dispatcher User           @relation("DispatcherTrips", fields: [dispatcherId], references: [id])
+  driver     User           @relation("DriverTrips", fields: [driverId], references: [id])
+  truck      Truck          @relation(fields: [truckId], references: [id])
+  company    Company        @relation(fields: [companyId], references: [id])
   documents  TripDocument[]
   messages   Message[]
   comments   TripComment[]
@@ -168,23 +171,24 @@ model Alarm {
   note         String?
   createdAt    DateTime @default(now())
   isSent       Boolean  @default(false)
-  
+
   trip       Trip @relation(fields: [tripId], references: [id])
   driver     User @relation("AlarmDriver", fields: [driverId], references: [id])
   dispatcher User @relation("AlarmDispatcher", fields: [dispatcherId], references: [id])
 }
 
 model Announcement {
-  id        String             @id @default(uuid())
-  companyId String
-  createdBy String
-  title     String
-  content   String
-  target    AnnouncementTarget
-  createdAt DateTime           @default(now())
-  
-  groupId String?
-  group   Group?  @relation(fields: [groupId], references: [id])
+  id         String             @id @default(uuid())
+  companyId  String
+  createdBy  String
+  title      String
+  content    String
+  target     AnnouncementTarget
+  isTemplate Boolean            @default(false)
+  createdAt  DateTime           @default(now())
+  groupId    String?
+
+  group   Group?             @relation(fields: [groupId], references: [id])
   company Company            @relation(fields: [companyId], references: [id])
   creator User               @relation(fields: [createdBy], references: [id])
   reads   AnnouncementRead[]
@@ -215,9 +219,11 @@ model AnnouncementDraft {
   target     AnnouncementTarget
   isTemplate Boolean            @default(false)
   createdAt  DateTime           @default(now())
+  groupId    String?
 
   company Company @relation(fields: [companyId], references: [id])
   creator User    @relation(fields: [createdBy], references: [id])
+  Group   Group?  @relation(fields: [groupId], references: [id])
 }
 
 model OtpCode {
@@ -230,6 +236,7 @@ model OtpCode {
 
   user User @relation(fields: [userId], references: [id])
 }
+
 enum GroupType {
   TRUCKS
   DISPATCHERS
@@ -243,11 +250,12 @@ model Group {
   createdBy String
   createdAt DateTime  @default(now())
 
-  company       Company        @relation(fields: [companyId], references: [id])
-  creator       User           @relation("GroupCreator", fields: [createdBy], references: [id])
-  trucks        GroupTruck[]
-  dispatchers   GroupDispatcher[]
-  announcements Announcement[]
+  company            Company             @relation(fields: [companyId], references: [id])
+  creator            User                @relation("GroupCreator", fields: [createdBy], references: [id])
+  trucks             GroupTruck[]
+  dispatchers        GroupDispatcher[]
+  announcements      Announcement[]
+  announcementsDraft AnnouncementDraft[]
 }
 
 model GroupTruck {
