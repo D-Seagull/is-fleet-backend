@@ -15,6 +15,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AlarmsModule } from './alarms/alarms.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { GroupsModule } from './groups/groups.module';
+import { AdvanceRequestsModule } from './advance-requests/advance-requests.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -35,6 +37,8 @@ import { GroupsModule } from './groups/groups.module';
     AlarmsModule,
     AnnouncementsModule,
     GroupsModule,
+    AdvanceRequestsModule,
+    MailModule,
   ],
   controllers: [],
   providers: [TranslationService],

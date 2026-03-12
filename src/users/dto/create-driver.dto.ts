@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsString, IsOptional, IsEnum } from 'class-validator';
 import { Language } from '@prisma/client';
 
 export class CreateDriverDto {

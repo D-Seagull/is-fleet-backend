@@ -17,6 +17,7 @@ model Company {
   trips              Trip[]
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
+  advanceRequests AdvanceRequest[]
 }
 
 model TruckNote {
@@ -41,6 +42,13 @@ model User {
   isActive           Boolean             @default(true)
   companyId          String
   createdAt          DateTime            @default(now())
+  dispatcherId String?
+  teamleadId   String?
+
+  dispatcher User?  @relation("DriverDispatcher", fields: [dispatcherId], references: [id])
+  teamlead   User?  @relation("DispatcherTeamlead", fields: [teamleadId], references: [id])
+  drivers     User[] @relation("DriverDispatcher")
+  dispatchers User[] @relation("DispatcherTeamlead")
   groupsCreated      Group[]             @relation("GroupCreator")
   groupDispatchers   GroupDispatcher[]
   truckNotes         TruckNote[]
@@ -56,6 +64,7 @@ model User {
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
   currentTruck       Truck?              @relation("CurrentDriver")
+  advanceRequests AdvanceRequest[] @relation("DriverAdvanceRequests")
   otpCodes           OtpCode[]
 }
 
@@ -276,3 +285,15 @@ model GroupDispatcher {
   group      Group @relation(fields: [groupId], references: [id])
   dispatcher User  @relation(fields: [dispatcherId], references: [id])
 }
+model AdvanceRequest {
+  id        String        @id @default(uuid())
+  driverId  String
+  companyId String
+  amount    Float
+  reason    String
+  createdAt DateTime      @default(now())
+
+  driver  User    @relation("DriverAdvanceRequests", fields: [driverId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+}
+

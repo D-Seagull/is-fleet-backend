@@ -24,24 +24,32 @@ export class UsersController {
   @Post('dispatcher')
   createDispatcher(
     @GetUser('companyId') companyId: string,
+    @GetUser('id') creatorId: string,
     @Body() dto: CreateDispatcherDto,
   ) {
-    return this.usersService.createDispatcher(companyId, dto);
+    return this.usersService.createDispatcher(companyId, creatorId, dto);
   }
 
   @Roles('ADMIN', 'DISPATCHER', 'TEAMLEAD')
   @Post('driver')
   createDriver(
     @GetUser('companyId') companyId: string,
+    @GetUser('creatorId') creatorId: string,
     @Body() dto: CreateDriverDto,
   ) {
-    return this.usersService.createDriver(companyId, dto);
+    return this.usersService.createDriver(companyId, creatorId, dto);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
   @Get()
   getUsers(@GetUser('companyId') companyId: string) {
     return this.usersService.getCompanyUsers(companyId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Get(':id')
+  getUserById(@Param('id') id: string) {
+    return this.usersService.getUserById(id);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')

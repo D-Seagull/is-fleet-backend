@@ -12,7 +12,11 @@ import { CreateDriverDto } from './dto/create-driver.dto';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async createDispatcher(companyId: string, dto: CreateDispatcherDto) {
+  async createDispatcher(
+    companyId: string,
+    creatorId: string,
+    dto: CreateDispatcherDto,
+  ) {
     const hash = await bcrypt.hash(dto.password, 10);
     const newUser = await this.prisma.user.create({
       data: {
@@ -22,13 +26,18 @@ export class UsersService {
         role: 'DISPATCHER',
         language: dto.language ?? 'EN',
         companyId,
+        teamleadId: creatorId,
       },
     });
     const { password, ...result } = newUser;
     return result;
   }
 
-  async createDriver(companyId: string, dto: CreateDriverDto) {
+  async createDriver(
+    companyId: string,
+    creatorId: string,
+    dto: CreateDriverDto,
+  ) {
     const newDriver = await this.prisma.user.create({
       data: {
         name: dto.name,
@@ -36,6 +45,7 @@ export class UsersService {
         role: 'DRIVER',
         language: dto.language ?? 'EN',
         companyId,
+        dispatcherId: creatorId,
       },
     });
     const { password, ...result } = newDriver;
@@ -87,5 +97,22 @@ export class UsersService {
     });
 
     return { message: `User ${user.name} deactivated!` };
+  }
+  async getUserById(id: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        language: true,
+        teamleadId: true,
+        companyId: true,
+        createdAt: true,
+      },
+    });
+    if (!user) throw new NotFoundException('Користувач не знайдений');
+    return user;
   }
 }
