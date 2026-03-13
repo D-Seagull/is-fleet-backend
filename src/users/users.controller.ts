@@ -34,7 +34,7 @@ export class UsersController {
   @Post('driver')
   createDriver(
     @GetUser('companyId') companyId: string,
-    @GetUser('creatorId') creatorId: string,
+    @GetUser('id') creatorId: string,
     @Body() dto: CreateDriverDto,
   ) {
     return this.usersService.createDriver(companyId, creatorId, dto);

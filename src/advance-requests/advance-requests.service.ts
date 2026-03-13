@@ -50,8 +50,13 @@ export class AdvanceRequestsService {
     const toEmail: string = this.config.get<string>('ACCOUNTING_EMAIL')!;
 
     // якщо сума > 200€ — тімлід в копії
+
     const ccEmail: string | null =
-      dto.amount > 200 ? (driver.dispatcher?.teamlead?.email ?? null) : null;
+      dto.amount >= 200
+        ? [driver.dispatcher?.teamlead?.email, driver.dispatcher?.email]
+            .filter(Boolean)
+            .join(',') || null
+        : (driver.dispatcher?.email ?? null);
 
     await this.mail.sendAdvanceRequest(
       fromEmail,

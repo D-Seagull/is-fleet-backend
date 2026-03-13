@@ -38,10 +38,13 @@ export class UsersService {
     creatorId: string,
     dto: CreateDriverDto,
   ) {
+    const hash = dto.password ? await bcrypt.hash(dto.password, 10) : null;
     const newDriver = await this.prisma.user.create({
       data: {
         name: dto.name,
         phone: dto.phone,
+        email: dto.email,
+        password: hash,
         role: 'DRIVER',
         language: dto.language ?? 'EN',
         companyId,
