@@ -5,7 +5,10 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiTags('advance-requests')
+@ApiBearerAuth()
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('advance-requests')
 export class AdvanceRequestsController {

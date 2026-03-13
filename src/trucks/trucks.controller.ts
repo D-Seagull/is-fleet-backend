@@ -16,7 +16,10 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { CreateTruckNoteDto } from './dto/create-truck-note.dto';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiTags('trucks')
+@ApiBearerAuth()
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('trucks')
 export class TrucksController {

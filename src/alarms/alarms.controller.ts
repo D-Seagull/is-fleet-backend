@@ -13,7 +13,10 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiTags('alarms')
+@ApiBearerAuth()
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('alarms')
 export class AlarmsController {

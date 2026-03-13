@@ -17,7 +17,10 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiTags('announcements')
+@ApiBearerAuth()
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('announcements')
 export class AnnouncementsController {

@@ -26,7 +26,8 @@ export class TranslationService {
       UZ: 'uz',
       KZ: 'kk',
       HI: 'hi',
+      RU: 'ru',
     };
-    return codes[language] || 'en';
+    return codes[language] || 'ru';
   }
 }
