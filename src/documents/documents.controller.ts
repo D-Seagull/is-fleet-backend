@@ -8,6 +8,7 @@ import {
   UseInterceptors,
   UploadedFile,
   Body,
+  UploadedFiles,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -17,6 +18,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('documents')
 @ApiBearerAuth()
@@ -26,14 +28,14 @@ export class DocumentsController {
   constructor(private documentsService: DocumentsService) {}
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
-  @Post('upload')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
-  upload(
-    @UploadedFile() file: Express.Multer.File,
+  @Post('upload-many')
+  @UseInterceptors(FilesInterceptor('files', 10, { storage: memoryStorage() }))
+  uploadMany(
+    @UploadedFiles() files: Express.Multer.File[],
     @Body('tripId') tripId: string,
     @GetUser('id') userId: string,
   ) {
-    return this.documentsService.upload(tripId, userId, file);
+    return this.documentsService.uploadMany(tripId, userId, files);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')

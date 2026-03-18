@@ -9,23 +9,30 @@ export class DocumentsService {
     private cloudinary: CloudinaryService,
   ) {}
 
-  async upload(tripId: string, uploadedBy: string, file: Express.Multer.File) {
-    if (!file) throw new Error('No file provided');
+  async uploadMany(
+    tripId: string,
+    uploadedBy: string,
+    files: Express.Multer.File[],
+  ) {
+    if (!files || files.length === 0) throw new Error('No files provided');
 
     const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
-    const { url, publicId } = await this.cloudinary.uploadFile(file);
-
-    return this.prisma.tripDocument.create({
-      data: {
-        tripId,
-        fileUrl: url,
-        publicId,
-        fileName: file.originalname,
-        uploadedBy,
-      },
-    });
+    return Promise.all(
+      files.map(async (file) => {
+        const { url, publicId } = await this.cloudinary.uploadFile(file);
+        return this.prisma.tripDocument.create({
+          data: {
+            tripId,
+            fileUrl: url,
+            publicId,
+            fileName: file.originalname,
+            uploadedBy,
+          },
+        });
+      }),
+    );
   }
 
   async remove(id: string) {
@@ -35,7 +42,7 @@ export class DocumentsService {
     if (!document) throw new NotFoundException('Документ не знайдений');
 
     if (document.publicId) {
-      await this.cloudinary.deleteFile(document.publicId);
+      await this.cloudinary.deleteFile(document.publicId as string);
     }
 
     await this.prisma.tripDocument.delete({ where: { id } });
