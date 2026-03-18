@@ -16,6 +16,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { GroupsModule } from './groups/groups.module';
 import { AdvanceRequestsModule } from './advance-requests/advance-requests.module';
 import { MailModule } from './mail/mail.module';
+import { CompaniesModule } from './companies/companies.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { MailModule } from './mail/mail.module';
     GroupsModule,
     AdvanceRequestsModule,
     MailModule,
+    CompaniesModule,
   ],
   controllers: [],
   providers: [TranslationService],

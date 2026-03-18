@@ -42,7 +42,12 @@ export class AuthService {
 
     // Створюємо компанію
     const company = await this.prisma.company.create({
-      data: { name: dto.companyName },
+      data: {
+        name: dto.companyName,
+        accountingEmail: dto.accountingEmail,
+        hrEmail: dto.hrEmail,
+        directorEmail: dto.directorEmail,
+      },
     });
 
     // Створюємо тімліда

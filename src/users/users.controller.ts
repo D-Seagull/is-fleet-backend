@@ -6,7 +6,11 @@ import {
   UseGuards,
   Param,
   Patch,
+  UseInterceptors,
+  UploadedFile,
+  Delete,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
@@ -63,5 +67,21 @@ export class UsersController {
     @GetUser('role') role: string,
   ) {
     return this.usersService.deactivate(id, companyId, role);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Post('avatar')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadAvatar(
+    @GetUser('id') userId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.usersService.uploadAvatar(userId, file);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Delete('avatar')
+  deleteAvatar(@GetUser('id') userId: string) {
+    return this.usersService.deleteAvatar(userId);
   }
 }

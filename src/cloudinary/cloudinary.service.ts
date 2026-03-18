@@ -22,7 +22,9 @@ export class CloudinaryService {
     });
   }
 
-  async uploadFile(file: Express.Multer.File): Promise<string> {
+  async uploadFile(
+    file: Express.Multer.File,
+  ): Promise<{ url: string; publicId: string }> {
     if (!file?.buffer) throw new Error('No file buffer found');
 
     return new Promise((resolve, reject) => {
@@ -32,14 +34,15 @@ export class CloudinaryService {
             console.error('Cloudinary upload error:', error);
             reject(new Error(error.message || 'Upload failed'));
           } else {
-            console.log('Cloudinary upload result:', result);
-            resolve(result!.secure_url);
+            resolve({
+              url: result!.secure_url,
+              publicId: result!.public_id,
+            });
           }
         })
         .end(file.buffer);
     });
   }
-
   async deleteFile(publicId: string): Promise<void> {
     await cloudinary.uploader.destroy(publicId);
   }

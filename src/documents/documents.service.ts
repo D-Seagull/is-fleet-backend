@@ -15,22 +15,16 @@ export class DocumentsService {
     const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
-    const fileUrl = await this.cloudinary.uploadFile(file);
+    const { url, publicId } = await this.cloudinary.uploadFile(file);
 
     return this.prisma.tripDocument.create({
       data: {
         tripId,
-        fileUrl,
+        fileUrl: url,
+        publicId,
         fileName: file.originalname,
         uploadedBy,
       },
-    });
-  }
-
-  async findByTrip(tripId: string) {
-    return this.prisma.tripDocument.findMany({
-      where: { tripId },
-      include: { uploader: { select: { id: true, name: true, role: true } } },
     });
   }
 
@@ -40,8 +34,18 @@ export class DocumentsService {
     });
     if (!document) throw new NotFoundException('Документ не знайдений');
 
-    await this.prisma.tripDocument.delete({ where: { id } });
+    if (document.publicId) {
+      await this.cloudinary.deleteFile(document.publicId);
+    }
 
+    await this.prisma.tripDocument.delete({ where: { id } });
     return { message: `Документ ${document.fileName} видалений` };
+  }
+
+  async findByTrip(tripId: string) {
+    return this.prisma.tripDocument.findMany({
+      where: { tripId },
+      include: { uploader: { select: { id: true, name: true, role: true } } },
+    });
   }
 }

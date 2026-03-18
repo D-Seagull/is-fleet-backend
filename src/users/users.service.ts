@@ -7,10 +7,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
+import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cloudinary: CloudinaryService,
+  ) {}
 
   async createDispatcher(
     companyId: string,
@@ -117,5 +121,32 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('Користувач не знайдений');
     return user;
+  }
+  async uploadAvatar(userId: string, file: Express.Multer.File) {
+    const user = await this.prisma.user.findFirst({ where: { id: userId } });
+
+    if (user?.avatarPublicId) {
+      await this.cloudinary.deleteFile(user.avatarPublicId as string);
+    }
+
+    const { url, publicId } = await this.cloudinary.uploadFile(file);
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatar: url, avatarPublicId: publicId },
+    });
+  }
+
+  async deleteAvatar(userId: string) {
+    const user = await this.prisma.user.findFirst({ where: { id: userId } });
+
+    if (user?.avatarPublicId) {
+      await this.cloudinary.deleteFile(user.avatarPublicId as string);
+    }
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatar: null, avatarPublicId: null },
+    });
   }
 }
