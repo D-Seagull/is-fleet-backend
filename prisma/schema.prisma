@@ -151,7 +151,7 @@ model TripDocument {
   fileName   String
   uploadedBy String
   createdAt  DateTime @default(now())
-  publicId String?
+  publicId   String?
   trip     Trip @relation(fields: [tripId], references: [id])
   uploader User @relation(fields: [uploadedBy], references: [id])
 }
