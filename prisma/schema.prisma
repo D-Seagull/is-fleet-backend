@@ -20,6 +20,9 @@ model Company {
   accountingEmail String?
   hrEmail         String?
   directorEmail   String?
+  inviteToken  String?   @unique
+  inviteExpiry DateTime?
+  isActive     Boolean   @default(true)
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
   advanceRequests AdvanceRequest[]

@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsString, IsEmail, IsOptional } from 'class-validator';
 
 export class RegisterDto {
   @IsString()
@@ -8,13 +8,12 @@ export class RegisterDto {
   email: string;
 
   @IsString()
-  @MinLength(6)
   password: string;
 
   @IsString()
-  companyName: string;
+  inviteToken: string; // обов'язковий — без токена не можна зареєструватись
 
-  @IsEmail()
+  @IsString()
   @IsOptional()
   accountingEmail?: string;
 

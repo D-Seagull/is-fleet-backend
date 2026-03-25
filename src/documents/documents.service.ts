@@ -42,7 +42,7 @@ export class DocumentsService {
     if (!document) throw new NotFoundException('Документ не знайдений');
 
     if (document.publicId) {
-      await this.cloudinary.deleteFile(document.publicId as string);
+      await this.cloudinary.deleteFile(document.publicId);
     }
 
     await this.prisma.tripDocument.delete({ where: { id } });

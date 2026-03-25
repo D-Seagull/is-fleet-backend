@@ -31,26 +31,22 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    // Перевіряємо чи існує email
-    const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-    if (existing) throw new BadRequestException('This Email already used');
-
-    // Хешуємо пароль
-    const hash = await bcrypt.hash(dto.password, 10);
-
-    // Створюємо компанію
-    const company = await this.prisma.company.create({
-      data: {
-        name: dto.companyName,
-        accountingEmail: dto.accountingEmail,
-        hrEmail: dto.hrEmail,
-        directorEmail: dto.directorEmail,
+    // знаходимо компанію по токену
+    const company = await this.prisma.company.findFirst({
+      where: {
+        inviteToken: dto.inviteToken,
+        inviteExpiry: { gte: new Date() }, // токен ще дійсний
+      },
+      include: {
+        users: { where: { role: 'TEAMLEAD' } },
       },
     });
 
-    // Створюємо тімліда
+    if (!company)
+      throw new BadRequestException('Невірний або прострочений токен');
+
+    const hash = await bcrypt.hash(dto.password, 10);
+
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
@@ -60,7 +56,19 @@ export class AuthService {
         companyId: company.id,
       },
     });
-    console.log(user);
+
+    // якщо перший тімлід — оновлюємо дані компанії
+    if (company.users.length === 0) {
+      await this.prisma.company.update({
+        where: { id: company.id },
+        data: {
+          accountingEmail: dto.accountingEmail,
+          hrEmail: dto.hrEmail,
+          directorEmail: dto.directorEmail,
+        },
+      });
+    }
+
     return this.signToken(user.id, user.role, user.companyId);
   }
 

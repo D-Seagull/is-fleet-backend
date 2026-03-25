@@ -43,4 +43,18 @@ export class MailService {
       `,
     });
   }
+  async sendInvite(to: string, companyName: string, inviteLink: string) {
+    await this.transporter.sendMail({
+      from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
+      to,
+      subject: `Запрошення до IS Fleet — ${companyName}`,
+      html: `
+      <h2>Вітаємо!</h2>
+      <p>Вашу компанію <b>${companyName}</b> було зареєстровано в IS Fleet.</p>
+      <p>Перейдіть по посиланню щоб зареєструватись:</p>
+      <a href="${inviteLink}">${inviteLink}</a>
+      <p>Посилання дійсне 7 днів.</p>
+    `,
+    });
+  }
 }
