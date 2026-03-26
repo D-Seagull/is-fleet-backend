@@ -87,6 +87,12 @@ export class AuthService {
     console.log(payload);
     return {
       access_token: this.jwt.sign(payload),
+      user: {
+        id: userId,
+        name,
+        role,
+        companyId,
+      },
     };
   }
 }
