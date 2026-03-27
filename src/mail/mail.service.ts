@@ -53,7 +53,7 @@ export class MailService {
       <p>Вашу компанію <b>${companyName}</b> було зареєстровано в IS Fleet.</p>
       <p>Перейдіть по посиланню щоб зареєструватись:</p>
       <a href="${inviteLink}">${inviteLink}</a>
-      <p>Посилання дійсне 7 днів.</p>
+  
     `,
     });
   }
