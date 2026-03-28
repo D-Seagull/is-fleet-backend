@@ -49,7 +49,7 @@ export class MailService {
   async sendInvite(to: string, companyName: string, inviteLink: string) {
     try {
       await resend.emails.send({
-        from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
+        from: `"IS Fleet" <${this.config.get('RESEND_MAIL')}>`,
         to,
         subject: `Запрошення до IS Fleet — ${companyName}`,
         html: `
