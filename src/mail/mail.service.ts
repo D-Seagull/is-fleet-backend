@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
+import { Resend } from 'resend';
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 @Injectable()
 export class MailService {
@@ -45,7 +47,7 @@ export class MailService {
   }
   async sendInvite(to: string, companyName: string, inviteLink: string) {
     try {
-      await this.transporter.sendMail({
+      await resend.emails.send({
         from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
         to,
         subject: `Запрошення до IS Fleet — ${companyName}`,
@@ -62,4 +64,21 @@ export class MailService {
       throw err;
     }
   }
+  //     await this.transporter.sendMail({
+  //       from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
+  //       to,
+  //       subject: `Запрошення до IS Fleet — ${companyName}`,
+  //       html: `
+  //   <h2>Вітаємо!</h2>
+  //   <p>Вашу компанію <b>${companyName}</b> було зареєстровано в IS Fleet.</p>
+  //   <p>Перейдіть по посиланню щоб зареєструватись:</p>
+  //   <a href="${inviteLink}">${inviteLink}</a>
+  //   `,
+  //     });
+  //   } catch (err) {
+  //     console.error('❌ Email error:', err.message);
+  //     console.error('❌ Email error details:', err);
+  //     throw err;
+  //   }
+  // }
 }
