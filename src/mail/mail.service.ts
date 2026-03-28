@@ -1,27 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
-const resend = new Resend('re_VNt3mVb6_ANG4223AnE8mTSCnD1bpQoWK');
 
 @Injectable()
 export class MailService {
-  private transporter;
   private resend: Resend;
 
   constructor(private config: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      host: this.config.get('MAIL_HOST'),
-      port: this.config.get<number>('MAIL_PORT'),
-      secure: false,
-      auth: {
-        user: this.config.get('MAIL_USER'),
-        pass: this.config.get('MAIL_PASSWORD'),
-      },
-      tls: {
-        ciphers: 'SSLv3',
-      },
-    });
+    this.resend = new Resend(this.config.get('RESEND_API_KEY'));
   }
 
   async sendAdvanceRequest(
@@ -32,36 +18,35 @@ export class MailService {
     amount: number,
     reason: string,
   ) {
-    await this.transporter.sendMail({
-      from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
+    await this.resend.emails.send({
+      from: 'IS Fleet <onboarding@resend.dev>',
       to,
       cc: cc ?? undefined,
       replyTo: from,
       subject: driverName,
       html: `
-     
         <p><b>driver:</b> ${driverName}</p>
         <p><b>amount:</b> ${amount} €</p>
         <p><b>reason:</b> ${reason}</p>
       `,
     });
   }
+
   async sendInvite(to: string, companyName: string, inviteLink: string) {
     try {
-      await resend.emails.send({
-        from: `"IS Fleet" <${this.config.get('RESEND_MAIL')}>`,
+      await this.resend.emails.send({
+        from: 'IS Fleet <onboarding@resend.dev>',
         to,
         subject: `Запрошення до IS Fleet — ${companyName}`,
         html: `
-    <h2>Вітаємо!</h2>
-    <p>Вашу компанію <b>${companyName}</b> було зареєстровано в IS Fleet.</p>
-    <p>Перейдіть по посиланню щоб зареєструватись:</p>
-    <a href="${inviteLink}">${inviteLink}</a>
-    `,
+          <h2>Вітаємо!</h2>
+          <p>Вашу компанію <b>${companyName}</b> було зареєстровано в IS Fleet.</p>
+          <a href="${inviteLink}">${inviteLink}</a>
+        `,
       });
+      console.log('✅ Email sent to:', to);
     } catch (err) {
       console.error('❌ Email error:', err.message);
-      console.error('❌ Email error details:', err);
       throw err;
     }
   }
