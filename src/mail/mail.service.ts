@@ -1,27 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+// import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 @Injectable()
 export class MailService {
-  private transporter;
-
+  private resend: Resend;
   constructor(private config: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      host: this.config.get('MAIL_HOST'),
-      port: this.config.get<number>('MAIL_PORT'),
-      secure: false,
-      auth: {
-        user: this.config.get('MAIL_USER'),
-        pass: this.config.get('MAIL_PASSWORD'),
-      },
-      tls: {
-        ciphers: 'SSLv3',
-      },
-    });
+    this.resend = new Resend(this.config.get('RESEND_API_KEY'));
   }
+  // constructor(private config: ConfigService) {
+  //   this.transporter = nodemailer.createTransport({
+  //     host: this.config.get('MAIL_HOST'),
+  //     port: this.config.get<number>('MAIL_PORT'),
+  //     secure: false,
+  //     auth: {
+  //       user: this.config.get('MAIL_USER'),
+  //       pass: this.config.get('MAIL_PASSWORD'),
+  //     },
+  //     tls: {
+  //       ciphers: 'SSLv3',
+  //     },
+  //   });
+  // }
 
   async sendAdvanceRequest(
     from: string,
@@ -31,7 +33,7 @@ export class MailService {
     amount: number,
     reason: string,
   ) {
-    await this.transporter.sendMail({
+    await this.resend.emails.send({
       from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
       to,
       cc: cc ?? undefined,
