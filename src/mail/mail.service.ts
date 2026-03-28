@@ -8,7 +8,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export class MailService {
   private resend: Resend;
   constructor(private config: ConfigService) {
-    this.resend = new Resend(this.config.get('RESEND_API_KEY'));
+    this.resend = new Resend('re_VNt3mVb6_ANG4223AnE8mTSCnD1bpQoWK');
   }
   // constructor(private config: ConfigService) {
   //   this.transporter = nodemailer.createTransport({
@@ -33,7 +33,7 @@ export class MailService {
     amount: number,
     reason: string,
   ) {
-    await this.resend.emails.send({
+    await this.transporter.sendMail({
       from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
       to,
       cc: cc ?? undefined,
@@ -49,7 +49,7 @@ export class MailService {
   }
   async sendInvite(to: string, companyName: string, inviteLink: string) {
     try {
-      await this.resend.emails.send({
+      await resend.emails.send({
         from: `"IS Fleet" <${this.config.get('MAIL_FROM')}>`,
         to,
         subject: `Запрошення до IS Fleet — ${companyName}`,
