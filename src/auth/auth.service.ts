@@ -35,7 +35,6 @@ export class AuthService {
     const company = await this.prisma.company.findFirst({
       where: {
         inviteToken: dto.inviteToken,
-        inviteExpiry: { gte: new Date() }, // токен ще дійсний
       },
       include: {
         users: { where: { role: 'TEAMLEAD' } },

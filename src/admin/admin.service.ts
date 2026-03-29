@@ -18,7 +18,7 @@ export class AdminService {
   async createCompany(dto: CreateCompanyDto) {
     const inviteToken = uuidv4();
     const inviteExpiry = new Date();
-    // inviteExpiry.setDate(inviteExpiry.getDate() + 7); // токен дійсний 7 днів
+    inviteExpiry.setDate(inviteExpiry.getDate() + 7); //токен дійсний 7 днів
 
     const existing = await this.prisma.company.findFirst({
       where: {
@@ -37,7 +37,7 @@ export class AdminService {
       },
     });
 
-    const inviteLink = `${process.env.FRONTEND_URL}/auth/register?token=${inviteToken}`;
+    const inviteLink = `${process.env.FRONTEND_URL}/register?token=${inviteToken}`;
 
     await this.mail.sendInvite(dto.email, dto.name, inviteLink);
 
