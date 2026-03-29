@@ -5,11 +5,9 @@ import { Resend } from 'resend';
 @Injectable()
 export class MailService {
   private resend: Resend;
-
   constructor(private config: ConfigService) {
     this.resend = new Resend(this.config.get('RESEND_API_KEY'));
   }
-
   async sendAdvanceRequest(
     from: string,
     to: string,
