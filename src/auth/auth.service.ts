@@ -93,4 +93,19 @@ export class AuthService {
       },
     };
   }
+  async checkInvite(token: string) {
+    const company = await this.prisma.company.findFirst({
+      where: { inviteToken: token },
+      include: {
+        users: { where: { role: 'TEAMLEAD' } },
+      },
+    });
+
+    if (!company) throw new BadRequestException('Невірний токен');
+
+    return {
+      companyName: company.name,
+      isFirstUser: company.users.length === 0, // ← перший юзер чи ні
+    };
+  }
 }
