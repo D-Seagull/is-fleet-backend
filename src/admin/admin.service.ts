@@ -71,7 +71,7 @@ export class AdminService {
     if (!company) throw new NotFoundException('Компанія не знайдена');
 
     const inviteLink = `${process.env.FRONTEND_URL}/auth/register?token=${company.inviteToken}`;
-    await this.mail.sendInvite(email, company.name, inviteLink);
+    await this.mail.sendCompanyInvite(email, company.name, inviteLink);
 
     return { message: 'Invite відправлено!' };
   }

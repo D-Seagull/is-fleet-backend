@@ -27,7 +27,7 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.password!);
     if (!valid) throw new UnauthorizedException('Невірний email або пароль');
 
-    return this.signToken(user.id, user.role, user.companyId, user.name);
+    return this.signToken(user.id, user.role, user.companyId, user.name ?? '');
   }
 
   async register(dto: RegisterDto) {
@@ -53,7 +53,12 @@ export class AuthService {
         },
       });
 
-      return this.signToken(user.id, user.role, user.companyId, user.name);
+      return this.signToken(
+        user.id,
+        user.role,
+        user.companyId,
+        user.name ?? '',
+      );
     }
 
     // Якщо не знайшли по юзеру — шукаємо по токену компанії (teamlead)
@@ -93,7 +98,7 @@ export class AuthService {
       });
     }
 
-    return this.signToken(user.id, user.role, user.companyId, user.name);
+    return this.signToken(user.id, user.role, user.companyId, user.name ?? '');
   }
 
   async login(dto: LoginDto) {
@@ -104,7 +109,7 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.password!);
     if (!valid) throw new UnauthorizedException('Login or password is wrong');
-    return this.signToken(user.id, user.role, user.companyId, user.name);
+    return this.signToken(user.id, user.role, user.companyId, user.name ?? '');
   }
   private signToken(
     userId: string,
