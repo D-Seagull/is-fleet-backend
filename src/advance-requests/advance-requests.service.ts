@@ -62,7 +62,7 @@ export class AdvanceRequestsService {
       fromEmail,
       toEmail,
       ccEmail,
-      driver.name,
+      driver.name ?? '',
       dto.amount,
       dto.reason,
     );
