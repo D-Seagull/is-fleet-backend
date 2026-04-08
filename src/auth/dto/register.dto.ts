@@ -2,16 +2,18 @@ import { IsString, IsEmail, IsOptional } from 'class-validator';
 
 export class RegisterDto {
   @IsString()
-  name: string;
+  @IsOptional()
+  name?: string;
 
   @IsEmail()
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @IsString()
   password: string;
 
   @IsString()
-  inviteToken: string; // обов'язковий — без токена не можна зареєструватись
+  inviteToken: string;
 
   @IsString()
   @IsOptional()
