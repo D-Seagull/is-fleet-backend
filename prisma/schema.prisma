@@ -41,7 +41,7 @@ model TruckNote {
 
 model User {
   id                 String              @id @default(uuid())
-  name               String
+  name               String?
   email              String?             @unique
   phone              String?             @unique
   password           String?
@@ -54,7 +54,8 @@ model User {
   createdAt          DateTime            @default(now())
   dispatcherId String?
   teamleadId   String?
-  
+  inviteToken    String?   
+  inviteExpiry   DateTime?
 
   dispatcher User?  @relation("DriverDispatcher", fields: [dispatcherId], references: [id])
   teamlead   User?  @relation("DispatcherTeamlead", fields: [teamleadId], references: [id])

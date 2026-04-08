@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -8,12 +9,15 @@ import * as bcrypt from 'bcrypt';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { v4 as uuidv4 } from 'uuid';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
+    private mail: MailService,
   ) {}
 
   async createDispatcher(
@@ -21,20 +25,33 @@ export class UsersService {
     creatorId: string,
     dto: CreateDispatcherDto,
   ) {
-    const hash = await bcrypt.hash(dto.password, 10);
-    const newUser = await this.prisma.user.create({
+    const inviteToken = uuidv4();
+    const inviteExpiry = new Date();
+    inviteExpiry.setDate(inviteExpiry.getDate() + 7);
+
+    const existing = await this.prisma.user.findFirst({
+      where: { email: dto.email },
+    });
+
+    if (existing)
+      throw new BadRequestException('User with this email already created');
+
+    // Створюємо юзера без пароля — він встановить його при реєстрації
+    const user = await this.prisma.user.create({
       data: {
-        name: dto.name,
         email: dto.email,
-        password: hash,
         role: 'DISPATCHER',
-        language: dto.language ?? 'EN',
         companyId,
-        teamleadId: creatorId,
+        inviteToken,
+        inviteExpiry,
       },
     });
-    const { password, ...result } = newUser;
-    return result;
+
+    const inviteLink = `${process.env.FRONTEND_URL}/register?token=${inviteToken}`;
+
+    await this.mail.sendDispatcherInvite(dto.email, inviteLink);
+
+    return user;
   }
 
   async createDriver(

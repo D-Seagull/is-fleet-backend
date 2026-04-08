@@ -30,22 +30,31 @@ export class MailService {
     });
   }
 
-  async sendInvite(to: string, companyName: string, inviteLink: string) {
-    try {
-      await this.resend.emails.send({
-        from: 'IS Fleet <onboarding@resend.dev>',
-        to,
-        subject: `Запрошення до IS Fleet — ${companyName}`,
-        html: `
-          <h2>Вітаємо!</h2>
-          <p>Вашу компанію <b>${companyName}</b> було зареєстровано в IS Fleet.</p>
-          <a href="${inviteLink}">${inviteLink}</a>
-        `,
-      });
-      console.log('✅ Email sent to:', to);
-    } catch (err) {
-      console.error('❌ Email error:', err.message);
-      throw err;
-    }
+  async sendCompanyInvite(to: string, companyName: string, inviteLink: string) {
+    await this.resend.emails.send({
+      from: 'IS Fleet <onboarding@resend.dev>',
+      to,
+      subject: `Запрошення до IS Fleet — ${companyName}`,
+      html: `
+      <h2>Вітаємо!</h2>
+      <p>Вашу компанію <b>${companyName}</b> було зареєстровано в IS Fleet.</p>
+      <p>Перейдіть по посиланню щоб зареєструватись:</p>
+      <a href="${inviteLink}">${inviteLink}</a>
+    `,
+    });
+  }
+
+  async sendDispatcherInvite(to: string, inviteLink: string) {
+    await this.resend.emails.send({
+      from: 'IS Fleet <onboarding@resend.dev>',
+      to,
+      subject: `Запрошення до IS Fleet`,
+      html: `
+      <h2>Вітаємо!</h2>
+      <p>Вас запросили до системи IS Fleet як диспетчера.</p>
+      <p>Перейдіть по посиланню щоб зареєструватись:</p>
+      <a href="${inviteLink}">${inviteLink}</a>
+    `,
+    });
   }
 }

@@ -31,7 +31,32 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    // знаходимо компанію по токену
+    // Спочатку шукаємо по токену юзера (dispatcher/driver)
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        inviteToken: dto.inviteToken,
+        inviteExpiry: { gt: new Date() }, // токен ще дійсний
+      },
+    });
+
+    if (existingUser) {
+      // Реєструємо dispatcher або driver
+      const hash = await bcrypt.hash(dto.password, 10);
+
+      const user = await this.prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          name: dto.name,
+          password: hash,
+          inviteToken: null, // очищаємо токен
+          inviteExpiry: null,
+        },
+      });
+
+      return this.signToken(user.id, user.role, user.companyId, user.name);
+    }
+
+    // Якщо не знайшли по юзеру — шукаємо по токену компанії (teamlead)
     const company = await this.prisma.company.findFirst({
       where: {
         inviteToken: dto.inviteToken,
@@ -100,6 +125,25 @@ export class AuthService {
     };
   }
   async checkInvite(token: string) {
+    // Перевіряємо токен юзера
+    const user = await this.prisma.user.findFirst({
+      where: {
+        inviteToken: token,
+        inviteExpiry: { gt: new Date() },
+      },
+      include: { company: true },
+    });
+
+    if (user) {
+      return {
+        type: 'user',
+        role: user.role,
+        companyName: user.company.name,
+        isFirstUser: false,
+      };
+    }
+
+    // Перевіряємо токен компанії
     const company = await this.prisma.company.findFirst({
       where: { inviteToken: token },
       include: {
@@ -110,8 +154,10 @@ export class AuthService {
     if (!company) throw new BadRequestException('Невірний токен');
 
     return {
+      type: 'company',
+      role: 'TEAMLEAD',
       companyName: company.name,
-      isFirstUser: company.users.length === 0, // ← перший юзер чи ні
+      isFirstUser: company.users.length === 0,
     };
   }
 }

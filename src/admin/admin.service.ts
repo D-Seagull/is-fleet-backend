@@ -39,7 +39,7 @@ export class AdminService {
 
     const inviteLink = `${process.env.FRONTEND_URL}/register?token=${inviteToken}`;
 
-    await this.mail.sendInvite(dto.email, dto.name, inviteLink);
+    await this.mail.sendCompanyInvite(dto.email, dto.name, inviteLink);
 
     return {
       company,
