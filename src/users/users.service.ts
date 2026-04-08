@@ -29,12 +29,12 @@ export class UsersService {
     const inviteExpiry = new Date();
     inviteExpiry.setDate(inviteExpiry.getDate() + 7);
 
-    const existing = await this.prisma.user.findFirst({
-      where: { email: dto.email },
-    });
+    // const existing = await this.prisma.user.findFirst({
+    //   where: { email: dto.email },
+    // });
 
-    if (existing)
-      throw new BadRequestException('User with this email already created');
+    // if (existing)
+    //   throw new BadRequestException('User with this email already created');
 
     // Створюємо юзера без пароля — він встановить його при реєстрації
     const user = await this.prisma.user.create({
