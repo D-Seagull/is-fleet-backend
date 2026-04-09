@@ -56,6 +56,8 @@ model User {
   teamleadId   String?
   inviteToken    String?   
   inviteExpiry   DateTime?
+  sentMessages     DirectMessage[] @relation("SentMessages")
+  receivedMessages DirectMessage[] @relation("ReceivedMessages")
 
   dispatcher User?  @relation("DriverDispatcher", fields: [dispatcherId], references: [id])
   teamlead   User?  @relation("DispatcherTeamlead", fields: [teamleadId], references: [id])
@@ -158,6 +160,17 @@ model TripDocument {
   publicId   String?
   trip     Trip @relation(fields: [tripId], references: [id])
   uploader User @relation(fields: [uploadedBy], references: [id])
+}
+
+model DirectMessage {
+  id         String   @id @default(uuid())
+  senderId   String
+  receiverId String
+  content    String
+  createdAt  DateTime @default(now())
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id])
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
 }
 
 model Message {

@@ -18,6 +18,8 @@ import { AdvanceRequestsModule } from './advance-requests/advance-requests.modul
 import { MailModule } from './mail/mail.module';
 import { CompaniesModule } from './companies/companies.module';
 import { AdminModule } from './admin/admin.module';
+import { DirectMessagesModule } from './direct-messages/direct-messages.module';
+import { DirectMessagesService } from './direct-messages/direct-messages.service';
 
 @Module({
   imports: [
@@ -41,8 +43,9 @@ import { AdminModule } from './admin/admin.module';
     MailModule,
     CompaniesModule,
     AdminModule,
+    DirectMessagesModule,
   ],
   controllers: [],
-  providers: [TranslationService],
+  providers: [TranslationService, DirectMessagesService],
 })
 export class AppModule {}
