@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { DirectMessagesService } from './direct-messages.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -22,5 +22,13 @@ export class DirectMessagesController {
     @Param('userId') otherUserId: string,
   ) {
     return this.service.getMessages(currentUserId, otherUserId);
+  }
+
+  @Post(':userId/read')
+  markAsRead(
+    @GetUser('id') currentUserId: string,
+    @Param('userId') senderId: string,
+  ) {
+    return this.service.markAsRead(currentUserId, senderId);
   }
 }

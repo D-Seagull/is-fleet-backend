@@ -167,6 +167,7 @@ model DirectMessage {
   senderId   String
   receiverId String
   content    String
+  isRead     Boolean  @default(false) 
   createdAt  DateTime @default(now())
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])

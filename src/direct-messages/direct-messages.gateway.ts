@@ -63,4 +63,23 @@ export class DirectMessagesGateway
 
     return message;
   }
+  @SubscribeMessage('typing_start')
+  handleTypingStart(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { receiverId: string },
+  ) {
+    this.server
+      .to(`user:${data.receiverId}`)
+      .emit('user_typing', { userId: client.data.userId });
+  }
+
+  @SubscribeMessage('typing_stop')
+  handleTypingStop(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { receiverId: string },
+  ) {
+    this.server
+      .to(`user:${data.receiverId}`)
+      .emit('user_stopped_typing', { userId: client.data.userId });
+  }
 }

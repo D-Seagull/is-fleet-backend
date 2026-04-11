@@ -45,7 +45,6 @@ export class DirectMessagesService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Групуємо по співрозмовнику
     const conversations = new Map();
     messages.forEach((msg) => {
       const otherId = msg.senderId === userId ? msg.receiverId : msg.senderId;
@@ -53,10 +52,41 @@ export class DirectMessagesService {
         conversations.set(otherId, {
           user: msg.senderId === userId ? msg.receiver : msg.sender,
           lastMessage: msg,
+          unreadCount: 0,
         });
       }
     });
 
+    // Рахуємо непрочитані для кожної розмови
+    for (const [otherId, conv] of conversations) {
+      conv.unreadCount = await this.prisma.directMessage.count({
+        where: {
+          senderId: otherId,
+          receiverId: userId,
+          isRead: false,
+        },
+      });
+    }
+
     return Array.from(conversations.values());
+  }
+  async markAsRead(userId: string, senderId: string) {
+    return this.prisma.directMessage.updateMany({
+      where: {
+        senderId,
+        receiverId: userId,
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
+  }
+  async getUnreadCount(userId: string, senderId: string) {
+    return this.prisma.directMessage.count({
+      where: {
+        senderId,
+        receiverId: userId,
+        isRead: false,
+      },
+    });
   }
 }
