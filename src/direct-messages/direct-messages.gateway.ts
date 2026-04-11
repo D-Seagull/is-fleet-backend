@@ -82,4 +82,19 @@ export class DirectMessagesGateway
       .to(`user:${data.receiverId}`)
       .emit('user_stopped_typing', { userId: client.data.userId });
   }
+  @SubscribeMessage('mark_as_read')
+  async handleMarkAsRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { senderId: string },
+  ) {
+    console.log('mark_as_read received:', data);
+    await this.service.markAsRead(client.data.userId as string, data.senderId);
+    console.log('marked as read, notifying:', data.senderId);
+
+    this.server
+      .to(`user:${data.senderId}`)
+      .emit('messages_read', { readBy: client.data.userId });
+
+    console.log('messages_read emitted to:', `user:${data.senderId}`);
+  }
 }
