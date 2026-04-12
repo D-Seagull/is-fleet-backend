@@ -20,6 +20,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { AdminModule } from './admin/admin.module';
 import { DirectMessagesModule } from './direct-messages/direct-messages.module';
 import { DirectMessagesService } from './direct-messages/direct-messages.service';
+import { GroupMessagesModule } from './group-messages/group-messages.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { DirectMessagesService } from './direct-messages/direct-messages.service
     CompaniesModule,
     AdminModule,
     DirectMessagesModule,
+    GroupMessagesModule,
   ],
   controllers: [],
   providers: [TranslationService, DirectMessagesService],

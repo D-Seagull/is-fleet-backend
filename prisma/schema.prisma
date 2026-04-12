@@ -58,7 +58,8 @@ model User {
   inviteExpiry   DateTime?
   sentMessages     DirectMessage[] @relation("SentMessages")
   receivedMessages DirectMessage[] @relation("ReceivedMessages")
-
+  groupMessages GroupMessage[]
+  
   dispatcher User?  @relation("DriverDispatcher", fields: [dispatcherId], references: [id])
   teamlead   User?  @relation("DispatcherTeamlead", fields: [teamleadId], references: [id])
   drivers     User[] @relation("DriverDispatcher")
@@ -285,13 +286,23 @@ model Group {
   companyId String
   createdBy String
   createdAt DateTime  @default(now())
-
+  messages GroupMessage[]
   company            Company             @relation(fields: [companyId], references: [id])
   creator            User                @relation("GroupCreator", fields: [createdBy], references: [id])
   trucks             GroupTruck[]
   dispatchers        GroupDispatcher[]
   announcements      Announcement[]
   announcementsDraft AnnouncementDraft[]
+}
+model GroupMessage {
+  id        String   @id @default(uuid())
+  groupId   String
+  senderId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  group  Group @relation(fields: [groupId], references: [id])
+  sender User  @relation(fields: [senderId], references: [id])
 }
 
 model GroupTruck {
