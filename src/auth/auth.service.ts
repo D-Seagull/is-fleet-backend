@@ -129,6 +129,19 @@ export class AuthService {
       },
     };
   }
+  async getMe(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        companyId: true,
+        email: true,
+        language: true,
+      },
+    });
+  }
   async checkInvite(token: string) {
     // Перевіряємо токен юзера
     const user = await this.prisma.user.findFirst({
