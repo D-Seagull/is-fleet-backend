@@ -5,10 +5,11 @@ import { DirectMessagesGateway } from './direct-messages.gateway';
 import { DirectMessagesService } from './direct-messages.service';
 import { DirectMessagesController } from './direct-messages.controller';
 import { PrismaModule } from '../prisma/prisma.module';
-
+import { GroupMessagesModule } from 'src/group-messages/group-messages.module';
 @Module({
   imports: [
     PrismaModule,
+    GroupMessagesModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

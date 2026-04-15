@@ -4,25 +4,21 @@ import {
   SubscribeMessage,
   MessageBody,
   ConnectedSocket,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
+
 import { CreateMessageDto } from './dto/create-message.dto';
 import { JwtService } from '@nestjs/jwt';
 
-@WebSocketGateway({
-  cors: { origin: '*' },
-})
-export class MessagesGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+@WebSocketGateway({ cors: { origin: '*' } })
+export class MessagesGateway {
   @WebSocketServer()
   server: Server;
 
   constructor(
     private messagesService: MessagesService,
+
     private jwtService: JwtService,
   ) {}
 
@@ -33,6 +29,7 @@ export class MessagesGateway
         secret: process.env.JWT_SECRET,
       });
       const userId = payload.sub as string;
+      client.data.userId = userId;
       void client.join(userId);
       console.log(`Client ${client.id} joined personal room: ${userId}`);
     } catch {
@@ -51,11 +48,10 @@ export class MessagesGateway
   ) {
     const normalizedId = tripId.replace(/"/g, '');
     await client.join(normalizedId);
-    console.log(`Client ${client.id} joined trip ${normalizedId}`);
   }
 
   @SubscribeMessage('sendMessage')
-  async handleMessage(
+  async handleTripMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: CreateMessageDto & { senderId: string },
   ) {

@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { DirectMessagesService } from './direct-messages.service';
+import { GroupMessagesService } from 'src/group-messages/group-messages.service';
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class DirectMessagesGateway
@@ -20,6 +21,7 @@ export class DirectMessagesGateway
 
   constructor(
     private service: DirectMessagesService,
+    private groupService: GroupMessagesService,
     private jwt: JwtService,
   ) {}
 
@@ -96,5 +98,60 @@ export class DirectMessagesGateway
       .emit('messages_read', { readBy: client.data.userId });
 
     console.log('messages_read emitted to:', `user:${data.senderId}`);
+  }
+  // ─── Group messages ───────────────────────────────────────────────────────
+  @SubscribeMessage('join_group')
+  async handleJoinGroup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { groupId: string },
+  ) {
+    await client.join(`group:${data.groupId}`);
+  }
+
+  @SubscribeMessage('leave_group')
+  async handleLeaveGroup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { groupId: string },
+  ) {
+    await client.leave(`group:${data.groupId}`);
+  }
+
+  @SubscribeMessage('send_group_message')
+  async handleGroupMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { groupId: string; content: string },
+  ) {
+    console.log(
+      `💬 send_group_message from ${client.data.userId} to group ${data.groupId}`,
+    );
+    const senderId = client.data.userId as string;
+    const message = await this.groupService.createMessage(
+      data.groupId,
+      senderId,
+      data.content,
+    );
+    this.server.to(`group:${data.groupId}`).emit('new_group_message', message);
+    return message;
+  }
+
+  @SubscribeMessage('group_typing')
+  handleGroupTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { groupId: string; name: string },
+  ) {
+    client.to(`group:${data.groupId}`).emit('group_typing', {
+      userId: client.data.userId,
+      name: data.name,
+    });
+  }
+
+  @SubscribeMessage('group_stopped_typing')
+  handleGroupStoppedTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { groupId: string },
+  ) {
+    client.to(`group:${data.groupId}`).emit('group_stopped_typing', {
+      userId: client.data.userId,
+    });
   }
 }

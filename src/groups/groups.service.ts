@@ -176,11 +176,21 @@ export class GroupsService {
     });
   }
 
-  async findAllDispatchersGroups(companyId: string | null) {
+  async findAllDispatchersGroups(
+    companyId: string | null,
+    role?: string,
+    userId?: string,
+  ) {
+    const where: Record<string, unknown> = companyId
+      ? { companyId, type: 'DISPATCHERS' }
+      : { type: 'DISPATCHERS' };
+
+    if (role === 'DISPATCHER' && userId) {
+      where.dispatchers = { some: { dispatcherId: userId } };
+    }
+
     return await this.prisma.group.findMany({
-      where: companyId
-        ? { companyId, type: 'DISPATCHERS' }
-        : { type: 'DISPATCHERS' },
+      where,
       include: {
         creator: { select: { id: true, name: true, role: true } },
         dispatchers: {
