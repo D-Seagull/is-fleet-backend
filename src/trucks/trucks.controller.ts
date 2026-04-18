@@ -37,6 +37,18 @@ export class TrucksController {
     return this.trucksService.findAll(companyId);
   }
 
+  @Roles('ADMIN', 'TEAMLEAD')
+  @Get('deactivated')
+  findDeactivated(@GetUser('companyId') companyId: string) {
+    return this.trucksService.findDeactivated(companyId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD')
+  @Patch(':id/activate')
+  activate(@Param('id') id: string, @GetUser('companyId') companyId: string) {
+    return this.trucksService.activate(id, companyId);
+  }
+
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
   @Get(':id')
   findOne(@Param('id') id: string, @GetUser('companyId') companyId: string) {

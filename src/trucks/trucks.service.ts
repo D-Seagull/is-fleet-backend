@@ -19,10 +19,15 @@ export class TrucksService {
 
   async findAll(companyId: string) {
     return this.prisma.truck.findMany({
-      where: { companyId },
+      where: { companyId, isActive: true },
       include: {
         currentDriver: {
           select: { id: true, name: true, phone: true },
+        },
+        truckNotes: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { content: true, createdAt: true },
         },
       },
     });
@@ -49,12 +54,30 @@ export class TrucksService {
     });
   }
 
+  async findDeactivated(companyId: string) {
+    return this.prisma.truck.findMany({
+      where: { companyId, isActive: false },
+      include: {
+        currentDriver: { select: { id: true, name: true, phone: true } },
+      },
+    });
+  }
+
+  async activate(id: string, companyId: string) {
+    await this.prisma.truck.update({
+      where: { id },
+      data: { isActive: true },
+    });
+    return { message: 'Truck activated' };
+  }
+
   async remove(id: string, companyId: string) {
     const truck = await this.findOne(id, companyId);
-    await this.prisma.truck.delete({
+    await this.prisma.truck.update({
       where: { id },
+      data: { isActive: false },
     });
-    return { message: `Truck ${truck.plate} removed!` };
+    return { message: `Truck ${truck.plate} deactivated` };
   }
 
   /*Notes */

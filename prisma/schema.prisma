@@ -105,6 +105,7 @@ model Truck {
   id              String      @id @default(uuid())
   plate           String
   status          TruckStatus @default(AVAILABLE)
+  isActive        Boolean     @default(true)
   truckNotes      TruckNote[]
   companyId       String
   currentDriverId String?     @unique
