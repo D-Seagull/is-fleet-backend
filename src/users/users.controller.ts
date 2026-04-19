@@ -94,13 +94,14 @@ export class UsersController {
   upsertRating(
     @Param('id') driverId: string,
     @GetUser('id') ratedById: string,
-    @Body() body: { score: number; comment?: string },
+    @Body() body: { score: number; comment?: string; anonymous?: boolean },
   ) {
     return this.usersService.upsertRating(
       driverId,
       ratedById,
       body.score,
       body.comment,
+      body.anonymous,
     );
   }
 

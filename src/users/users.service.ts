@@ -214,6 +214,7 @@ export class UsersService {
             id: true,
             score: true,
             comment: true,
+            anonymous: true,
             createdAt: true,
             ratedBy: { select: { id: true, name: true, role: true } },
           },
@@ -223,24 +224,33 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('Користувач не знайдений');
 
-    const ratings = user.ratingsReceived;
+    const raw = user.ratingsReceived;
     const averageRating =
-      ratings.length > 0
-        ? ratings.reduce((sum, r) => sum + r.score, 0) / ratings.length
+      raw.length > 0
+        ? raw.reduce((sum, r) => sum + r.score, 0) / raw.length
         : null;
 
-    return { ...user, averageRating };
+    const ratingsReceived = raw.map(({ anonymous, ratedBy, ...r }) => ({
+      ...r,
+      anonymous,
+      ratedBy: anonymous
+        ? { id: ratedBy.id, name: 'Anonymous', role: '' }
+        : ratedBy,
+    }));
+
+    return { ...user, ratingsReceived, averageRating, ratingCount: raw.length };
   }
   async upsertRating(
     driverId: string,
     ratedById: string,
     score: number,
     comment?: string,
+    anonymous?: boolean,
   ) {
     return this.prisma.driverRating.upsert({
       where: { driverId_ratedById: { driverId, ratedById } },
-      create: { driverId, ratedById, score, comment },
-      update: { score, comment },
+      create: { driverId, ratedById, score, comment, anonymous: anonymous ?? false },
+      update: { score, comment, anonymous: anonymous ?? false },
     });
   }
 
@@ -251,6 +261,7 @@ export class UsersService {
         id: true,
         score: true,
         comment: true,
+        anonymous: true,
         createdAt: true,
         ratedBy: { select: { id: true, name: true, role: true } },
       },
@@ -262,7 +273,15 @@ export class UsersService {
         ? ratings.reduce((s, r) => s + r.score, 0) / ratings.length
         : null;
 
-    return { ratings, averageRating, ratingCount: ratings.length };
+    const masked = ratings.map(({ anonymous, ratedBy, ...r }) => ({
+      ...r,
+      anonymous,
+      ratedBy: anonymous
+        ? { id: ratedBy.id, name: 'Anonymous', role: '' }
+        : ratedBy,
+    }));
+
+    return { ratings: masked, averageRating, ratingCount: ratings.length };
   }
 
   async uploadAvatar(userId: string, file: Express.Multer.File) {
