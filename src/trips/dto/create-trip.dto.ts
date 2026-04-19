@@ -1,4 +1,33 @@
-import { IsString, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsEnum,
+  IsInt,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class TripStopDto {
+  @IsEnum(['LOADING', 'UNLOADING'])
+  type: 'LOADING' | 'UNLOADING';
+
+  @IsInt()
+  @IsOptional()
+  order?: number;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
+
+  @IsString()
+  @IsOptional()
+  ref?: string;
+
+  @IsString()
+  @IsOptional()
+  coords?: string;
+}
 
 export class CreateTripDto {
   @IsString()
@@ -13,4 +42,10 @@ export class CreateTripDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TripStopDto)
+  @IsOptional()
+  stops?: TripStopDto[];
 }

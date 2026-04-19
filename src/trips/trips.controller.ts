@@ -40,10 +40,41 @@ export class TripsController {
     return this.tripsService.findAll(companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  // NOTE: must come before :id to avoid route conflict
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get('truck/:truckId')
+  findByTruck(
+    @Param('truckId') truckId: string,
+    @GetUser('companyId') companyId: string,
+  ) {
+    return this.tripsService.findByTruck(truckId, companyId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Get(':id')
   findOne(@Param('id') id: string, @GetUser('companyId') companyId: string) {
     return this.tripsService.findOne(id, companyId);
+  }
+
+  // load message history for a trip
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get(':id/messages')
+  getMessages(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+  ) {
+    return this.tripsService.getMessages(id, companyId);
+  }
+
+  // update trip info (notes + stops)
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Patch(':id/info')
+  updateInfo(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @Body() dto: UpdateTripDto,
+  ) {
+    return this.tripsService.updateInfo(id, companyId, dto);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
@@ -65,6 +96,7 @@ export class TripsController {
   ) {
     return this.tripsService.driverUpdateStatus(id, driverId, dto);
   }
+
   @Roles('ADMIN', 'TEAMLEAD')
   @Delete(':id')
   async remove(

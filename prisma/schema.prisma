@@ -133,16 +133,36 @@ model Trip {
   driverId     String
   truckId      String
   companyId    String
+  notes        String?
   createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   dispatcher User           @relation("DispatcherTrips", fields: [dispatcherId], references: [id])
   driver     User           @relation("DriverTrips", fields: [driverId], references: [id])
   truck      Truck          @relation(fields: [truckId], references: [id])
   company    Company        @relation(fields: [companyId], references: [id])
+  stops      TripStop[]
   documents  TripDocument[]
   messages   Message[]
   comments   TripComment[]
   alarms     Alarm[]
+}
+
+model TripStop {
+  id      String   @id @default(uuid())
+  tripId  String
+  type    StopType
+  order   Int      @default(0)
+  address String?  // full address: company, street, postcode, city
+  ref     String?
+  coords  String?  // "lat,lng" format
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+enum StopType {
+  LOADING
+  UNLOADING
 }
 
 enum TripStatus {

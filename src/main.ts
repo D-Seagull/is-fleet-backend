@@ -18,6 +18,7 @@ async function bootstrap() {
     .useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
+        transform: true, // required for @ValidateNested + @Type() to work
       }),
     )
     .useGlobalFilters(new AllExceptionsFilter())
