@@ -81,6 +81,8 @@ model User {
   currentTruck       Truck?              @relation("CurrentDriver")
   advanceRequests AdvanceRequest[] @relation("DriverAdvanceRequests")
   otpCodes           OtpCode[]
+  ratingsReceived    DriverRating[] @relation("DriverRatings")
+  ratingsGiven       DriverRating[] @relation("GivenRatings")
 }
 
 enum Role {
@@ -323,6 +325,20 @@ model GroupDispatcher {
   group      Group @relation(fields: [groupId], references: [id])
   dispatcher User  @relation(fields: [dispatcherId], references: [id])
 }
+model DriverRating {
+  id        String   @id @default(uuid())
+  driverId  String
+  ratedById String
+  score     Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  driver  User @relation("DriverRatings", fields: [driverId], references: [id])
+  ratedBy User @relation("GivenRatings", fields: [ratedById], references: [id])
+
+  @@unique([driverId, ratedById])
+}
+
 model AdvanceRequest {
   id        String        @id @default(uuid())
   driverId  String

@@ -14,6 +14,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
+import { UpdateDriverDto } from './dto/update-driver.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -60,6 +61,25 @@ export class UsersController {
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Patch(':id')
+  updateDriver(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @Body() dto: UpdateDriverDto,
+  ) {
+    return this.usersService.updateDriver(id, companyId, dto);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Patch(':id/activate')
+  activate(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+  ) {
+    return this.usersService.activate(id, companyId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
   @Patch(':id/deactivate')
   deactivate(
     @Param('id') id: string,
@@ -67,6 +87,27 @@ export class UsersController {
     @GetUser('role') role: string,
   ) {
     return this.usersService.deactivate(id, companyId, role);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Post(':id/ratings')
+  upsertRating(
+    @Param('id') driverId: string,
+    @GetUser('id') ratedById: string,
+    @Body() body: { score: number; comment?: string },
+  ) {
+    return this.usersService.upsertRating(
+      driverId,
+      ratedById,
+      body.score,
+      body.comment,
+    );
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Get(':id/ratings')
+  getDriverRatings(@Param('id') driverId: string) {
+    return this.usersService.getDriverRatings(driverId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')

@@ -63,7 +63,6 @@ export class UsersService {
       data: {
         name: dto.name,
         phone: dto.phone,
-        email: dto.email,
         password: hash,
         role: 'DRIVER',
         language: dto.language ?? 'EN',
@@ -76,24 +75,92 @@ export class UsersService {
   }
 
   async getCompanyUsers(companyId: string | null) {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: companyId ? { companyId } : {},
       select: {
         id: true,
         name: true,
         email: true,
         phone: true,
+        avatar: true,
         role: true,
+        language: true,
         isActive: true,
         createdAt: true,
-        company: {
-          select: {
-            name: true,
-          },
-        },
+        dispatcher: { select: { id: true, name: true } },
+        currentTruck: { select: { id: true, plate: true, status: true } },
+        company: { select: { name: true } },
+        _count: { select: { ratingsReceived: true } },
+        ratingsReceived: { select: { score: true } },
+      },
+    });
+
+    return users.map(({ ratingsReceived, _count, ...u }) => ({
+      ...u,
+      ratingCount: _count.ratingsReceived,
+      averageRating:
+        ratingsReceived.length > 0
+          ? ratingsReceived.reduce((s, r) => s + r.score, 0) /
+            ratingsReceived.length
+          : null,
+    }));
+  }
+  async updateDriver(
+    id: string,
+    companyId: string | null,
+    dto: { phone?: string; dispatcherId?: string | null; truckId?: string | null },
+  ) {
+    const user = await this.prisma.user.findFirst({
+      where: companyId ? { id, companyId } : { id },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (dto.truckId !== undefined) {
+      // unassign from old truck
+      await this.prisma.truck.updateMany({
+        where: { currentDriverId: id },
+        data: { currentDriverId: null },
+      });
+      // assign to new truck
+      if (dto.truckId) {
+        await this.prisma.truck.update({
+          where: { id: dto.truckId },
+          data: { currentDriverId: id },
+        });
+      }
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
+        ...(dto.dispatcherId !== undefined ? { dispatcherId: dto.dispatcherId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        dispatcherId: true,
+        dispatcher: { select: { id: true, name: true } },
+        currentTruck: { select: { id: true, plate: true, status: true } },
       },
     });
   }
+
+  async activate(id: string, companyId: string | null) {
+    const user = await this.prisma.user.findFirst({
+      where: companyId ? { id, companyId } : { id },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { isActive: true },
+    });
+
+    return { message: `User ${user.name} activated!` };
+  }
+
   async deactivate(
     id: string,
     companyId: string | null,
@@ -128,16 +195,76 @@ export class UsersService {
         id: true,
         name: true,
         email: true,
+        phone: true,
+        avatar: true,
         role: true,
         language: true,
+        isActive: true,
         teamleadId: true,
         companyId: true,
         createdAt: true,
+        dispatcher: {
+          select: { id: true, name: true, email: true },
+        },
+        currentTruck: {
+          select: { id: true, plate: true, status: true },
+        },
+        ratingsReceived: {
+          select: {
+            id: true,
+            score: true,
+            comment: true,
+            createdAt: true,
+            ratedBy: { select: { id: true, name: true, role: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
     if (!user) throw new NotFoundException('Користувач не знайдений');
-    return user;
+
+    const ratings = user.ratingsReceived;
+    const averageRating =
+      ratings.length > 0
+        ? ratings.reduce((sum, r) => sum + r.score, 0) / ratings.length
+        : null;
+
+    return { ...user, averageRating };
   }
+  async upsertRating(
+    driverId: string,
+    ratedById: string,
+    score: number,
+    comment?: string,
+  ) {
+    return this.prisma.driverRating.upsert({
+      where: { driverId_ratedById: { driverId, ratedById } },
+      create: { driverId, ratedById, score, comment },
+      update: { score, comment },
+    });
+  }
+
+  async getDriverRatings(driverId: string) {
+    const ratings = await this.prisma.driverRating.findMany({
+      where: { driverId },
+      select: {
+        id: true,
+        score: true,
+        comment: true,
+        createdAt: true,
+        ratedBy: { select: { id: true, name: true, role: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const averageRating =
+      ratings.length > 0
+        ? ratings.reduce((s, r) => s + r.score, 0) / ratings.length
+        : null;
+
+    return { ratings, averageRating, ratingCount: ratings.length };
+  }
+
   async uploadAvatar(userId: string, file: Express.Multer.File) {
     const user = await this.prisma.user.findFirst({ where: { id: userId } });
 
