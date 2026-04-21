@@ -122,7 +122,6 @@ export class AnnouncementsService {
         : { isTemplate, createdBy: userId },
       orderBy: { createdAt: 'desc' },
     });
-    if (!drafts.length) throw new NotFoundException('Чернеток не знайдено');
     return drafts;
   }
   async publishDraft(draftId: string, companyId: string, userId: string) {

@@ -37,6 +37,15 @@ export class TrucksController {
     return this.trucksService.findAll(companyId);
   }
 
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Get('my')
+  findMy(
+    @GetUser('id') userId: string,
+    @GetUser('companyId') companyId: string,
+  ) {
+    return this.trucksService.findMyTrucks(userId, companyId);
+  }
+
   @Roles('ADMIN', 'TEAMLEAD')
   @Get('deactivated')
   findDeactivated(@GetUser('companyId') companyId: string) {

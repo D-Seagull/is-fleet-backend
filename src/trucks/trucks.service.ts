@@ -24,6 +24,9 @@ export class TrucksService {
         currentDriver: {
           select: { id: true, name: true, phone: true },
         },
+        dispatcher: {
+          select: { id: true, name: true },
+        },
         truckNotes: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -40,6 +43,9 @@ export class TrucksService {
         currentDriver: {
           select: { id: true, name: true, phone: true },
         },
+        dispatcher: {
+          select: { id: true, name: true },
+        },
       },
     });
     if (!truck) throw new NotFoundException('truck not found');
@@ -51,6 +57,22 @@ export class TrucksService {
     return this.prisma.truck.update({
       where: { id },
       data: dto,
+    });
+  }
+
+  async findMyTrucks(userId: string, companyId: string) {
+    return this.prisma.truck.findMany({
+      where: { companyId, isActive: true, dispatcherId: userId },
+      include: {
+        currentDriver: {
+          select: { id: true, name: true, phone: true },
+        },
+        truckNotes: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { content: true, createdAt: true },
+        },
+      },
     });
   }
 

@@ -40,6 +40,16 @@ export class TripsController {
     return this.tripsService.findAll(companyId);
   }
 
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Post('broadcast')
+  broadcast(
+    @GetUser('id') userId: string,
+    @GetUser('companyId') companyId: string,
+    @Body('content') content: string,
+  ) {
+    return this.tripsService.broadcastToMyTrucks(userId, companyId, content);
+  }
+
   // NOTE: must come before :id to avoid route conflict
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Get('truck/:truckId')

@@ -6,6 +6,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
+import { MessagesGateway } from '../messages/messages.gateway';
 
 const tripInclude = {
   driver: { select: { id: true, name: true, phone: true } },
@@ -15,9 +16,14 @@ const tripInclude = {
   documents: true,
 };
 
+const ACTIVE_STATUSES = ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'] as const;
+
 @Injectable()
 export class TripsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private gateway: MessagesGateway,
+  ) {}
 
   async create(companyId: string, dispatcherId: string, dto: CreateTripDto) {
     return this.prisma.trip.create({
@@ -137,5 +143,28 @@ export class TripsService {
     const trip = await this.findOne(id, companyId);
     await this.prisma.trip.delete({ where: { id } });
     return { message: `Trip ${trip.title} deleted!` };
+  }
+
+  async broadcastToMyTrucks(userId: string, companyId: string, content: string) {
+    const trips = await this.prisma.trip.findMany({
+      where: {
+        companyId,
+        status: { in: [...ACTIVE_STATUSES] },
+        truck: { dispatcherId: userId },
+      },
+    });
+
+    const results = await Promise.all(
+      trips.map(async (trip) => {
+        const message = await this.prisma.message.create({
+          data: { tripId: trip.id, senderId: userId, content },
+          include: { sender: { select: { id: true, name: true, role: true } } },
+        });
+        this.gateway.server.to(trip.id).emit('newMessage', message);
+        return message;
+      }),
+    );
+
+    return { sent: results.length };
   }
 }

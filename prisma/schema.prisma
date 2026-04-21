@@ -79,6 +79,7 @@ model User {
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
   currentTruck       Truck?              @relation("CurrentDriver")
+  assignedTrucks     Truck[]             @relation("TruckDispatcher")
   advanceRequests AdvanceRequest[] @relation("DriverAdvanceRequests")
   otpCodes           OtpCode[]
   ratingsReceived    DriverRating[] @relation("DriverRatings")
@@ -111,11 +112,13 @@ model Truck {
   truckNotes      TruckNote[]
   companyId       String
   currentDriverId String?     @unique
+  dispatcherId    String?
   createdAt       DateTime    @default(now())
 
   groups        GroupTruck[]
   company       Company      @relation(fields: [companyId], references: [id])
   currentDriver User?        @relation("CurrentDriver", fields: [currentDriverId], references: [id])
+  dispatcher    User?        @relation("TruckDispatcher", fields: [dispatcherId], references: [id])
   trips         Trip[]
 }
 
