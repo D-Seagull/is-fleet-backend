@@ -43,6 +43,10 @@ export class CreateTripDto {
   @IsOptional()
   notes?: string;
 
+  @IsString()
+  @IsOptional()
+  orderNumber?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TripStopDto)

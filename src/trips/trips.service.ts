@@ -34,6 +34,7 @@ export class TripsService {
         truckId: dto.truckId,
         companyId,
         notes: dto.notes,
+        orderNumber: dto.orderNumber,
         stops: dto.stops?.length
           ? {
               create: dto.stops.map((s, i) => ({
@@ -123,7 +124,7 @@ export class TripsService {
 
     return this.prisma.trip.update({
       where: { id },
-      data: { notes: dto.notes },
+      data: { notes: dto.notes, orderNumber: dto.orderNumber },
       include: tripInclude,
     });
   }

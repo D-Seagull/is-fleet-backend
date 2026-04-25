@@ -32,6 +32,10 @@ export class UpdateTripDto {
   @IsOptional()
   notes?: string;
 
+  @IsString()
+  @IsOptional()
+  orderNumber?: string;
+
   // replaces all stops on update
   @IsArray()
   @ValidateNested({ each: true })

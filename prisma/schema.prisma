@@ -137,6 +137,7 @@ model Trip {
   truckId      String
   companyId    String
   notes        String?
+  orderNumber  String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
