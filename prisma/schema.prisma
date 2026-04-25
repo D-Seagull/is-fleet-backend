@@ -178,13 +178,19 @@ enum TripStatus {
   DELIVERED
 }
 
+enum FileDocType {
+  PHOTO
+  DOCUMENT
+}
+
 model TripDocument {
-  id         String   @id @default(uuid())
+  id         String      @id @default(uuid())
   tripId     String
   fileUrl    String
   fileName   String
   uploadedBy String
-  createdAt  DateTime @default(now())
+  fileType   FileDocType @default(DOCUMENT)
+  createdAt  DateTime    @default(now())
   publicId   String?
   trip     Trip @relation(fields: [tripId], references: [id])
   uploader User @relation(fields: [uploadedBy], references: [id])

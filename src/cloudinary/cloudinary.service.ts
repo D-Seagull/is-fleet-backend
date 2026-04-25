@@ -27,23 +27,42 @@ export class CloudinaryService {
   ): Promise<{ url: string; publicId: string }> {
     if (!file?.buffer) throw new Error('No file buffer found');
 
+    const isImage = file.mimetype.startsWith('image/');
+
     return new Promise((resolve, reject) => {
       cloudinary.uploader
-        .upload_stream({ folder: 'is-fleet' }, (error, result) => {
-          if (error) {
-            console.error('Cloudinary upload error:', error);
-            reject(new Error(error.message || 'Upload failed'));
-          } else {
-            resolve({
-              url: result!.secure_url,
-              publicId: result!.public_id,
-            });
-          }
-        })
+        .upload_stream(
+          {
+            folder: isImage ? 'is-fleet/photos' : 'is-fleet/documents',
+            resource_type: isImage ? 'image' : 'raw',
+            type: 'upload',                 // публічний доступ
+            ...(isImage && {
+              quality: 'auto:eco',
+              fetch_format: 'auto',
+            }),
+          },
+          (error, result) => {
+            if (error) {
+              console.error('Cloudinary upload error:', error);
+              reject(new Error(error.message || 'Upload failed'));
+            } else {
+              // Для raw-ресурсів деякі версії SDK повертають /image/upload/ у secure_url.
+              // Явно виправляємо URL відповідно до resource_type.
+              const url = isImage
+                ? result!.secure_url
+                : result!.secure_url.replace('/image/upload/', '/raw/upload/');
+              resolve({
+                url,
+                publicId: result!.public_id,
+              });
+            }
+          },
+        )
         .end(file.buffer);
     });
   }
-  async deleteFile(publicId: string): Promise<void> {
-    await cloudinary.uploader.destroy(publicId);
+
+  async deleteFile(publicId: string, resourceType: 'image' | 'raw' = 'image'): Promise<void> {
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
   }
 }

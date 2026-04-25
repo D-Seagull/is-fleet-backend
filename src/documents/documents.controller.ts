@@ -9,7 +9,9 @@ import {
   UploadedFile,
   Body,
   UploadedFiles,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { DocumentsService } from './documents.service';
@@ -44,7 +46,25 @@ export class DocumentsController {
     return this.documentsService.findByTrip(tripId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get('truck/:truckId')
+  findByTruck(@Param('truckId') truckId: string) {
+    return this.documentsService.findByTruck(truckId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get(':id/view')
+  view(@Param('id') id: string, @Res() res: Response) {
+    return this.documentsService.view(id, res);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get(':id/download')
+  download(@Param('id') id: string, @Res() res: Response) {
+    return this.documentsService.download(id, res);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.documentsService.remove(id);
