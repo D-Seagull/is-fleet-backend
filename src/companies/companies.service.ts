@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 
 @Injectable()
 export class CompaniesService {
   constructor(
     private prisma: PrismaService,
-    private cloudinary: CloudinaryService,
+    private storage: SupabaseStorageService,
   ) {}
 
   async getCompany(companyId: string) {
@@ -22,16 +22,15 @@ export class CompaniesService {
       where: { id: companyId },
     });
 
-    // видаляємо старе лого з Cloudinary
     if (company?.logoPublicId) {
-      await this.cloudinary.deleteFile(company.logoPublicId as string);
+      await this.storage.deleteFile(company.logoPublicId as string);
     }
 
-    const { url, publicId } = await this.cloudinary.uploadFile(file);
+    const { url, storagePath } = await this.storage.uploadWithUrl(file, 'logos');
 
     return this.prisma.company.update({
       where: { id: companyId },
-      data: { logo: url, logoPublicId: publicId },
+      data: { logo: url, logoPublicId: storagePath },
     });
   }
 
@@ -45,7 +44,7 @@ export class CompaniesService {
     });
 
     if (company?.logoPublicId) {
-      await this.cloudinary.deleteFile(company.logoPublicId as string);
+      await this.storage.deleteFile(company.logoPublicId as string);
     }
 
     return this.prisma.company.update({

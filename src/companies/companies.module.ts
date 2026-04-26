@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { CompaniesService } from './companies.service';
 import { CompaniesController } from './companies.controller';
-import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
+import { SupabaseStorageModule } from 'src/supabase-storage/supabase-storage.module';
 
 @Module({
-  imports: [CloudinaryModule],
+  imports: [SupabaseStorageModule],
   controllers: [CompaniesController],
   providers: [CompaniesService],
   exports: [CompaniesService],

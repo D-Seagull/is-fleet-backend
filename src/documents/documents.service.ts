@@ -1,13 +1,12 @@
-import { Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
-import { Response } from 'express';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 
 @Injectable()
 export class DocumentsService {
   constructor(
     private prisma: PrismaService,
-    private cloudinary: CloudinaryService,
+    private storage: SupabaseStorageService,
   ) {}
 
   async uploadMany(
@@ -25,13 +24,13 @@ export class DocumentsService {
         const isImage = file.mimetype.startsWith('image/');
         const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
 
-        const { url, publicId } = await this.cloudinary.uploadFile(file);
+        const { storagePath } = await this.storage.uploadFile(file);
 
-        return this.prisma.tripDocument.create({
+        const doc = await this.prisma.tripDocument.create({
           data: {
             tripId,
-            fileUrl: url,
-            publicId,
+            fileUrl: storagePath,
+            publicId: storagePath,
             fileName: file.originalname,
             uploadedBy,
             fileType,
@@ -40,6 +39,9 @@ export class DocumentsService {
             uploader: { select: { id: true, name: true, role: true } },
           },
         });
+
+        const signedUrl = await this.storage.getSignedUrl(storagePath, 3600);
+        return { ...doc, signedUrl };
       }),
     );
   }
@@ -50,89 +52,45 @@ export class DocumentsService {
     });
     if (!document) throw new NotFoundException('Документ не знайдений');
 
-    if (document.publicId) {
-      const resourceType = document.fileType === 'PHOTO' ? 'image' : 'raw';
-      await this.cloudinary.deleteFile(document.publicId, resourceType);
+    // fileUrl тепер = storagePath у Supabase bucket
+    if (document.fileUrl) {
+      await this.storage.deleteFile(document.fileUrl);
     }
 
     await this.prisma.tripDocument.delete({ where: { id } });
     return { message: `Документ ${document.fileName} видалений` };
   }
 
+  async view(id: string): Promise<{ url: string }> {
+    const doc = await this.prisma.tripDocument.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException('Документ не знайдений');
+    const url = await this.storage.getSignedUrl(doc.fileUrl, 3600);
+    return { url };
+  }
+
+  async download(id: string): Promise<{ url: string }> {
+    const doc = await this.prisma.tripDocument.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException('Документ не знайдений');
+    const url = await this.storage.getSignedUrl(doc.fileUrl, 3600, doc.fileName);
+    return { url };
+  }
+
+  private async withSignedUrl<T extends { fileUrl: string }>(doc: T) {
+    const signedUrl = await this.storage.getSignedUrl(doc.fileUrl, 3600);
+    return { ...doc, signedUrl };
+  }
+
   async findByTrip(tripId: string) {
-    return this.prisma.tripDocument.findMany({
+    const docs = await this.prisma.tripDocument.findMany({
       where: { tripId },
       include: { uploader: { select: { id: true, name: true, role: true } } },
       orderBy: { createdAt: 'desc' },
     });
-  }
-
-  private async proxyFile(
-    id: string,
-    res: Response,
-    disposition: 'attachment' | 'inline',
-  ): Promise<void> {
-    const doc = await this.prisma.tripDocument.findUnique({ where: { id } });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
-
-    // Нормалізуємо URL: деякі Cloudinary SDK повертають /image/upload/ для raw-ресурсів
-    const fileUrl = doc.fileType === 'DOCUMENT'
-      ? doc.fileUrl.replace('/image/upload/', '/raw/upload/')
-      : doc.fileUrl;
-
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new NotFoundException(`Не вдалося отримати файл: ${response.statusText}`);
-    }
-
-    const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
-
-    // Визначаємо розширення файлу
-    let fileName = doc.fileName;
-    if (!/\.[a-z0-9]{2,5}$/i.test(fileName)) {
-      // 1. Спробуємо з URL Cloudinary
-      const urlPart = fileUrl.split('/').pop()?.split('?')[0] ?? '';
-      const extFromUrl = urlPart.match(/(\.[a-z0-9]{2,5})$/i)?.[1];
-      // 2. Або з Content-Type відповіді
-      const MIME_EXT: Record<string, string> = {
-        'application/pdf': '.pdf',
-        'application/msword': '.doc',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-        'application/vnd.ms-excel': '.xls',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-        'image/jpeg': '.jpg',
-        'image/png': '.png',
-        'image/webp': '.webp',
-      };
-      const mimeBase = contentType.split(';')[0].trim();
-      const extFromMime = MIME_EXT[mimeBase];
-      fileName += extFromUrl ?? extFromMime ?? '';
-    }
-    const encodedName = encodeURIComponent(fileName);
-
-    res.set({
-      'Content-Type': contentType,
-      'Content-Disposition':
-        disposition === 'attachment'
-          ? `attachment; filename*=UTF-8''${encodedName}`
-          : `inline; filename*=UTF-8''${encodedName}`,
-    });
-
-    const { Readable } = await import('stream');
-    const nodeStream = Readable.fromWeb(response.body as any);
-    nodeStream.pipe(res);
-  }
-
-  async view(id: string, res: Response): Promise<void> {
-    return this.proxyFile(id, res, 'inline');
-  }
-
-  async download(id: string, res: Response): Promise<void> {
-    return this.proxyFile(id, res, 'attachment');
+    return Promise.all(docs.map((d) => this.withSignedUrl(d)));
   }
 
   async findByTruck(truckId: string) {
-    return this.prisma.tripDocument.findMany({
+    const docs = await this.prisma.tripDocument.findMany({
       where: { trip: { truckId } },
       include: {
         uploader: { select: { id: true, name: true, role: true } },
@@ -140,5 +98,6 @@ export class DocumentsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return Promise.all(docs.map((d) => this.withSignedUrl(d)));
   }
 }

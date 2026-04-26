@@ -7,7 +7,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { v4 as uuidv4 } from 'uuid';
 import { MailService } from 'src/mail/mail.service';
 
@@ -15,7 +15,7 @@ import { MailService } from 'src/mail/mail.service';
 export class UsersService {
   constructor(
     private prisma: PrismaService,
-    private cloudinary: CloudinaryService,
+    private storage: SupabaseStorageService,
     private mail: MailService,
   ) {}
 
@@ -288,14 +288,14 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({ where: { id: userId } });
 
     if (user?.avatarPublicId) {
-      await this.cloudinary.deleteFile(user.avatarPublicId as string);
+      await this.storage.deleteFile(user.avatarPublicId as string);
     }
 
-    const { url, publicId } = await this.cloudinary.uploadFile(file);
+    const { url, storagePath } = await this.storage.uploadWithUrl(file, 'avatars');
 
     return this.prisma.user.update({
       where: { id: userId },
-      data: { avatar: url, avatarPublicId: publicId },
+      data: { avatar: url, avatarPublicId: storagePath },
     });
   }
 
@@ -303,7 +303,7 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({ where: { id: userId } });
 
     if (user?.avatarPublicId) {
-      await this.cloudinary.deleteFile(user.avatarPublicId as string);
+      await this.storage.deleteFile(user.avatarPublicId as string);
     }
 
     return this.prisma.user.update({

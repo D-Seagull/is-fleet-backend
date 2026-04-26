@@ -5,7 +5,6 @@ import { UsersModule } from './users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TrucksModule } from './trucks/trucks.module';
 import { TripsModule } from './trips/trips.module';
-import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { DocumentsModule } from './documents/documents.module';
 import { MessagesModule } from './messages/messages.module';
 import { TranslationService } from './translation/translation.service';
@@ -32,7 +31,6 @@ import { GroupMessagesModule } from './group-messages/group-messages.module';
     PrismaModule,
     TrucksModule,
     TripsModule,
-    CloudinaryModule,
     DocumentsModule,
     MessagesModule,
     TranslationModule,
