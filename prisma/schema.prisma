@@ -297,14 +297,18 @@ model AnnouncementDraft {
 }
 
 model OtpCode {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   phone     String
   code      String
   userId    String
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  @@index([phone, createdAt])
 }
 
 enum GroupType {

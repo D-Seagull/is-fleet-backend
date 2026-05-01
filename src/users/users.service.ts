@@ -1,15 +1,30 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { Prisma } from '@prisma/client';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { v4 as uuidv4 } from 'uuid';
 import { MailService } from 'src/mail/mail.service';
+import { normalizePhone as toCanonicalPhone } from 'src/common/utils/phone';
+
+/** Same as shared util but throws 400 — used by create flows. */
+function requireValidPhone(input: string): string {
+  const canonical = toCanonicalPhone(input);
+  if (!canonical) {
+    throw new BadRequestException(
+      'Phone must be in international format, e.g. +380501234567',
+    );
+  }
+  return canonical;
+}
 
 @Injectable()
 export class UsersService {
@@ -58,20 +73,33 @@ export class UsersService {
     creatorId: string,
     dto: CreateDriverDto,
   ) {
+    const phone = requireValidPhone(dto.phone);
     const hash = dto.password ? await bcrypt.hash(dto.password, 10) : null;
-    const newDriver = await this.prisma.user.create({
-      data: {
-        name: dto.name,
-        phone: dto.phone,
-        password: hash,
-        role: 'DRIVER',
-        language: dto.language ?? 'EN',
-        companyId,
-        dispatcherId: creatorId,
-      },
-    });
-    const { password, ...result } = newDriver;
-    return result;
+    try {
+      const newDriver = await this.prisma.user.create({
+        data: {
+          name: dto.name.trim(),
+          phone,
+          password: hash,
+          role: 'DRIVER',
+          language: dto.language ?? 'EN',
+          companyId,
+          dispatcherId: creatorId,
+        },
+      });
+      const { password, ...result } = newDriver;
+      return result;
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'This phone number is already used by another driver.',
+        );
+      }
+      throw e;
+    }
   }
 
   async getCompanyUsers(companyId: string | null) {

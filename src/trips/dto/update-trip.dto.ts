@@ -2,6 +2,11 @@ import { IsEnum, IsOptional, IsArray, ValidateNested, IsString, IsInt } from 'cl
 import { TripStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 
+export class AssignTripDto {
+  @IsString()
+  driverId: string;
+}
+
 export class UpdateStopDto {
   @IsEnum(['LOADING', 'UNLOADING'])
   type: 'LOADING' | 'UNLOADING';

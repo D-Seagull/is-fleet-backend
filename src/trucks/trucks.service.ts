@@ -60,6 +60,24 @@ export class TrucksService {
     });
   }
 
+  /** Returns the truck currently assigned to a driver (driver-side endpoint). */
+  async findDriverTruck(driverId: string) {
+    return this.prisma.truck.findFirst({
+      where: { currentDriverId: driverId, isActive: true },
+      include: {
+        dispatcher: {
+          select: { id: true, name: true, phone: true, avatar: true },
+        },
+        truckNotes: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: { select: { id: true, name: true, role: true } },
+          },
+        },
+      },
+    });
+  }
+
   async findMyTrucks(userId: string, companyId: string) {
     return this.prisma.truck.findMany({
       where: { companyId, isActive: true, dispatcherId: userId },

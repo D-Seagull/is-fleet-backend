@@ -7,8 +7,13 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Allow LAN dev origins (Expo on a real phone, Next.js dev server, etc.).
+  const corsOrigins =
+    process.env.NODE_ENV === 'production'
+      ? ['http://localhost:3000', process.env.FRONTEND_URL].filter(Boolean)
+      : true; // reflect request origin in dev
   app.enableCors({
-    origin: ['http://localhost:3000', process.env.FRONTEND_URL].filter(Boolean),
+    origin: corsOrigins,
     credentials: true,
   });
   app

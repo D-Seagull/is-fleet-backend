@@ -77,6 +77,29 @@ export class TripsService {
     return trip;
   }
 
+  // Driver's own trips — used by the driver mobile app.
+  async findMyTrips(driverId: string) {
+    return this.prisma.trip.findMany({
+      where: { driverId },
+      include: tripInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // Currently active trip for the driver (any non-DELIVERED status).
+  // Returns null if there's no active assignment.
+  async findMyActiveTrip(driverId: string) {
+    const active = await this.prisma.trip.findFirst({
+      where: {
+        driverId,
+        status: { in: [...ACTIVE_STATUSES] },
+      },
+      include: tripInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+    return active ?? null;
+  }
+
   // load message history for a trip
   async getMessages(tripId: string, companyId: string) {
     const trip = await this.prisma.trip.findFirst({
@@ -125,6 +148,21 @@ export class TripsService {
     return this.prisma.trip.update({
       where: { id },
       data: { notes: dto.notes, orderNumber: dto.orderNumber },
+      include: tripInclude,
+    });
+  }
+
+  /** Reassign a trip to a different driver (dispatcher action). */
+  async assignDriver(id: string, companyId: string, driverId: string) {
+    // Verify trip belongs to this company
+    const trip = await this.prisma.trip.findFirst({
+      where: { id, companyId },
+    });
+    if (!trip) throw new NotFoundException('Рейс не знайдений');
+
+    return this.prisma.trip.update({
+      where: { id },
+      data: { driverId },
       include: tripInclude,
     });
   }

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
-import { UpdateTripDto } from './dto/update-trip.dto';
+import { AssignTripDto, UpdateTripDto } from './dto/update-trip.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -60,6 +60,19 @@ export class TripsController {
     return this.tripsService.findByTruck(truckId, companyId);
   }
 
+  // ─── Driver-scoped (mobile app) ──────────────────────────────────────────
+  @Roles('DRIVER')
+  @Get('my')
+  findMyTrips(@GetUser('id') driverId: string) {
+    return this.tripsService.findMyTrips(driverId);
+  }
+
+  @Roles('DRIVER')
+  @Get('my/active')
+  findMyActiveTrip(@GetUser('id') driverId: string) {
+    return this.tripsService.findMyActiveTrip(driverId);
+  }
+
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Get(':id')
   findOne(@Param('id') id: string, @GetUser('companyId') companyId: string) {
@@ -85,6 +98,17 @@ export class TripsController {
     @Body() dto: UpdateTripDto,
   ) {
     return this.tripsService.updateInfo(id, companyId, dto);
+  }
+
+  /** Reassign an existing trip to a different driver. */
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Patch(':id/assign')
+  assignDriver(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @Body() dto: AssignTripDto,
+  ) {
+    return this.tripsService.assignDriver(id, companyId, dto.driverId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')

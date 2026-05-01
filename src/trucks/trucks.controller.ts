@@ -37,6 +37,13 @@ export class TrucksController {
     return this.trucksService.findAll(companyId);
   }
 
+  /** Driver-only: returns the truck currently assigned to the logged-in driver. */
+  @Roles('DRIVER')
+  @Get('driver-truck')
+  findDriverTruck(@GetUser('id') userId: string) {
+    return this.trucksService.findDriverTruck(userId);
+  }
+
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
   @Get('my')
   findMy(
@@ -97,7 +104,7 @@ export class TrucksController {
     return this.trucksService.getNotes(truckId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Delete('notes/:id')
   removeNote(@Param('id') id: string, @GetUser('id') userId: string) {
     return this.trucksService.removeNote(id, userId);

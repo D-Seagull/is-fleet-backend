@@ -72,10 +72,7 @@ export class UsersController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
   @Patch(':id/activate')
-  activate(
-    @Param('id') id: string,
-    @GetUser('companyId') companyId: string,
-  ) {
+  activate(@Param('id') id: string, @GetUser('companyId') companyId: string) {
     return this.usersService.activate(id, companyId);
   }
 
