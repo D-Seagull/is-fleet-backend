@@ -36,6 +36,12 @@ export class DocumentsController {
     return this.documentsService.uploadMany(tripId, userId, files);
   }
 
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Get()
+  findAll(@GetUser('companyId') companyId: string) {
+    return this.documentsService.findByCompany(companyId);
+  }
+
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Get('trip/:tripId')
   findByTrip(@Param('tripId') tripId: string) {

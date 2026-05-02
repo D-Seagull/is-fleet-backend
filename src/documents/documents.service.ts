@@ -100,4 +100,25 @@ export class DocumentsService {
     });
     return Promise.all(docs.map((d) => this.withSignedUrl(d)));
   }
+
+  // All documents within a company. Used by the dispatcher web UI to show a
+  // single "all my docs" page grouped by trip.
+  async findByCompany(companyId: string) {
+    const docs = await this.prisma.tripDocument.findMany({
+      where: { trip: { companyId } },
+      include: {
+        uploader: { select: { id: true, name: true, role: true } },
+        trip: {
+          select: {
+            id: true,
+            title: true,
+            orderNumber: true,
+            truck: { select: { id: true, plate: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return Promise.all(docs.map((d) => this.withSignedUrl(d)));
+  }
 }

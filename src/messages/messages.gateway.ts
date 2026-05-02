@@ -74,10 +74,38 @@ export class MessagesGateway {
   ) {
     // Always use the authenticated userId from the JWT — never trust client-sent senderId
     const senderId = client.data.userId as string | undefined;
-    if (!senderId) return;
+    console.log('[ws] sendMessage from', client.id, 'senderId=', senderId, 'dto=', dto);
+    if (!senderId) {
+      console.warn('[ws] sendMessage REJECTED — no senderId on socket', client.id);
+      return;
+    }
 
-    const message = await this.messagesService.create(senderId, dto);
-    this.server.to(dto.tripId).emit('newMessage', message);
-    return message;
+    try {
+      const message = await this.messagesService.create(senderId, dto);
+      this.server.to(dto.tripId).emit('newMessage', message);
+      console.log('[ws] newMessage emitted to room', dto.tripId, 'id=', message.id);
+      return message;
+    } catch (e) {
+      console.error('[ws] sendMessage FAILED', e);
+      throw e;
+    }
+  }
+
+  @SubscribeMessage('markTripRead')
+  async handleMarkTripRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: JoinTripDto,
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.tripId) return;
+    const ids = await this.messagesService.markTripRead(body.tripId, userId);
+    if (ids.length === 0) return;
+    // Notify everyone in the trip room (incl. the original sender) so their
+    // bubbles can flip to ✓✓.
+    this.server.to(body.tripId).emit('tripMessagesRead', {
+      tripId: body.tripId,
+      readerId: userId,
+      messageIds: ids,
+    });
   }
 }

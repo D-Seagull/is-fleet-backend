@@ -61,4 +61,21 @@ export class MessagesService {
       orderBy: { createdAt: 'asc' },
     });
   }
+
+  // Mark every unread message in a trip *not authored by* `readerId` as read.
+  // Returns the IDs that were just flipped, so the gateway can emit a precise
+  // event to the senders rather than refetching the whole history.
+  async markTripRead(tripId: string, readerId: string): Promise<string[]> {
+    const unread = await this.prisma.message.findMany({
+      where: { tripId, isRead: false, senderId: { not: readerId } },
+      select: { id: true },
+    });
+    if (unread.length === 0) return [];
+    const ids = unread.map((m) => m.id);
+    await this.prisma.message.updateMany({
+      where: { id: { in: ids } },
+      data: { isRead: true },
+    });
+    return ids;
+  }
 }

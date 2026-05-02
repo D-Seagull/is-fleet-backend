@@ -214,10 +214,13 @@ model Message {
   senderId          String
   content           String
   translatedContent String?
+  isRead            Boolean  @default(false)
   createdAt         DateTime @default(now())
 
   trip   Trip @relation(fields: [tripId], references: [id])
   sender User @relation(fields: [senderId], references: [id])
+
+  @@index([tripId, isRead])
 }
 
 model TripComment {
