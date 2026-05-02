@@ -10,6 +10,12 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
+    // WebSocket & RPC contexts have no HTTP response object — skip HTTP error handling
+    if (host.getType() !== 'http') {
+      console.error('[exception-filter] non-HTTP exception:', exception instanceof Error ? exception.message : exception);
+      return;
+    }
+
     const ctx = host.switchToHttp();
     const response = ctx.getResponse();
     const request = ctx.getRequest();

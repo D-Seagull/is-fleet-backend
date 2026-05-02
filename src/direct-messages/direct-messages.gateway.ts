@@ -27,17 +27,22 @@ export class DirectMessagesGateway
 
   async handleConnection(client: Socket) {
     try {
-      const token = client.handshake.auth.token as string;
+      // Accept token from web (auth.token) OR mobile (query.userId)
+      const token =
+        (client.handshake.auth?.token as string | undefined) ||
+        (client.handshake.query?.userId as string | undefined);
       console.log('Received token:', token ? 'exists' : 'missing');
+      if (!token) throw new Error('No token');
       const payload = this.jwt.verify(token);
-      console.log('Payload:', payload);
-      client.data.userId = payload.sub;
-
+      // userId may already be set by MessagesGateway.handleConnection — only overwrite if missing
+      if (!client.data.userId) client.data.userId = payload.sub;
       // Приєднуємо до особистої кімнати
       await client.join(`user:${payload.sub}`);
       console.log(`✅ User ${payload.sub} connected`);
-    } catch {
-      client.disconnect();
+    } catch (e) {
+      // Soft fail: log but do NOT disconnect — the socket may still be valid
+      // for trip-chat (MessagesGateway). Disconnecting here kills trip chat too.
+      console.log(`[dm-gateway] auth failed for ${client.id}: ${(e as Error).message}`);
     }
   }
 
