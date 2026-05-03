@@ -46,9 +46,16 @@ export class MessagesGateway {
         secret: process.env.JWT_SECRET,
       });
       const userId = payload.sub as string;
+      const companyId = payload.companyId as string | undefined;
       client.data.userId = userId;
+      client.data.companyId = companyId;
       void client.join(userId);
-      console.log(`[ws] ${client.id} → room:${userId}`);
+      // Company-level room so managers receive newMessage events from any
+      // trip without having to explicitly join a trip room first.
+      if (companyId) {
+        void client.join(`company-${companyId}`);
+      }
+      console.log(`[ws] ${client.id} → room:${userId} company:${companyId ?? 'n/a'}`);
     } catch {
       console.log(`[ws] ${client.id} connected without valid token`);
     }
@@ -82,7 +89,14 @@ export class MessagesGateway {
 
     try {
       const message = await this.messagesService.create(senderId, dto);
+      // Emit to the trip room (driver + dispatcher in that trip).
       this.server.to(dto.tripId).emit('newMessage', message);
+      // Also emit to the company room so managers on the trucks-list page
+      // receive instant unread-summary invalidation without joining the trip.
+      const companyId = client.data.companyId as string | undefined;
+      if (companyId) {
+        this.server.to(`company-${companyId}`).emit('newMessage', message);
+      }
       console.log('[ws] newMessage emitted to room', dto.tripId, 'id=', message.id);
       return message;
     } catch (e) {

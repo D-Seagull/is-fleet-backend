@@ -140,6 +140,7 @@ model Trip {
   orderNumber  String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  chatResetAt  DateTime?  // встановлюється при зміні водія — чат "починається заново"
 
   dispatcher User           @relation("DispatcherTrips", fields: [dispatcherId], references: [id])
   driver     User           @relation("DriverTrips", fields: [driverId], references: [id])

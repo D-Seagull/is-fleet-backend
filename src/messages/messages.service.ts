@@ -73,6 +73,110 @@ export class MessagesService {
     return { tripId: msg.tripId };
   }
 
+  // Unread summary for the dispatcher — one DB round-trip,
+  // grouped by truck, split into active-trip vs past-trip buckets.
+  async getUnreadSummary(companyId: string, requesterId: string) {
+    const ACTIVE_STATUSES = [
+      'ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED',
+    ] as const;
+
+    // One query: all unread msgs in the company not sent by the requester.
+    const allUnread = await this.prisma.message.findMany({
+      where: {
+        trip: { companyId },
+        isRead: false,
+        senderId: { not: requesterId },
+      },
+      select: {
+        id: true,
+        content: true,
+        createdAt: true,
+        tripId: true,
+        sender: { select: { name: true } },
+        trip: {
+          select: {
+            status: true,
+            truckId: true,
+            chatResetAt: true,
+            truck: { select: { plate: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    type TruckEntry = {
+      plate: string;
+      activeTripUnread: number;
+      pastTripsUnread: number;
+      tripUnread: Record<string, number>;
+      latestMessage: {
+        content: string;
+        senderName: string;
+        tripId: string;
+        isActiveTrip: boolean;
+        createdAt: string;
+      } | null;
+    };
+
+    const truckMap = new Map<string, TruckEntry>();
+
+    for (const msg of allUnread) {
+      const { trip } = msg;
+
+      // Respect chatResetAt — skip messages from previous driver session
+      if (trip.chatResetAt && msg.createdAt < trip.chatResetAt) continue;
+
+      const isActive = (ACTIVE_STATUSES as readonly string[]).includes(trip.status);
+      const { truckId } = trip;
+
+      if (!truckMap.has(truckId)) {
+        truckMap.set(truckId, {
+          plate: trip.truck.plate,
+          activeTripUnread: 0,
+          pastTripsUnread: 0,
+          tripUnread: {},
+          latestMessage: null,
+        });
+      }
+
+      const entry = truckMap.get(truckId)!;
+
+      if (isActive) entry.activeTripUnread++;
+      else entry.pastTripsUnread++;
+
+      entry.tripUnread[msg.tripId] = (entry.tripUnread[msg.tripId] ?? 0) + 1;
+
+      // Messages are sorted desc → first one per truck is the latest
+      if (!entry.latestMessage) {
+        entry.latestMessage = {
+          content: msg.content,
+          senderName: msg.sender.name ?? 'Driver',
+          tripId: msg.tripId,
+          isActiveTrip: isActive,
+          createdAt: msg.createdAt.toISOString(),
+        };
+      }
+    }
+
+    const items = [...truckMap.entries()]
+      .map(([truckId, data]) => ({
+        truckId,
+        plate: data.plate,
+        totalUnread: data.activeTripUnread + data.pastTripsUnread,
+        activeTripUnread: data.activeTripUnread,
+        pastTripsUnread: data.pastTripsUnread,
+        tripUnread: data.tripUnread,
+        latestMessage: data.latestMessage,
+      }))
+      .sort((a, b) => b.totalUnread - a.totalUnread);
+
+    return {
+      total: items.reduce((s, i) => s + i.totalUnread, 0),
+      items,
+    };
+  }
+
   async findByTrip(tripId: string) {
     return this.prisma.message.findMany({
       where: { tripId },

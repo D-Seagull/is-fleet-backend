@@ -87,12 +87,14 @@ export class TripsService {
   }
 
   // Currently active trip for the driver (any non-DELIVERED status).
-  // Returns null if there's no active assignment.
+  // Перевіряємо також що трак ЗАРАЗ належить цьому водію —
+  // щоб не повернути старий тріп після переводу водія на інший трак.
   async findMyActiveTrip(driverId: string) {
     const active = await this.prisma.trip.findFirst({
       where: {
         driverId,
         status: { in: [...ACTIVE_STATUSES] },
+        truck: { currentDriverId: driverId },
       },
       include: tripInclude,
       orderBy: { createdAt: 'desc' },
@@ -100,15 +102,20 @@ export class TripsService {
     return active ?? null;
   }
 
-  // load message history for a trip
-  async getMessages(tripId: string, companyId: string) {
+  // load message history for a trip.
+  // Якщо trip.chatResetAt встановлено — повертаємо лише повідомлення після цього часу.
+  // Це забезпечує "новий чат" при зміні водія для всіх ролей.
+  async getMessages(tripId: string, companyId: string, requesterRole: string) {
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, companyId },
     });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
     return this.prisma.message.findMany({
-      where: { tripId },
+      where: {
+        tripId,
+        ...(trip.chatResetAt ? { createdAt: { gte: trip.chatResetAt } } : {}),
+      },
       include: {
         sender: { select: { id: true, name: true, role: true } },
       },
@@ -152,17 +159,23 @@ export class TripsService {
     });
   }
 
-  /** Reassign a trip to a different driver (dispatcher action). */
+  /** Reassign a trip to a different driver (dispatcher action).
+   *  Якщо водій змінюється — фіксуємо chatResetAt = now(),
+   *  щоб чат "починався заново" для нового водія. */
   async assignDriver(id: string, companyId: string, driverId: string) {
-    // Verify trip belongs to this company
     const trip = await this.prisma.trip.findFirst({
       where: { id, companyId },
     });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
+    const driverChanged = trip.driverId !== driverId;
+
     return this.prisma.trip.update({
       where: { id },
-      data: { driverId },
+      data: {
+        driverId,
+        ...(driverChanged ? { chatResetAt: new Date() } : {}),
+      },
       include: tripInclude,
     });
   }

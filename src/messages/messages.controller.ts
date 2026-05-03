@@ -1,6 +1,7 @@
 import {
   Controller,
   Delete,
+  Get,
   Param,
   UseGuards,
 } from '@nestjs/common';
@@ -22,6 +23,15 @@ export class MessagesController {
     private readonly messagesService: MessagesService,
     private readonly gateway: MessagesGateway,
   ) {}
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Get('unread')
+  getUnreadSummary(
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+  ) {
+    return this.messagesService.getUnreadSummary(companyId, userId);
+  }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Delete(':id')

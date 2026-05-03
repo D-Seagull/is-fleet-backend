@@ -85,8 +85,9 @@ export class TripsController {
   getMessages(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('role') role: string,
   ) {
-    return this.tripsService.getMessages(id, companyId);
+    return this.tripsService.getMessages(id, companyId, role);
   }
 
   // update trip info (notes + stops)
