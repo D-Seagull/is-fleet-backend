@@ -98,14 +98,22 @@ export class MessagesGateway {
   ) {
     const userId = client.data.userId as string | undefined;
     if (!userId || !body?.tripId) return;
-    const ids = await this.messagesService.markTripRead(body.tripId, userId);
-    if (ids.length === 0) return;
+    const result = await this.messagesService.markTripRead(body.tripId, userId);
+    if (result.messageIds.length === 0 && result.documentIds.length === 0) return;
     // Notify everyone in the trip room (incl. the original sender) so their
     // bubbles can flip to ✓✓.
     this.server.to(body.tripId).emit('tripMessagesRead', {
       tripId: body.tripId,
       readerId: userId,
-      messageIds: ids,
+      messageIds: result.messageIds,
+      documentIds: result.documentIds,
     });
+  }
+
+  // Called from DocumentsService after an HTTP upload completes — pushes the
+  // new doc to everyone in the trip room so the chat timeline updates without
+  // a refetch.
+  emitNewDocument(tripId: string, doc: unknown) {
+    this.server.to(tripId).emit('newDocument', doc);
   }
 }

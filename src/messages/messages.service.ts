@@ -62,20 +62,43 @@ export class MessagesService {
     });
   }
 
-  // Mark every unread message in a trip *not authored by* `readerId` as read.
-  // Returns the IDs that were just flipped, so the gateway can emit a precise
-  // event to the senders rather than refetching the whole history.
-  async markTripRead(tripId: string, readerId: string): Promise<string[]> {
-    const unread = await this.prisma.message.findMany({
-      where: { tripId, isRead: false, senderId: { not: readerId } },
-      select: { id: true },
-    });
-    if (unread.length === 0) return [];
-    const ids = unread.map((m) => m.id);
-    await this.prisma.message.updateMany({
-      where: { id: { in: ids } },
-      data: { isRead: true },
-    });
-    return ids;
+  // Mark every unread message AND document in a trip *not authored/uploaded
+  // by* `readerId` as read. Returns the IDs that were just flipped, so the
+  // gateway can emit a precise event to the senders rather than refetching
+  // the whole history.
+  async markTripRead(
+    tripId: string,
+    readerId: string,
+  ): Promise<{ messageIds: string[]; documentIds: string[] }> {
+    const [unreadMessages, unreadDocs] = await Promise.all([
+      this.prisma.message.findMany({
+        where: { tripId, isRead: false, senderId: { not: readerId } },
+        select: { id: true },
+      }),
+      this.prisma.tripDocument.findMany({
+        where: { tripId, isRead: false, uploadedBy: { not: readerId } },
+        select: { id: true },
+      }),
+    ]);
+
+    const messageIds = unreadMessages.map((m) => m.id);
+    const documentIds = unreadDocs.map((d) => d.id);
+
+    await Promise.all([
+      messageIds.length > 0
+        ? this.prisma.message.updateMany({
+            where: { id: { in: messageIds } },
+            data: { isRead: true },
+          })
+        : Promise.resolve(),
+      documentIds.length > 0
+        ? this.prisma.tripDocument.updateMany({
+            where: { id: { in: documentIds } },
+            data: { isRead: true },
+          })
+        : Promise.resolve(),
+    ]);
+
+    return { messageIds, documentIds };
   }
 }

@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
+import { MessagesGateway } from '../messages/messages.gateway';
 
 @Injectable()
 export class DocumentsService {
   constructor(
     private prisma: PrismaService,
     private storage: SupabaseStorageService,
+    private gateway: MessagesGateway,
   ) {}
 
   async uploadMany(
@@ -19,7 +21,7 @@ export class DocumentsService {
     const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
-    return Promise.all(
+    const created = await Promise.all(
       files.map(async (file) => {
         const isImage = file.mimetype.startsWith('image/');
         const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
@@ -37,6 +39,14 @@ export class DocumentsService {
           },
           include: {
             uploader: { select: { id: true, name: true, role: true } },
+            trip: {
+              select: {
+                id: true,
+                title: true,
+                orderNumber: true,
+                truck: { select: { id: true, plate: true } },
+              },
+            },
           },
         });
 
@@ -44,6 +54,14 @@ export class DocumentsService {
         return { ...doc, signedUrl };
       }),
     );
+
+    // Real-time push to everyone in the trip room — dispatcher web + driver
+    // app see the doc appear in chat without refetching.
+    for (const doc of created) {
+      this.gateway.emitNewDocument(tripId, doc);
+    }
+
+    return created;
   }
 
   async remove(id: string) {
