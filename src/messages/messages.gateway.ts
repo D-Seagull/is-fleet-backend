@@ -116,4 +116,12 @@ export class MessagesGateway {
   emitNewDocument(tripId: string, doc: unknown) {
     this.server.to(tripId).emit('newDocument', doc);
   }
+
+  emitDocumentDeleted(tripId: string, documentId: string) {
+    this.server.to(tripId).emit('documentDeleted', { tripId, documentId });
+  }
+
+  emitMessageDeleted(tripId: string, messageId: string) {
+    this.server.to(tripId).emit('messageDeleted', { tripId, messageId });
+  }
 }

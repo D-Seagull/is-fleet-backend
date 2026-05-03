@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { MessagesGateway } from '../messages/messages.gateway';
@@ -64,11 +68,17 @@ export class DocumentsService {
     return created;
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId: string, userRole: string) {
     const document = await this.prisma.tripDocument.findUnique({
       where: { id },
     });
     if (!document) throw new NotFoundException('Документ не знайдений');
+
+    // Drivers can only delete their own uploads; managers can delete anything.
+    const isManager = ['ADMIN', 'TEAMLEAD', 'DISPATCHER'].includes(userRole);
+    if (!isManager && document.uploadedBy !== userId) {
+      throw new ForbiddenException('Ви не можете видалити цей документ');
+    }
 
     // fileUrl тепер = storagePath у Supabase bucket
     if (document.fileUrl) {
@@ -76,6 +86,9 @@ export class DocumentsService {
     }
 
     await this.prisma.tripDocument.delete({ where: { id } });
+    // Broadcast to everyone in the trip room — both sides drop the doc from
+    // their cache without refetching.
+    this.gateway.emitDocumentDeleted(document.tripId, document.id);
     return { message: `Документ ${document.fileName} видалений` };
   }
 

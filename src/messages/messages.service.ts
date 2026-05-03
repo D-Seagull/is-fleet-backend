@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { TranslationService } from 'src/translation/translation.service';
@@ -48,6 +52,25 @@ export class MessagesService {
         },
       },
     });
+  }
+
+  // Drivers can only delete their own; managers can delete any. Returns the
+  // tripId so the controller can broadcast `messageDeleted` to the room.
+  async remove(
+    id: string,
+    userId: string,
+    userRole: string,
+  ): Promise<{ tripId: string }> {
+    const msg = await this.prisma.message.findUnique({ where: { id } });
+    if (!msg) throw new NotFoundException('Повідомлення не знайдене');
+
+    const isManager = ['ADMIN', 'TEAMLEAD', 'DISPATCHER'].includes(userRole);
+    if (!isManager && msg.senderId !== userId) {
+      throw new ForbiddenException('Ви не можете видалити це повідомлення');
+    }
+
+    await this.prisma.message.delete({ where: { id } });
+    return { tripId: msg.tripId };
   }
 
   async findByTrip(tripId: string) {

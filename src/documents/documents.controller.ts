@@ -68,7 +68,11 @@ export class DocumentsController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.documentsService.remove(id);
+  remove(
+    @Param('id') id: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.documentsService.remove(id, userId, role);
   }
 }
