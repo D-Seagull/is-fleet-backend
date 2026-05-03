@@ -177,6 +177,94 @@ export class MessagesService {
     };
   }
 
+  // Unread summary for the driver — only their own trips, only messages from
+  // others (dispatchers / managers). Respects chatResetAt.
+  async getDriverUnreadSummary(driverId: string) {
+    const ACTIVE_STATUSES = [
+      'ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED',
+    ] as const;
+
+    const allUnread = await this.prisma.message.findMany({
+      where: {
+        trip: { driverId },
+        isRead: false,
+        senderId: { not: driverId },
+      },
+      select: {
+        id: true,
+        tripId: true,
+        content: true,
+        createdAt: true,
+        sender: { select: { name: true } },
+        trip: {
+          select: {
+            status: true,
+            chatResetAt: true,
+            title: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    type TripEntry = {
+      unread: number;
+      isActiveTrip: boolean;
+      tripTitle: string;
+      latestMessage: { content: string; senderName: string; createdAt: string } | null;
+    };
+
+    const tripMap = new Map<string, TripEntry>();
+    let activeTripUnread = 0;
+    let pastTripsUnread = 0;
+
+    for (const msg of allUnread) {
+      if (msg.trip.chatResetAt && msg.createdAt < msg.trip.chatResetAt) continue;
+      const isActive = (ACTIVE_STATUSES as readonly string[]).includes(msg.trip.status);
+
+      if (!tripMap.has(msg.tripId)) {
+        tripMap.set(msg.tripId, {
+          unread: 0,
+          isActiveTrip: isActive,
+          tripTitle: msg.trip.title,
+          latestMessage: null,
+        });
+      }
+
+      const entry = tripMap.get(msg.tripId)!;
+      entry.unread++;
+      if (!entry.latestMessage) {
+        entry.latestMessage = {
+          content: msg.content,
+          senderName: msg.sender.name ?? 'Dispatcher',
+          createdAt: msg.createdAt.toISOString(),
+        };
+      }
+      if (isActive) activeTripUnread++;
+      else pastTripsUnread++;
+    }
+
+    const tripUnread: Record<string, number> = {};
+    const items = [...tripMap.entries()].map(([tripId, data]) => {
+      tripUnread[tripId] = data.unread;
+      return {
+        tripId,
+        unread: data.unread,
+        isActiveTrip: data.isActiveTrip,
+        tripTitle: data.tripTitle,
+        latestMessage: data.latestMessage,
+      };
+    });
+
+    return {
+      total: activeTripUnread + pastTripsUnread,
+      activeTripUnread,
+      pastTripsUnread,
+      tripUnread,
+      items,
+    };
+  }
+
   async findByTrip(tripId: string) {
     return this.prisma.message.findMany({
       where: { tripId },

@@ -33,6 +33,12 @@ export class MessagesController {
     return this.messagesService.getUnreadSummary(companyId, userId);
   }
 
+  @Roles('DRIVER')
+  @Get('unread/driver')
+  getDriverUnreadSummary(@GetUser('id') userId: string) {
+    return this.messagesService.getDriverUnreadSummary(userId);
+  }
+
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
   @Delete(':id')
   async remove(
