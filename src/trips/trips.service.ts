@@ -7,6 +7,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { MessagesGateway } from '../messages/messages.gateway';
+import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
 
 const tripInclude = {
   driver: { select: { id: true, name: true, phone: true } },
@@ -23,10 +24,11 @@ export class TripsService {
   constructor(
     private prisma: PrismaService,
     private gateway: MessagesGateway,
+    private sessions: TripChatSessionsService,
   ) {}
 
   async create(companyId: string, dispatcherId: string, dto: CreateTripDto) {
-    return this.prisma.trip.create({
+    const trip = await this.prisma.trip.create({
       data: {
         title: dto.title,
         dispatcherId,
@@ -49,6 +51,8 @@ export class TripsService {
       },
       include: tripInclude,
     });
+    await this.sessions.openInitial(trip.id, trip.driverId, trip.dispatcherId);
+    return trip;
   }
 
   async findAll(companyId: string) {
@@ -102,20 +106,18 @@ export class TripsService {
     return active ?? null;
   }
 
-  // load message history for a trip.
-  // Якщо trip.chatResetAt встановлено — повертаємо лише повідомлення після цього часу.
-  // Це забезпечує "новий чат" при зміні водія для всіх ролей.
+  // load message history for a trip — only the active chat session.
   async getMessages(tripId: string, companyId: string, requesterRole: string) {
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, companyId },
     });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
+    const session = await this.sessions.getActiveSession(tripId);
+    if (!session) return [];
+
     return this.prisma.message.findMany({
-      where: {
-        tripId,
-        ...(trip.chatResetAt ? { createdAt: { gte: trip.chatResetAt } } : {}),
-      },
+      where: { sessionId: session.id },
       include: {
         sender: { select: { id: true, name: true, role: true } },
       },
@@ -160,8 +162,8 @@ export class TripsService {
   }
 
   /** Reassign a trip to a different driver (dispatcher action).
-   *  Якщо водій змінюється — фіксуємо chatResetAt = now(),
-   *  щоб чат "починався заново" для нового водія. */
+   *  Якщо водій змінюється — закриваємо поточну чат-сесію і відкриваємо нову,
+   *  щоб новий водій бачив чистий чат. Стара переписка зберігається в архіві. */
   async assignDriver(id: string, companyId: string, driverId: string) {
     const trip = await this.prisma.trip.findFirst({
       where: { id, companyId },
@@ -170,14 +172,22 @@ export class TripsService {
 
     const driverChanged = trip.driverId !== driverId;
 
-    return this.prisma.trip.update({
+    const updated = await this.prisma.trip.update({
       where: { id },
-      data: {
-        driverId,
-        ...(driverChanged ? { chatResetAt: new Date() } : {}),
-      },
+      data: { driverId },
       include: tripInclude,
     });
+
+    if (driverChanged) {
+      await this.sessions.closeAndOpenNew(
+        id,
+        'DRIVER_CHANGED',
+        driverId,
+        trip.dispatcherId,
+      );
+    }
+
+    return updated;
   }
 
   async driverUpdateStatus(id: string, driverId: string, dto: UpdateTripDto) {
@@ -208,8 +218,15 @@ export class TripsService {
 
     const results = await Promise.all(
       trips.map(async (trip) => {
+        const session = await this.sessions.getActiveSession(trip.id);
+        if (!session) return null;
         const message = await this.prisma.message.create({
-          data: { tripId: trip.id, senderId: userId, content },
+          data: {
+            tripId: trip.id,
+            sessionId: session.id,
+            senderId: userId,
+            content,
+          },
           include: { sender: { select: { id: true, name: true, role: true } } },
         });
         this.gateway.server.to(trip.id).emit('newMessage', message);
@@ -217,6 +234,6 @@ export class TripsService {
       }),
     );
 
-    return { sent: results.length };
+    return { sent: results.filter(Boolean).length };
   }
 }

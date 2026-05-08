@@ -84,6 +84,8 @@ model User {
   otpCodes           OtpCode[]
   ratingsReceived    DriverRating[] @relation("DriverRatings")
   ratingsGiven       DriverRating[] @relation("GivenRatings")
+  sessionsAsDriver     TripChatSession[] @relation("SessionDriver")
+  sessionsAsDispatcher TripChatSession[] @relation("SessionDispatcher")
 }
 
 enum Role {
@@ -151,6 +153,33 @@ model Trip {
   messages   Message[]
   comments   TripComment[]
   alarms     Alarm[]
+  chatSessions TripChatSession[]
+}
+
+model TripChatSession {
+  id           String            @id @default(uuid())
+  tripId       String
+  driverId     String?           // null only for LEGACY_RESET sessions
+  dispatcherId String?           // null only for LEGACY_RESET sessions
+  startedAt    DateTime          @default(now())
+  endedAt      DateTime?
+  endReason    SessionEndReason?
+
+  trip       Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  driver     User?     @relation("SessionDriver", fields: [driverId], references: [id])
+  dispatcher User?     @relation("SessionDispatcher", fields: [dispatcherId], references: [id])
+  messages   Message[]
+
+  @@index([tripId, endedAt])
+  @@index([driverId])
+  @@index([dispatcherId])
+}
+
+enum SessionEndReason {
+  DRIVER_CHANGED
+  DISPATCHER_CHANGED
+  TRIP_COMPLETED
+  LEGACY_RESET
 }
 
 model TripStop {
@@ -215,16 +244,19 @@ model DirectMessage {
 model Message {
   id                String   @id @default(uuid())
   tripId            String
+  sessionId         String
   senderId          String
   content           String
   translatedContent String?
   isRead            Boolean  @default(false)
   createdAt         DateTime @default(now())
 
-  trip   Trip @relation(fields: [tripId], references: [id])
-  sender User @relation(fields: [senderId], references: [id])
+  trip    Trip            @relation(fields: [tripId], references: [id])
+  session TripChatSession @relation(fields: [sessionId], references: [id])
+  sender  User            @relation(fields: [senderId], references: [id])
 
   @@index([tripId, isRead])
+  @@index([sessionId])
 }
 
 // Note: TripDocument also gets `isRead` so the trip chat shows ✓/✓✓ on docs

@@ -6,12 +6,14 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { TranslationService } from 'src/translation/translation.service';
+import { TripChatSessionsService } from './trip-chat-sessions.service';
 
 @Injectable()
 export class MessagesService {
   constructor(
     private prisma: PrismaService,
     private translation: TranslationService,
+    private sessions: TripChatSessionsService,
   ) {}
   async create(senderId: string, dto: CreateMessageDto) {
     let translatedContent: string | null = null;
@@ -39,9 +41,12 @@ export class MessagesService {
       );
     }
 
+    const session = await this.sessions.getActiveSessionOrThrow(dto.tripId);
+
     return this.prisma.message.create({
       data: {
         tripId: dto.tripId,
+        sessionId: session.id,
         senderId,
         content: dto.content,
         translatedContent,
@@ -81,11 +86,13 @@ export class MessagesService {
     ] as const;
 
     // One query: all unread msgs in the company not sent by the requester.
+    // Only active sessions — old sessions stay archived per privacy rules.
     const allUnread = await this.prisma.message.findMany({
       where: {
         trip: { companyId },
         isRead: false,
         senderId: { not: requesterId },
+        session: { endedAt: null },
       },
       select: {
         id: true,
@@ -97,7 +104,6 @@ export class MessagesService {
           select: {
             status: true,
             truckId: true,
-            chatResetAt: true,
             truck: { select: { plate: true } },
           },
         },
@@ -123,9 +129,6 @@ export class MessagesService {
 
     for (const msg of allUnread) {
       const { trip } = msg;
-
-      // Respect chatResetAt — skip messages from previous driver session
-      if (trip.chatResetAt && msg.createdAt < trip.chatResetAt) continue;
 
       const isActive = (ACTIVE_STATUSES as readonly string[]).includes(trip.status);
       const { truckId } = trip;
@@ -178,7 +181,7 @@ export class MessagesService {
   }
 
   // Unread summary for the driver — only their own trips, only messages from
-  // others (dispatchers / managers). Respects chatResetAt.
+  // others (dispatchers / managers). Filters to the currently active session.
   async getDriverUnreadSummary(driverId: string) {
     const ACTIVE_STATUSES = [
       'ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED',
@@ -189,6 +192,7 @@ export class MessagesService {
         trip: { driverId },
         isRead: false,
         senderId: { not: driverId },
+        session: { endedAt: null },
       },
       select: {
         id: true,
@@ -199,7 +203,6 @@ export class MessagesService {
         trip: {
           select: {
             status: true,
-            chatResetAt: true,
             title: true,
           },
         },
@@ -219,7 +222,6 @@ export class MessagesService {
     let pastTripsUnread = 0;
 
     for (const msg of allUnread) {
-      if (msg.trip.chatResetAt && msg.createdAt < msg.trip.chatResetAt) continue;
       const isActive = (ACTIVE_STATUSES as readonly string[]).includes(msg.trip.status);
 
       if (!tripMap.has(msg.tripId)) {
@@ -266,8 +268,10 @@ export class MessagesService {
   }
 
   async findByTrip(tripId: string) {
+    const session = await this.sessions.getActiveSession(tripId);
+    if (!session) return [];
     return this.prisma.message.findMany({
-      where: { tripId },
+      where: { sessionId: session.id },
       include: {
         sender: {
           select: { id: true, name: true, role: true },
@@ -285,11 +289,18 @@ export class MessagesService {
     tripId: string,
     readerId: string,
   ): Promise<{ messageIds: string[]; documentIds: string[] }> {
+    const session = await this.sessions.getActiveSession(tripId);
     const [unreadMessages, unreadDocs] = await Promise.all([
-      this.prisma.message.findMany({
-        where: { tripId, isRead: false, senderId: { not: readerId } },
-        select: { id: true },
-      }),
+      session
+        ? this.prisma.message.findMany({
+            where: {
+              sessionId: session.id,
+              isRead: false,
+              senderId: { not: readerId },
+            },
+            select: { id: true },
+          })
+        : Promise.resolve([] as { id: string }[]),
       this.prisma.tripDocument.findMany({
         where: { tripId, isRead: false, uploadedBy: { not: readerId } },
         select: { id: true },
