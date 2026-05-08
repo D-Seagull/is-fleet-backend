@@ -7,6 +7,11 @@ export class AssignTripDto {
   driverId: string;
 }
 
+export class AssignDispatcherDto {
+  @IsString()
+  dispatcherId: string;
+}
+
 export class UpdateStopDto {
   @IsEnum(['LOADING', 'UNLOADING'])
   type: 'LOADING' | 'UNLOADING';

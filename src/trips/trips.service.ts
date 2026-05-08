@@ -127,10 +127,14 @@ export class TripsService {
 
   async updateStatus(id: string, companyId: string, dto: UpdateTripDto) {
     await this.findOne(id, companyId);
-    return this.prisma.trip.update({
+    const updated = await this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
     });
+    if (dto.status === 'DELIVERED') {
+      await this.sessions.closeActive(id, 'TRIP_COMPLETED');
+    }
+    return updated;
   }
 
   // update trip info (notes + stops) — replaces all stops
@@ -190,15 +194,65 @@ export class TripsService {
     return updated;
   }
 
+  /** Reassign a trip to a different dispatcher.
+   *  Якщо диспетчер змінюється — закриваємо поточну чат-сесію і відкриваємо нову. */
+  async assignDispatcher(id: string, companyId: string, dispatcherId: string) {
+    const trip = await this.prisma.trip.findFirst({
+      where: { id, companyId },
+    });
+    if (!trip) throw new NotFoundException('Рейс не знайдений');
+
+    const dispatcherChanged = trip.dispatcherId !== dispatcherId;
+
+    const updated = await this.prisma.trip.update({
+      where: { id },
+      data: { dispatcherId },
+      include: tripInclude,
+    });
+
+    if (dispatcherChanged) {
+      await this.sessions.closeAndOpenNew(
+        id,
+        'DISPATCHER_CHANGED',
+        trip.driverId,
+        dispatcherId,
+      );
+    }
+
+    return updated;
+  }
+
+  // Read-side wrappers around TripChatSessionsService — let the controller
+  // depend only on TripsService, keeping module dependencies symmetric.
+  async getChatArchive(
+    tripId: string,
+    companyId: string,
+    requester: { id: string; role: string },
+  ) {
+    await this.findOne(tripId, companyId);
+    return this.sessions.findArchived(tripId, requester);
+  }
+
+  async getSessionMessages(
+    sessionId: string,
+    requester: { id: string; role: string },
+  ) {
+    return this.sessions.findMessagesBySession(sessionId, requester);
+  }
+
   async driverUpdateStatus(id: string, driverId: string, dto: UpdateTripDto) {
     const trip = await this.prisma.trip.findFirst({
       where: { id, driverId },
     });
     if (!trip) throw new ForbiddenException('No access to this trip');
-    return this.prisma.trip.update({
+    const updated = await this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
     });
+    if (dto.status === 'DELIVERED') {
+      await this.sessions.closeActive(id, 'TRIP_COMPLETED');
+    }
+    return updated;
   }
 
   async remove(id: string, companyId: string) {

@@ -10,7 +10,11 @@ import {
 } from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
-import { AssignTripDto, UpdateTripDto } from './dto/update-trip.dto';
+import {
+  AssignDispatcherDto,
+  AssignTripDto,
+  UpdateTripDto,
+} from './dto/update-trip.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -110,6 +114,39 @@ export class TripsController {
     @Body() dto: AssignTripDto,
   ) {
     return this.tripsService.assignDriver(id, companyId, dto.driverId);
+  }
+
+  /** Reassign an existing trip to a different dispatcher. */
+  @Roles('ADMIN', 'TEAMLEAD')
+  @Patch(':id/dispatcher')
+  assignDispatcher(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @Body() dto: AssignDispatcherDto,
+  ) {
+    return this.tripsService.assignDispatcher(id, companyId, dto.dispatcherId);
+  }
+
+  // ─── Chat archive (closed sessions) ──────────────────────────────────────
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get(':id/chat/archive')
+  getChatArchive(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.tripsService.getChatArchive(id, companyId, { id: userId, role });
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Get(':id/chat/sessions/:sessionId/messages')
+  getSessionMessages(
+    @Param('sessionId') sessionId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.tripsService.getSessionMessages(sessionId, { id: userId, role });
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
