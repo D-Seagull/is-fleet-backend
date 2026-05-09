@@ -5,6 +5,7 @@ import { UpdateTruckDto } from './dto/update-truck.dto';
 import { CreateTruckNoteDto } from './dto/create-truck-note.dto';
 import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
 import { MessagesGateway } from '../messages/messages.gateway';
+import { PushService } from '../push/push.service';
 
 const ACTIVE_TRIP_STATUSES = [
   'ASSIGNED',
@@ -20,6 +21,7 @@ export class TrucksService {
     private prisma: PrismaService,
     private sessions: TripChatSessionsService,
     private gateway: MessagesGateway,
+    private push: PushService,
   ) {}
 
   async create(companyId: string, dto: CreateTruckDto) {
@@ -131,6 +133,22 @@ export class TrucksService {
         this.gateway.server
           .to(dto.currentDriverId)
           .emit('truckChanged', payload);
+      }
+
+      // Push: notify the newly assigned driver (mobile app may be in
+      // background or closed — websocket alone won't reach them). No
+      // categoryId — when the system banner shows it's a plain notice;
+      // the foreground modal lives entirely on the client.
+      if (driverChanged && dto.currentDriverId) {
+        await this.push.sendToUsers([dto.currentDriverId], {
+          title: 'Призначення вантажівки',
+          body: `Вас призначено на ${updated.plate}`,
+          data: {
+            type: 'TRUCK_REASSIGNED',
+            truckId: id,
+            plate: updated.plate,
+          },
+        });
       }
     }
 

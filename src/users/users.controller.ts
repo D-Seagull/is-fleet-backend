@@ -15,6 +15,7 @@ import { UsersService } from './users.service';
 import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
+import { RegisterPushTokenDto } from './dto/push-token.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -122,5 +123,26 @@ export class UsersController {
   @Delete('avatar')
   deleteAvatar(@GetUser('id') userId: string) {
     return this.usersService.deleteAvatar(userId);
+  }
+
+  // ── Push tokens (mobile-driven) ───────────────────────────────────────
+  /** Register / refresh an Expo push token for the current device. */
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Post('me/push-token')
+  registerPushToken(
+    @GetUser('id') userId: string,
+    @Body() dto: RegisterPushTokenDto,
+  ) {
+    return this.usersService.registerPushToken(userId, dto.token, dto.platform);
+  }
+
+  /** Unregister this device (call from logout flow). */
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Delete('me/push-token/:token')
+  unregisterPushToken(
+    @GetUser('id') userId: string,
+    @Param('token') token: string,
+  ) {
+    return this.usersService.deletePushToken(userId, token);
   }
 }

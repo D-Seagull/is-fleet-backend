@@ -8,6 +8,7 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
+import { PushService } from '../push/push.service';
 
 const tripInclude = {
   driver: { select: { id: true, name: true, phone: true } },
@@ -25,6 +26,7 @@ export class TripsService {
     private prisma: PrismaService,
     private gateway: MessagesGateway,
     private sessions: TripChatSessionsService,
+    private push: PushService,
   ) {}
 
   async create(companyId: string, dispatcherId: string, dto: CreateTripDto) {
@@ -52,6 +54,22 @@ export class TripsService {
       include: tripInclude,
     });
     await this.sessions.openInitial(trip.id, trip.driverId, trip.dispatcherId);
+
+    // Push: notify the assigned driver about the new trip — body shows the
+    // first loading address so they can act without opening the app. The
+    // mobile app turns "OK" on NEW_TRIP into a status → ACCEPTED transition.
+    const loadingStop = trip.stops.find((s) => s.type === 'LOADING');
+    const address = loadingStop?.address?.trim();
+    await this.push.sendToUsers([trip.driverId], {
+      title: 'Нове завантаження',
+      body: address ? address : trip.title,
+      data: {
+        type: 'NEW_TRIP',
+        tripId: trip.id,
+        truckId: trip.truckId,
+      },
+    });
+
     return trip;
   }
 

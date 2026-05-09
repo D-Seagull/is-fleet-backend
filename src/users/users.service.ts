@@ -339,4 +339,28 @@ export class UsersService {
       data: { avatar: null, avatarPublicId: null },
     });
   }
+
+  // ── Push tokens ───────────────────────────────────────────────────────
+  // Multi-device: each Expo push token gets its own row. The token itself
+  // is unique, so re-registering the same device just updates platform.
+  async registerPushToken(
+    userId: string,
+    token: string,
+    platform?: 'ios' | 'android' | 'web',
+  ) {
+    return this.prisma.pushToken.upsert({
+      where: { token },
+      create: { userId, token, platform },
+      update: { userId, platform },
+    });
+  }
+
+  async deletePushToken(userId: string, token: string) {
+    // Scope by userId so a user can't delete someone else's token even if
+    // they somehow learn it.
+    await this.prisma.pushToken.deleteMany({
+      where: { token, userId },
+    });
+    return { ok: true };
+  }
 }
