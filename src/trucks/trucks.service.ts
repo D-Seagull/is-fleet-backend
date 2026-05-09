@@ -3,10 +3,24 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTruckDto } from './dto/create-truck.dto';
 import { UpdateTruckDto } from './dto/update-truck.dto';
 import { CreateTruckNoteDto } from './dto/create-truck-note.dto';
+import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
+import { MessagesGateway } from '../messages/messages.gateway';
+
+const ACTIVE_TRIP_STATUSES = [
+  'ASSIGNED',
+  'ACCEPTED',
+  'ON_WAY',
+  'ON_SITE',
+  'LOADED',
+] as const;
 
 @Injectable()
 export class TrucksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sessions: TripChatSessionsService,
+    private gateway: MessagesGateway,
+  ) {}
 
   async create(companyId: string, dto: CreateTruckDto) {
     return this.prisma.truck.create({
@@ -52,12 +66,139 @@ export class TrucksService {
     return truck;
   }
 
-  async update(id: string, companyId: string, dto: UpdateTruckDto) {
-    await this.findOne(id, companyId);
-    return this.prisma.truck.update({
+  async update(
+    id: string,
+    companyId: string,
+    dto: UpdateTruckDto,
+    triggeredById: string,
+  ) {
+    const oldTruck = await this.findOne(id, companyId);
+
+    // Якщо новий водій вже закріплений за іншою вантажівкою — спершу
+    // звільнюємо стару (currentDriverId @unique забороняє два посилання
+    // на одного водія, тож без цього кроку Prisma кине помилку).
+    let detachedFromTruckId: string | null = null;
+    if (
+      dto.currentDriverId !== undefined &&
+      dto.currentDriverId !== null &&
+      dto.currentDriverId !== oldTruck.currentDriverId
+    ) {
+      const previousTruck = await this.prisma.truck.findFirst({
+        where: {
+          currentDriverId: dto.currentDriverId,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+      if (previousTruck) {
+        await this.prisma.truck.update({
+          where: { id: previousTruck.id },
+          data: { currentDriverId: null },
+        });
+        detachedFromTruckId = previousTruck.id;
+      }
+    }
+
+    const updated = await this.prisma.truck.update({
       where: { id },
       data: dto,
     });
+
+    // Push the change to everyone who needs to refresh: the company room
+    // (so dispatchers' truck lists update) and the driver's personal room
+    // (so the mobile app drops/picks up the truck immediately).
+    const driverChanged =
+      dto.currentDriverId !== undefined &&
+      dto.currentDriverId !== oldTruck.currentDriverId;
+    if (driverChanged || detachedFromTruckId) {
+      const payload = {
+        truckId: id,
+        previousTruckId: detachedFromTruckId,
+        newDriverId: dto.currentDriverId ?? null,
+        previousDriverId: oldTruck.currentDriverId ?? null,
+      };
+      this.gateway.server
+        .to(`company-${companyId}`)
+        .emit('truckChanged', payload);
+      // Also target the driver's personal room (mobile app stays connected
+      // here even when the chat screen isn't open).
+      if (oldTruck.currentDriverId) {
+        this.gateway.server
+          .to(oldTruck.currentDriverId)
+          .emit('truckChanged', payload);
+      }
+      if (dto.currentDriverId) {
+        this.gateway.server
+          .to(dto.currentDriverId)
+          .emit('truckChanged', payload);
+      }
+    }
+
+    // Якщо диспетчер вантажівки змінився — синхронізуємо це з активними
+    // тріпами (Trip.dispatcherId) і закриваємо/відкриваємо чат-сесії, щоб
+    // новий диспетчер бачив чистий чат, а стара переписка лишилась в архіві.
+    const dispatcherChanged =
+      dto.dispatcherId !== undefined &&
+      dto.dispatcherId !== oldTruck.dispatcherId &&
+      dto.dispatcherId !== null;
+
+    // Push truckChanged on dispatcher swap too — drivers' mobile app shows
+    // the new dispatcher in the drawer, other web dispatchers see the new
+    // assignment in their truck list, all without manual refresh.
+    if (dispatcherChanged) {
+      const payload = {
+        truckId: id,
+        previousTruckId: null as string | null,
+        newDriverId: oldTruck.currentDriverId ?? null,
+        previousDriverId: oldTruck.currentDriverId ?? null,
+      };
+      this.gateway.server
+        .to(`company-${companyId}`)
+        .emit('truckChanged', payload);
+      if (oldTruck.currentDriverId) {
+        this.gateway.server
+          .to(oldTruck.currentDriverId)
+          .emit('truckChanged', payload);
+      }
+    }
+
+    if (dispatcherChanged) {
+      const newDispatcherId = dto.dispatcherId as string;
+      const activeTrips = await this.prisma.trip.findMany({
+        where: {
+          truckId: id,
+          status: { in: [...ACTIVE_TRIP_STATUSES] },
+        },
+        select: { id: true, driverId: true, dispatcherId: true },
+      });
+
+      for (const trip of activeTrips) {
+        if (trip.dispatcherId === newDispatcherId) continue;
+        await this.prisma.trip.update({
+          where: { id: trip.id },
+          data: { dispatcherId: newDispatcherId },
+        });
+        const { systemMessage } = await this.sessions.closeAndOpenNew(
+          trip.id,
+          'DISPATCHER_CHANGED',
+          trip.driverId,
+          newDispatcherId,
+          triggeredById,
+        );
+        this.gateway.server.to(trip.id).emit('tripUpdated', { tripId: trip.id });
+        this.gateway.server
+          .to(`company-${companyId}`)
+          .emit('tripUpdated', { tripId: trip.id });
+        if (systemMessage) {
+          this.gateway.server.to(trip.id).emit('newMessage', systemMessage);
+          this.gateway.server
+            .to(`company-${companyId}`)
+            .emit('newMessage', systemMessage);
+        }
+      }
+    }
+
+    return updated;
   }
 
   /** Returns the truck currently assigned to a driver (driver-side endpoint). */

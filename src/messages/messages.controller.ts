@@ -29,8 +29,9 @@ export class MessagesController {
   getUnreadSummary(
     @GetUser('companyId') companyId: string,
     @GetUser('id') userId: string,
+    @GetUser('role') role: string,
   ) {
-    return this.messagesService.getUnreadSummary(companyId, userId);
+    return this.messagesService.getUnreadSummary(companyId, userId, role);
   }
 
   @Roles('DRIVER')

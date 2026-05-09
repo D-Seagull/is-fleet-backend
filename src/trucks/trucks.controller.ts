@@ -76,9 +76,10 @@ export class TrucksController {
   update(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
     @Body() dto: UpdateTruckDto,
   ) {
-    return this.trucksService.update(id, companyId, dto);
+    return this.trucksService.update(id, companyId, dto, userId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')

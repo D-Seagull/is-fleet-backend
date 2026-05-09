@@ -23,6 +23,40 @@ export class TripChatSessionsService {
     });
   }
 
+  /**
+   * Returns IDs of all sessions on this trip that the requester is allowed
+   * to see:
+   *  - ADMIN / TEAMLEAD → every session
+   *  - DRIVER / DISPATCHER → only sessions where they were a participant
+   *
+   * This naturally implements the privacy requirement:
+   *  - Old dispatcher keeps their pre-handover history (and not the new one).
+   *  - New dispatcher sees only their post-handover chat.
+   *  - Driver, if unchanged, sees both as one continuous stream.
+   */
+  async getVisibleSessionIds(
+    tripId: string,
+    requester: { id: string; role: string },
+  ): Promise<string[]> {
+    const isManager =
+      requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
+    const sessions = await this.prisma.tripChatSession.findMany({
+      where: {
+        tripId,
+        ...(isManager
+          ? {}
+          : {
+              OR: [
+                { driverId: requester.id },
+                { dispatcherId: requester.id },
+              ],
+            }),
+      },
+      select: { id: true },
+    });
+    return sessions.map((s) => s.id);
+  }
+
   async getActiveSessionOrThrow(tripId: string, tx: Prisma.TransactionClient = this.prisma) {
     const session = await this.getActiveSession(tripId, tx);
     if (!session) {
@@ -46,28 +80,88 @@ export class TripChatSessionsService {
   /**
    * Close the current active session and open a new one with new participants.
    * Runs in a transaction so we never end up with two active sessions.
+   * Also writes a system message into the new session announcing the change
+   * (visible inline in chat, Telegram-style).
    */
   async closeAndOpenNew(
     tripId: string,
     reason: SessionEndReason,
     newDriverId: string,
     newDispatcherId: string,
+    triggeredById: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const active = await this.getActiveSession(tripId, tx);
+
+      // Single canonical wording: one system message in the NEW session only.
+      // The old session simply ends — its last visible chat line is whatever
+      // the previous participants exchanged. This avoids any duplication for
+      // a continuing participant (e.g. driver kept across a dispatcher swap).
+      const [driver, dispatcher, trip] = await Promise.all([
+        tx.user.findUnique({
+          where: { id: newDriverId },
+          select: { name: true },
+        }),
+        tx.user.findUnique({
+          where: { id: newDispatcherId },
+          select: { name: true },
+        }),
+        tx.trip.findUnique({
+          where: { id: tripId },
+          select: { truck: { select: { plate: true } } },
+        }),
+      ]);
+      const plate = trip?.truck.plate ?? '';
+
+      let content = '';
+      if (reason === 'DRIVER_CHANGED') {
+        content = `До вантажівки ${plate} призначений водій ${driver?.name ?? 'без імені'}`;
+      } else if (reason === 'DISPATCHER_CHANGED') {
+        content = `До вантажівки ${plate} призначений диспетчер ${dispatcher?.name ?? 'без імені'}`;
+      }
+
+      // 1. Close the old session.
       if (active) {
         await tx.tripChatSession.update({
           where: { id: active.id },
           data: { endedAt: new Date(), endReason: reason },
         });
       }
-      return tx.tripChatSession.create({
+
+      // 2. Open the new session.
+      const newSession = await tx.tripChatSession.create({
         data: {
           tripId,
           driverId: newDriverId,
           dispatcherId: newDispatcherId,
         },
       });
+
+      // 3. Write the single system message into the NEW session — unread so
+      //    the new participant sees a notification badge. Returned so the
+      //    caller can broadcast `newMessage` over sockets — clients add it
+      //    to the chat instantly without waiting for a refetch poll.
+      let systemMessage: Awaited<
+        ReturnType<typeof tx.message.create>
+      > | null = null;
+      if (content) {
+        systemMessage = await tx.message.create({
+          data: {
+            tripId,
+            sessionId: newSession.id,
+            senderId: triggeredById,
+            content,
+            isSystem: true,
+            isRead: false,
+          },
+          include: {
+            sender: { select: { id: true, name: true, role: true } },
+            session: { select: { driverId: true, dispatcherId: true } },
+          },
+        });
+      }
+
+      return { session: newSession, systemMessage };
     });
   }
 

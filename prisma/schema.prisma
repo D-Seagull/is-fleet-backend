@@ -249,6 +249,7 @@ model Message {
   content           String
   translatedContent String?
   isRead            Boolean  @default(false)
+  isSystem          Boolean  @default(false)  // system event (driver/dispatcher changed) — rendered specially
   createdAt         DateTime @default(now())
 
   trip    Trip            @relation(fields: [tripId], references: [id])

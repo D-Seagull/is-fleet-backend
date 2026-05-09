@@ -16,21 +16,29 @@ export class MessagesService {
     private sessions: TripChatSessionsService,
   ) {}
   async create(senderId: string, dto: CreateMessageDto) {
+    // Privacy: only the trip's current driver or current dispatcher may write.
+    // Otherwise an old participant could still post into the active session
+    // they're no longer part of (and the new participants would receive it).
+    const trip = await this.prisma.trip.findUnique({
+      where: { id: dto.tripId },
+      include: {
+        driver: { select: { id: true, language: true } },
+        dispatcher: { select: { id: true, language: true } },
+      },
+    });
+    if (!trip) throw new NotFoundException('Рейс не знайдений');
+    if (senderId !== trip.driverId && senderId !== trip.dispatcherId) {
+      throw new ForbiddenException(
+        'Тільки поточний водій або диспетчер можуть писати в цей чат',
+      );
+    }
+
     let translatedContent: string | null = null;
 
     if (dto.translate) {
-      // Знаходимо рейс і отримувача
-      const trip = await this.prisma.trip.findFirst({
-        where: { id: dto.tripId },
-        include: {
-          driver: { select: { id: true, language: true } },
-          dispatcher: { select: { id: true, language: true } },
-        },
-      });
-
       // Визначаємо мову отримувача
       const receiver =
-        trip?.driverId === senderId ? trip?.dispatcher : trip?.driver;
+        trip.driverId === senderId ? trip.dispatcher : trip.driver;
       const receiverLanguage = receiver?.language || 'EN';
 
       // Перекладаємо
@@ -54,6 +62,11 @@ export class MessagesService {
       include: {
         sender: {
           select: { id: true, name: true, role: true },
+        },
+        // Recipients filter on the client side: drop the message if my id is
+        // neither driverId nor dispatcherId (and I'm not a manager).
+        session: {
+          select: { driverId: true, dispatcherId: true },
         },
       },
     });
@@ -80,19 +93,35 @@ export class MessagesService {
 
   // Unread summary for the dispatcher — one DB round-trip,
   // grouped by truck, split into active-trip vs past-trip buckets.
-  async getUnreadSummary(companyId: string, requesterId: string) {
+  async getUnreadSummary(
+    companyId: string,
+    requesterId: string,
+    requesterRole: string,
+  ) {
     const ACTIVE_STATUSES = [
       'ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED',
     ] as const;
 
-    // One query: all unread msgs in the company not sent by the requester.
-    // Only active sessions — old sessions stay archived per privacy rules.
+    const isManager =
+      requesterRole === 'ADMIN' || requesterRole === 'TEAMLEAD';
+
+    // Privacy: requester counts unread only for sessions they participated
+    // in. Managers see everything in their company.
     const allUnread = await this.prisma.message.findMany({
       where: {
         trip: { companyId },
         isRead: false,
         senderId: { not: requesterId },
-        session: { endedAt: null },
+        ...(isManager
+          ? {}
+          : {
+              session: {
+                OR: [
+                  { driverId: requesterId },
+                  { dispatcherId: requesterId },
+                ],
+              },
+            }),
       },
       select: {
         id: true,
@@ -187,12 +216,13 @@ export class MessagesService {
       'ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED',
     ] as const;
 
+    // Privacy: driver counts unread only for sessions they were a driver in.
     const allUnread = await this.prisma.message.findMany({
       where: {
         trip: { driverId },
         isRead: false,
         senderId: { not: driverId },
-        session: { endedAt: null },
+        session: { driverId },
       },
       select: {
         id: true,
@@ -267,11 +297,13 @@ export class MessagesService {
     };
   }
 
-  async findByTrip(tripId: string) {
-    const session = await this.sessions.getActiveSession(tripId);
-    if (!session) return [];
+  async findByTrip(tripId: string, requester: { id: string; role: string }) {
+    // Privacy: requester sees only sessions they participated in.
+    // Managers (ADMIN/TEAMLEAD) see all sessions of the trip.
+    const sessionIds = await this.sessions.getVisibleSessionIds(tripId, requester);
+    if (sessionIds.length === 0) return [];
     return this.prisma.message.findMany({
-      where: { sessionId: session.id },
+      where: { sessionId: { in: sessionIds } },
       include: {
         sender: {
           select: { id: true, name: true, role: true },
@@ -288,13 +320,17 @@ export class MessagesService {
   async markTripRead(
     tripId: string,
     readerId: string,
+    readerRole: string,
   ): Promise<{ messageIds: string[]; documentIds: string[] }> {
-    const session = await this.sessions.getActiveSession(tripId);
+    const sessionIds = await this.sessions.getVisibleSessionIds(tripId, {
+      id: readerId,
+      role: readerRole,
+    });
     const [unreadMessages, unreadDocs] = await Promise.all([
-      session
+      sessionIds.length > 0
         ? this.prisma.message.findMany({
             where: {
-              sessionId: session.id,
+              sessionId: { in: sessionIds },
               isRead: false,
               senderId: { not: readerId },
             },

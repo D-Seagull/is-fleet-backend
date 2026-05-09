@@ -89,9 +89,10 @@ export class TripsController {
   getMessages(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
     @GetUser('role') role: string,
   ) {
-    return this.tripsService.getMessages(id, companyId, role);
+    return this.tripsService.getMessages(id, companyId, { id: userId, role });
   }
 
   // update trip info (notes + stops)
@@ -111,9 +112,10 @@ export class TripsController {
   assignDriver(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
     @Body() dto: AssignTripDto,
   ) {
-    return this.tripsService.assignDriver(id, companyId, dto.driverId);
+    return this.tripsService.assignDriver(id, companyId, dto.driverId, userId);
   }
 
   /** Reassign an existing trip to a different dispatcher. */
@@ -122,9 +124,15 @@ export class TripsController {
   assignDispatcher(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
     @Body() dto: AssignDispatcherDto,
   ) {
-    return this.tripsService.assignDispatcher(id, companyId, dto.dispatcherId);
+    return this.tripsService.assignDispatcher(
+      id,
+      companyId,
+      dto.dispatcherId,
+      userId,
+    );
   }
 
   // ─── Chat archive (closed sessions) ──────────────────────────────────────

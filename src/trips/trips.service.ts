@@ -106,18 +106,25 @@ export class TripsService {
     return active ?? null;
   }
 
-  // load message history for a trip — only the active chat session.
-  async getMessages(tripId: string, companyId: string, requesterRole: string) {
+  // load message history for a trip.
+  // Privacy: requester sees only sessions they participated in (or all if
+  // they're a manager). Drivers retained across a dispatcher swap see both
+  // their old and new chats as one continuous stream.
+  async getMessages(
+    tripId: string,
+    companyId: string,
+    requester: { id: string; role: string },
+  ) {
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, companyId },
     });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
-    const session = await this.sessions.getActiveSession(tripId);
-    if (!session) return [];
+    const sessionIds = await this.sessions.getVisibleSessionIds(tripId, requester);
+    if (sessionIds.length === 0) return [];
 
     return this.prisma.message.findMany({
-      where: { sessionId: session.id },
+      where: { sessionId: { in: sessionIds } },
       include: {
         sender: { select: { id: true, name: true, role: true } },
       },
@@ -127,14 +134,10 @@ export class TripsService {
 
   async updateStatus(id: string, companyId: string, dto: UpdateTripDto) {
     await this.findOne(id, companyId);
-    const updated = await this.prisma.trip.update({
+    return this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
     });
-    if (dto.status === 'DELIVERED') {
-      await this.sessions.closeActive(id, 'TRIP_COMPLETED');
-    }
-    return updated;
   }
 
   // update trip info (notes + stops) — replaces all stops
@@ -168,7 +171,12 @@ export class TripsService {
   /** Reassign a trip to a different driver (dispatcher action).
    *  Якщо водій змінюється — закриваємо поточну чат-сесію і відкриваємо нову,
    *  щоб новий водій бачив чистий чат. Стара переписка зберігається в архіві. */
-  async assignDriver(id: string, companyId: string, driverId: string) {
+  async assignDriver(
+    id: string,
+    companyId: string,
+    driverId: string,
+    triggeredById: string,
+  ) {
     const trip = await this.prisma.trip.findFirst({
       where: { id, companyId },
     });
@@ -183,20 +191,39 @@ export class TripsService {
     });
 
     if (driverChanged) {
-      await this.sessions.closeAndOpenNew(
+      const { systemMessage } = await this.sessions.closeAndOpenNew(
         id,
         'DRIVER_CHANGED',
         driverId,
         trip.dispatcherId,
+        triggeredById,
       );
+      this.gateway.server.to(id).emit('tripUpdated', { tripId: id });
+      if (trip.companyId) {
+        this.gateway.server
+          .to(`company-${trip.companyId}`)
+          .emit('tripUpdated', { tripId: id });
+      }
+      if (systemMessage) {
+        this.gateway.server.to(id).emit('newMessage', systemMessage);
+        if (trip.companyId) {
+          this.gateway.server
+            .to(`company-${trip.companyId}`)
+            .emit('newMessage', systemMessage);
+        }
+      }
     }
 
     return updated;
   }
 
-  /** Reassign a trip to a different dispatcher.
-   *  Якщо диспетчер змінюється — закриваємо поточну чат-сесію і відкриваємо нову. */
-  async assignDispatcher(id: string, companyId: string, dispatcherId: string) {
+  /** Reassign an existing trip to a different dispatcher. */
+  async assignDispatcher(
+    id: string,
+    companyId: string,
+    dispatcherId: string,
+    triggeredById: string,
+  ) {
     const trip = await this.prisma.trip.findFirst({
       where: { id, companyId },
     });
@@ -211,12 +238,27 @@ export class TripsService {
     });
 
     if (dispatcherChanged) {
-      await this.sessions.closeAndOpenNew(
+      const { systemMessage } = await this.sessions.closeAndOpenNew(
         id,
         'DISPATCHER_CHANGED',
         trip.driverId,
         dispatcherId,
+        triggeredById,
       );
+      this.gateway.server.to(id).emit('tripUpdated', { tripId: id });
+      if (trip.companyId) {
+        this.gateway.server
+          .to(`company-${trip.companyId}`)
+          .emit('tripUpdated', { tripId: id });
+      }
+      if (systemMessage) {
+        this.gateway.server.to(id).emit('newMessage', systemMessage);
+        if (trip.companyId) {
+          this.gateway.server
+            .to(`company-${trip.companyId}`)
+            .emit('newMessage', systemMessage);
+        }
+      }
     }
 
     return updated;
@@ -245,14 +287,10 @@ export class TripsService {
       where: { id, driverId },
     });
     if (!trip) throw new ForbiddenException('No access to this trip');
-    const updated = await this.prisma.trip.update({
+    return this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
     });
-    if (dto.status === 'DELIVERED') {
-      await this.sessions.closeActive(id, 'TRIP_COMPLETED');
-    }
-    return updated;
   }
 
   async remove(id: string, companyId: string) {

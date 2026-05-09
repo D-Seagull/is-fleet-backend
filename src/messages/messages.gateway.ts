@@ -47,8 +47,10 @@ export class MessagesGateway {
       });
       const userId = payload.sub as string;
       const companyId = payload.companyId as string | undefined;
+      const role = payload.role as string | undefined;
       client.data.userId = userId;
       client.data.companyId = companyId;
+      client.data.role = role;
       void client.join(userId);
       // Company-level room so managers receive newMessage events from any
       // trip without having to explicitly join a trip room first.
@@ -111,8 +113,13 @@ export class MessagesGateway {
     @MessageBody() body: JoinTripDto,
   ) {
     const userId = client.data.userId as string | undefined;
+    const userRole = (client.data.role as string | undefined) ?? '';
     if (!userId || !body?.tripId) return;
-    const result = await this.messagesService.markTripRead(body.tripId, userId);
+    const result = await this.messagesService.markTripRead(
+      body.tripId,
+      userId,
+      userRole,
+    );
     if (result.messageIds.length === 0 && result.documentIds.length === 0) return;
     // Notify everyone in the trip room (incl. the original sender) so their
     // bubbles can flip to ✓✓.
