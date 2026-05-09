@@ -7,6 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 import { CreateMessageDto } from './dto/create-message.dto';
 import { JoinTripDto } from './dto/join-trip.dto';
@@ -27,8 +28,8 @@ export class MessagesGateway {
 
   constructor(
     private messagesService: MessagesService,
-
     private jwtService: JwtService,
+    private prisma: PrismaService,
   ) {}
 
   handleConnection(client: Socket) {
@@ -128,6 +129,49 @@ export class MessagesGateway {
       readerId: userId,
       messageIds: result.messageIds,
       documentIds: result.documentIds,
+    });
+  }
+
+  /**
+   * Ephemeral "is typing" signal. Privacy: only the trip's current driver or
+   * dispatcher may broadcast — old participants who still hold the room can't
+   * leak presence into the new pair's chat.
+   */
+  @SubscribeMessage('typing')
+  async handleTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: JoinTripDto,
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.tripId) return;
+    const trip = await this.prisma.trip.findUnique({
+      where: { id: body.tripId },
+      select: { driverId: true, dispatcherId: true },
+    });
+    if (!trip) return;
+    if (userId !== trip.driverId && userId !== trip.dispatcherId) return;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true },
+    });
+    // Broadcast to everyone else in the trip room (skip the sender's socket).
+    client.to(body.tripId).emit('userTyping', {
+      tripId: body.tripId,
+      user: { id: userId, name: user?.name ?? null },
+    });
+  }
+
+  @SubscribeMessage('stopTyping')
+  handleStopTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: JoinTripDto,
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.tripId) return;
+    client.to(body.tripId).emit('userStopTyping', {
+      tripId: body.tripId,
+      userId,
     });
   }
 
