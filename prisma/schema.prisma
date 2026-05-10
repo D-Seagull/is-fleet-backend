@@ -26,6 +26,7 @@ model Company {
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
   advanceRequests AdvanceRequest[]
+  alarms          Alarm[]
 }
 
 model TruckNote {
@@ -72,8 +73,8 @@ model User {
   tripsAsDispatcher  Trip[]              @relation("DispatcherTrips")
   messages           Message[]
   comments           TripComment[]
-  alarmsSent         Alarm[]             @relation("AlarmDispatcher")
-  alarmsReceived     Alarm[]             @relation("AlarmDriver")
+  alarmsCreated      Alarm[]             @relation("AlarmCreator")
+  alarmsTargeted     Alarm[]             @relation("AlarmTarget")
   uploadedDocuments  TripDocument[]
   announcementReads  AnnouncementRead[]
   announcements      Announcement[]
@@ -289,18 +290,33 @@ model TripComment {
 }
 
 model Alarm {
-  id           String   @id @default(uuid())
-  tripId       String
-  driverId     String
-  dispatcherId String
-  time         DateTime
-  note         String?
-  createdAt    DateTime @default(now())
-  isSent       Boolean  @default(false)
+  id           String           @id @default(uuid())
+  companyId    String
+  createdById  String           // who scheduled the alarm
+  targetUserId String           // whom to wake — self (== createdById) or another user
+  tripId       String?          // optional: alarm linked to a specific trip
+  title        String           // тема — short subject shown as push title
+  note         String?          // optional details / body
+  time         DateTime         // when to fire next
+  recurrence   AlarmRecurrence  @default(NONE)
+  isSent       Boolean          @default(false) // for one-shot alarms; recurring alarms reset on each fire
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
-  trip       Trip @relation(fields: [tripId], references: [id])
-  driver     User @relation("AlarmDriver", fields: [driverId], references: [id])
-  dispatcher User @relation("AlarmDispatcher", fields: [dispatcherId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+  creator User    @relation("AlarmCreator", fields: [createdById], references: [id])
+  target  User    @relation("AlarmTarget", fields: [targetUserId], references: [id])
+  trip    Trip?   @relation(fields: [tripId], references: [id])
+
+  @@index([targetUserId, isSent, time])
+  @@index([companyId])
+  @@index([tripId])
+}
+
+enum AlarmRecurrence {
+  NONE
+  DAILY
+  WEEKLY
 }
 
 model Announcement {
