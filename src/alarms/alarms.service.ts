@@ -182,11 +182,7 @@ export class AlarmsService {
     });
   }
 
-  async update(
-    id: string,
-    userId: string,
-    dto: UpdateAlarmDto,
-  ) {
+  async update(id: string, userId: string, dto: UpdateAlarmDto) {
     const alarm = await this.prisma.alarm.findUnique({ where: { id } });
     if (!alarm) throw new NotFoundException('Alarm not found');
     if (alarm.createdById !== userId) {
@@ -266,7 +262,9 @@ export class AlarmsService {
           time: alarm.time.toISOString(),
         });
       } catch (e) {
-        this.logger.warn(`Socket emit failed for alarm ${alarm.id}: ${(e as Error).message}`);
+        this.logger.warn(
+          `Socket emit failed for alarm ${alarm.id}: ${(e as Error).message}`,
+        );
       }
 
       // Recurring alarms re-fire on the next interval; one-shot get marked sent.
