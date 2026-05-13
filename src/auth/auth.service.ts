@@ -153,6 +153,7 @@ export class AuthService {
         companyId: true,
         email: true,
         language: true,
+        timezone: true,
         avatar: true,
         // For driver routing: which truck am I on, who is my dispatcher.
         // Null for non-drivers — safe to expose either way.

@@ -6,9 +6,10 @@ import { TripChatSessionsService } from './trip-chat-sessions.service';
 import { JwtModule } from '@nestjs/jwt';
 
 import { PrismaModule } from 'src/prisma/prisma.module';
+import { PushModule } from '../push/push.module';
 
 @Module({
-  imports: [PrismaModule, JwtModule],
+  imports: [PrismaModule, JwtModule, PushModule],
   providers: [MessagesService, MessagesGateway, TripChatSessionsService],
   controllers: [MessagesController],
   exports: [MessagesGateway, MessagesService, TripChatSessionsService],

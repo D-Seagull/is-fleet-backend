@@ -340,6 +340,24 @@ export class TripsService {
           include: { sender: { select: { id: true, name: true, role: true } } },
         });
         this.gateway.server.to(trip.id).emit('newMessage', message);
+
+        // Push only when the driver is not online (socket would otherwise
+        // already deliver the message in real time).
+        if (trip.driverId && trip.driverId !== userId) {
+          void (async () => {
+            const online = await this.gateway.isUserOnline(trip.driverId);
+            if (online) return;
+            await this.push.sendToUsers([trip.driverId], {
+              title: message.sender.name ?? 'Нове повідомлення',
+              body: content.slice(0, 200),
+              data: {
+                type: 'MESSAGE',
+                tripId: trip.id,
+                messageId: message.id,
+              },
+            });
+          })();
+        }
         return message;
       }),
     );

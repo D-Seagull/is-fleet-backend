@@ -50,6 +50,7 @@ model User {
   avatarPublicId String? 
   role               Role
   language           Language            @default(EN)
+  timezone           String?             // IANA tz, e.g. "Europe/Warsaw"
   isActive           Boolean             @default(true)
   companyId          String
   createdAt          DateTime            @default(now())

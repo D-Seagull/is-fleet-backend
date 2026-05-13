@@ -6,6 +6,7 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { Inject, forwardRef } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -27,6 +28,7 @@ export class MessagesGateway {
   server: Server;
 
   constructor(
+    @Inject(forwardRef(() => MessagesService))
     private messagesService: MessagesService,
     private jwtService: JwtService,
     private prisma: PrismaService,
@@ -52,6 +54,10 @@ export class MessagesGateway {
       client.data.userId = userId;
       client.data.companyId = companyId;
       client.data.role = role;
+      // Foreground flag — clients flip it via appActive/appBackground events.
+      // Defaults to true on fresh connect (clients connect when they open
+      // the app); mobile flips it back to false in onBackground.
+      client.data.active = true;
       void client.join(userId);
       // Company-level room so managers receive newMessage events from any
       // trip without having to explicitly join a trip room first.
@@ -188,5 +194,25 @@ export class MessagesGateway {
 
   emitMessageDeleted(tripId: string, messageId: string) {
     this.server.to(tripId).emit('messageDeleted', { tripId, messageId });
+  }
+
+  /** True only when at least one of the user's sockets is currently in the
+   *  *foreground*. iOS keeps the socket alive a while after the app moves to
+   *  background, so we can't rely on socket existence alone — clients flip
+   *  `data.active` via appActive / appBackground events below. */
+  async isUserOnline(userId: string): Promise<boolean> {
+    if (!this.server) return false;
+    const sockets = await this.server.in(userId).fetchSockets();
+    return sockets.some((s) => s.data?.active === true);
+  }
+
+  @SubscribeMessage('appActive')
+  handleAppActive(@ConnectedSocket() client: Socket) {
+    client.data.active = true;
+  }
+
+  @SubscribeMessage('appBackground')
+  handleAppBackground(@ConnectedSocket() client: Socket) {
+    client.data.active = false;
   }
 }

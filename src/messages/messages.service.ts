@@ -7,6 +7,9 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { TranslationService } from 'src/translation/translation.service';
 import { TripChatSessionsService } from './trip-chat-sessions.service';
+import { PushService } from '../push/push.service';
+import { Inject, forwardRef } from '@nestjs/common';
+import { MessagesGateway } from './messages.gateway';
 
 @Injectable()
 export class MessagesService {
@@ -14,6 +17,9 @@ export class MessagesService {
     private prisma: PrismaService,
     private translation: TranslationService,
     private sessions: TripChatSessionsService,
+    private push: PushService,
+    @Inject(forwardRef(() => MessagesGateway))
+    private gateway: MessagesGateway,
   ) {}
   async create(senderId: string, dto: CreateMessageDto) {
     // Privacy: only the trip's current driver or current dispatcher may write.
@@ -51,7 +57,7 @@ export class MessagesService {
 
     const session = await this.sessions.getActiveSessionOrThrow(dto.tripId);
 
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         tripId: dto.tripId,
         sessionId: session.id,
@@ -70,6 +76,29 @@ export class MessagesService {
         },
       },
     });
+
+    // Push the OTHER session participant only when they are NOT online
+    // (no live socket). Online recipients already get the message via the
+    // `newMessage` socket event — a push would just blink the banner.
+    const recipientId =
+      senderId === trip.driverId ? trip.dispatcherId : trip.driverId;
+    if (recipientId) {
+      void (async () => {
+        const online = await this.gateway.isUserOnline(recipientId);
+        if (online) return;
+        await this.push.sendToUsers([recipientId], {
+          title: message.sender.name ?? 'Нове повідомлення',
+          body: dto.content.slice(0, 200),
+          data: {
+            type: 'MESSAGE',
+            tripId: dto.tripId,
+            messageId: message.id,
+          },
+        });
+      })();
+    }
+
+    return message;
   }
 
   // Drivers can only delete their own; managers can delete any. Returns the

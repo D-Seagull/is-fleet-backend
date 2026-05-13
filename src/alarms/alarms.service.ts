@@ -11,6 +11,21 @@ import { PushService } from 'src/push/push.service';
 import { CreateAlarmDto } from './dto/create-alarm.dto';
 import { UpdateAlarmDto } from './dto/update-alarm.dto';
 import { MessagesGateway } from 'src/messages/messages.gateway';
+import { fromZonedTime } from 'date-fns-tz';
+
+/**
+ * Parses the client-supplied `time` as wall-clock in the given IANA timezone.
+ *
+ * - If the string carries a timezone marker (`Z` or `±HH:MM`) → respect it
+ *   (already absolute, no conversion).
+ * - Otherwise (e.g. "2026-05-09T14:00:00") → interpret as wall-clock in `tz`.
+ *   Falls back to UTC when `tz` is missing.
+ */
+function parseAlarmTime(input: string, tz: string | null | undefined): Date {
+  const hasTzSuffix = /Z$|[+-]\d{2}:?\d{2}$/.test(input);
+  if (hasTzSuffix) return new Date(input);
+  return fromZonedTime(input, tz ?? 'UTC');
+}
 
 const ALARM_INCLUDE = {
   creator: { select: { id: true, name: true, role: true } },
@@ -69,6 +84,14 @@ export class AlarmsService {
       if (!trip) throw new NotFoundException('Trip not found');
     }
 
+    // Resolve the alarm's absolute moment using the target's timezone — so a
+    // dispatcher who types "08:00" really means "08:00 on the driver's clock".
+    const target = await this.prisma.user.findUnique({
+      where: { id: dto.targetUserId },
+      select: { timezone: true },
+    });
+    const tz = target?.timezone ?? null;
+
     return this.prisma.alarm.create({
       data: {
         companyId: creatorCompanyId,
@@ -77,7 +100,7 @@ export class AlarmsService {
         tripId: dto.tripId ?? null,
         title: dto.title,
         note: dto.note ?? null,
-        time: new Date(dto.time),
+        time: parseAlarmTime(dto.time, tz),
         recurrence: dto.recurrence ?? 'NONE',
       },
       include: ALARM_INCLUDE,
@@ -169,12 +192,25 @@ export class AlarmsService {
     if (alarm.createdById !== userId) {
       throw new ForbiddenException('Only the creator can edit this alarm');
     }
+
+    let timePatch: { time: Date; isSent: false } | Record<string, never> = {};
+    if (dto.time !== undefined) {
+      const target = await this.prisma.user.findUnique({
+        where: { id: alarm.targetUserId },
+        select: { timezone: true },
+      });
+      timePatch = {
+        time: parseAlarmTime(dto.time, target?.timezone ?? null),
+        isSent: false,
+      };
+    }
+
     return this.prisma.alarm.update({
       where: { id },
       data: {
         ...(dto.title !== undefined ? { title: dto.title } : {}),
         ...(dto.note !== undefined ? { note: dto.note } : {}),
-        ...(dto.time !== undefined ? { time: new Date(dto.time), isSent: false } : {}),
+        ...timePatch,
         ...(dto.recurrence !== undefined ? { recurrence: dto.recurrence } : {}),
       },
       include: ALARM_INCLUDE,

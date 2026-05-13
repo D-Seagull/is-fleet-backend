@@ -16,6 +16,7 @@ import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { RegisterPushTokenDto } from './dto/push-token.dto';
+import { SetTimezoneDto } from './dto/timezone.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -144,5 +145,16 @@ export class UsersController {
     @Param('token') token: string,
   ) {
     return this.usersService.deletePushToken(userId, token);
+  }
+
+  /** Update the current user's IANA timezone. Called by clients on auth so
+   *  alarms scheduled by others fire on the user's wall-clock time. */
+  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Patch('me/timezone')
+  setTimezone(
+    @GetUser('id') userId: string,
+    @Body() dto: SetTimezoneDto,
+  ) {
+    return this.usersService.setTimezone(userId, dto.timezone);
   }
 }

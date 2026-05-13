@@ -363,4 +363,14 @@ export class UsersService {
     });
     return { ok: true };
   }
+
+  /** Store the user's IANA timezone. Used by AlarmsService to interpret
+   *  wall-clock alarm times in the target's local clock. */
+  async setTimezone(userId: string, timezone: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { timezone },
+      select: { id: true, timezone: true },
+    });
+  }
 }
