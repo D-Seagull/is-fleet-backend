@@ -30,7 +30,15 @@ export class PushService {
       where: { userId: { in: userIds } },
       select: { token: true },
     });
-    if (tokens.length === 0) return;
+    this.logger.log(
+      `Push "${payload.title}" → users=[${userIds.join(',')}] tokens=${tokens.length}`,
+    );
+    if (tokens.length === 0) {
+      this.logger.warn(
+        `No push tokens for users=[${userIds.join(',')}] — recipient(s) won't receive "${payload.title}". Check that the mobile app registered a token after login.`,
+      );
+      return;
+    }
 
     const messages: ExpoPushMessage[] = [];
     const validTokens: string[] = [];
@@ -61,6 +69,10 @@ export class PushService {
         this.logger.error('Expo push send failed', e as Error);
       }
     }
+    const okCount = tickets.filter((t) => t.status === 'ok').length;
+    this.logger.log(
+      `Push "${payload.title}" → ${okCount}/${tickets.length} accepted by Expo`,
+    );
 
     // Prune tokens that Expo rejected outright (e.g. uninstalled app).
     await Promise.all(

@@ -2,6 +2,12 @@
 /dist
 /node_modules
 /build
+*.tsbuildinfo
+
+# prisma scripts compile artefacts (sources only)
+prisma/*.js
+prisma/*.js.map
+prisma/*.d.ts
 
 # Logs
 logs
