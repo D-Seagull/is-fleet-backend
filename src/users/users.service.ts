@@ -14,6 +14,8 @@ import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.se
 import { v4 as uuidv4 } from 'uuid';
 import { MailService } from 'src/mail/mail.service';
 import { normalizePhone as toCanonicalPhone } from 'src/common/utils/phone';
+import { MessagesGateway } from 'src/messages/messages.gateway';
+import { PushService } from 'src/push/push.service';
 
 /** Same as shared util but throws 400 — used by create flows. */
 function requireValidPhone(input: string): string {
@@ -32,6 +34,8 @@ export class UsersService {
     private prisma: PrismaService,
     private storage: SupabaseStorageService,
     private mail: MailService,
+    private gateway: MessagesGateway,
+    private push: PushService,
   ) {}
 
   async createManager(
@@ -126,6 +130,8 @@ export class UsersService {
         language: true,
         isActive: true,
         createdAt: true,
+        managerId: true,
+        teamleadId: true,
         manager: { select: { id: true, name: true } },
         teamlead: { select: { id: true, name: true } },
         currentTruck: { select: { id: true, plate: true, status: true } },
@@ -134,6 +140,9 @@ export class UsersService {
           select: {
             ratingsReceived: true,
             managerRatingsReceived: true,
+            // Trucks where this user is the assigned manager. Driver rows
+            // will return 0 here — frontend should only read it for MANAGERs.
+            assignedTrucks: true,
           },
         },
         ratingsReceived: { select: { score: true } },
@@ -156,6 +165,7 @@ export class UsersService {
             ? managerRatingsReceived.reduce((s, r) => s + r.score, 0) /
               managerRatingsReceived.length
             : null,
+        truckCount: _count.assignedTrucks,
       }),
     );
   }
@@ -163,43 +173,117 @@ export class UsersService {
   async updateDriver(
     id: string,
     companyId: string | null,
-    dto: { phone?: string; managerId?: string | null; truckId?: string | null },
+    dto: {
+      name?: string;
+      phone?: string;
+      language?: 'UK' | 'EN' | 'PL' | 'LT' | 'UZ' | 'KZ' | 'HI' | 'RU';
+      managerId?: string | null;
+      teamleadId?: string | null;
+      truckId?: string | null;
+    },
   ) {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
     if (!user) throw new NotFoundException('User not found');
 
+    // Track truck change so we can emit the same socket + push notifications
+    // TrucksService.update emits when a manager reassigns from the truck side.
+    // Without this, assigning a truck via the driver card was a silent DB
+    // write — no banner, no push, no realtime list update.
+    let truckChanged = false;
+    let assignedTruckPlate: string | null = null;
+    let previousTruckId: string | null = null;
+
     if (dto.truckId !== undefined) {
-      // unassign from old truck
+      // Detach this driver from any truck they're currently linked to. Capture
+      // the previous truck id so the realtime payload can hint the old card
+      // to update its "no driver" state too.
+      const oldLinks = await this.prisma.truck.findMany({
+        where: { currentDriverId: id },
+        select: { id: true },
+      });
+      previousTruckId = oldLinks[0]?.id ?? null;
       await this.prisma.truck.updateMany({
         where: { currentDriverId: id },
         data: { currentDriverId: null },
       });
-      // assign to new truck
+
       if (dto.truckId) {
-        await this.prisma.truck.update({
+        // The new truck may already point to a different driver — clear that
+        // link first so the @unique constraint on currentDriverId doesn't
+        // reject our update.
+        await this.prisma.truck.updateMany({
+          where: {
+            id: { not: dto.truckId },
+            currentDriverId: { not: null },
+            AND: [{ currentDriverId: { equals: id } }],
+          },
+          data: { currentDriverId: null },
+        });
+        const newTruck = await this.prisma.truck.update({
           where: { id: dto.truckId },
           data: { currentDriverId: id },
+          select: { id: true, plate: true },
         });
+        assignedTruckPlate = newTruck.plate;
+        truckChanged = newTruck.id !== previousTruckId;
+      } else {
+        // null → detach only
+        truckChanged = previousTruckId !== null;
       }
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
+        ...(dto.language !== undefined ? { language: dto.language } : {}),
         ...(dto.managerId !== undefined ? { managerId: dto.managerId } : {}),
+        ...(dto.teamleadId !== undefined ? { teamleadId: dto.teamleadId } : {}),
       },
       select: {
         id: true,
         name: true,
         phone: true,
+        language: true,
         managerId: true,
+        teamleadId: true,
         manager: { select: { id: true, name: true } },
+        teamlead: { select: { id: true, name: true } },
         currentTruck: { select: { id: true, plate: true, status: true } },
       },
     });
+
+    // Realtime + push side-effects mirror TrucksService.update so both entry
+    // points (truck card and driver card) feel identical.
+    if (truckChanged && user.companyId) {
+      const payload = {
+        truckId: dto.truckId ?? null,
+        previousTruckId,
+        newDriverId: dto.truckId ? id : null,
+        previousDriverId: dto.truckId ? null : id,
+      };
+      this.gateway.server
+        .to(`company-${user.companyId}`)
+        .emit('truckChanged', payload);
+      this.gateway.server.to(id).emit('truckChanged', payload);
+
+      if (dto.truckId && assignedTruckPlate) {
+        await this.push.sendToUsers([id], {
+          title: 'Призначення вантажівки',
+          body: `Вас призначено на ${assignedTruckPlate}`,
+          data: {
+            type: 'TRUCK_REASSIGNED',
+            truckId: dto.truckId,
+            plate: assignedTruckPlate,
+          },
+        });
+      }
+    }
+
+    return updated;
   }
 
   async activate(id: string, companyId: string | null) {
@@ -267,6 +351,30 @@ export class UsersService {
         },
         currentTruck: {
           select: { id: true, plate: true, status: true },
+        },
+        // For MANAGER pages: trucks where this user is the assigned manager.
+        // Empty for non-manager rows, so it costs nothing extra to include.
+        assignedTrucks: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            plate: true,
+            status: true,
+            currentDriver: { select: { id: true, name: true } },
+          },
+          orderBy: { plate: 'asc' },
+        },
+        // Drivers reporting to this manager (managerId === user.id).
+        drivers: {
+          where: { isActive: true, role: 'DRIVER' },
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            avatar: true,
+            currentTruck: { select: { id: true, plate: true } },
+          },
+          orderBy: { name: 'asc' },
         },
         ratingsReceived: {
           select: {

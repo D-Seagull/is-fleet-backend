@@ -182,6 +182,38 @@ export class TrucksService {
 
     if (managerChanged) {
       const newManagerId = dto.managerId as string;
+
+      // Push to the new manager — they need to know they've got a truck
+      // landed on their plate (without this they only learn from staring
+      // at the web UI). And to the driver — their counterpart changed.
+      const [newManager] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: newManagerId },
+          select: { name: true },
+        }),
+        this.push.sendToUsers([newManagerId], {
+          title: 'Призначення вантажівки',
+          body: `Вам призначено вантажівку ${updated.plate}`,
+          data: {
+            type: 'MANAGER_ASSIGNED_TRUCK',
+            truckId: id,
+            plate: updated.plate,
+          },
+        }),
+      ]);
+
+      if (oldTruck.currentDriverId) {
+        await this.push.sendToUsers([oldTruck.currentDriverId], {
+          title: 'Менеджер змінений',
+          body: `Ваш новий менеджер: ${newManager?.name ?? 'без імені'}`,
+          data: {
+            type: 'MANAGER_CHANGED',
+            truckId: id,
+            managerId: newManagerId,
+          },
+        });
+      }
+
       const activeTrips = await this.prisma.trip.findMany({
         where: {
           truckId: id,

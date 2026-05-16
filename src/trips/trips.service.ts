@@ -277,6 +277,39 @@ export class TripsService {
             .emit('newMessage', systemMessage);
         }
       }
+
+      // Push to the new manager (they now own this trip) and to the driver
+      // (their counterpart changed). The in-chat system message is great
+      // when the user has the chat open; a push is what gets attention when
+      // they don't. Don't notify the previous manager — they lost access
+      // and pinging them would be noise.
+      const [newManager] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: managerId },
+          select: { name: true },
+        }),
+        this.push.sendToUsers([managerId], {
+          title: 'Призначено рейс',
+          body: updated.title,
+          data: {
+            type: 'MANAGER_ASSIGNED_TRIP',
+            tripId: id,
+            truckId: updated.truckId,
+          },
+        }),
+      ]);
+
+      if (trip.driverId) {
+        await this.push.sendToUsers([trip.driverId], {
+          title: 'Менеджер змінений',
+          body: `Ваш новий менеджер: ${newManager?.name ?? 'без імені'}`,
+          data: {
+            type: 'MANAGER_CHANGED',
+            tripId: id,
+            managerId,
+          },
+        });
+      }
     }
 
     return updated;
