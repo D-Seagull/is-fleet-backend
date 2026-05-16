@@ -8,9 +8,9 @@ import { PrismaService } from 'src/prisma/prisma.service';
 
 /**
  * Manages chat session lifecycle per trip.
- * A session represents one (driver, dispatcher) pair on a trip; when either
+ * A session represents one (driver, manager) pair on a trip; when either
  * participant changes, the active session is closed and a new one is opened.
- * Messages are scoped to a session, giving each (driver, dispatcher) pair a
+ * Messages are scoped to a session, giving each (driver, manager) pair a
  * private chat history that is invisible to subsequent participants.
  */
 @Injectable()
@@ -27,11 +27,11 @@ export class TripChatSessionsService {
    * Returns IDs of all sessions on this trip that the requester is allowed
    * to see:
    *  - ADMIN / TEAMLEAD → every session
-   *  - DRIVER / DISPATCHER → only sessions where they were a participant
+   *  - DRIVER / MANAGER → only sessions where they were a participant
    *
    * This naturally implements the privacy requirement:
-   *  - Old dispatcher keeps their pre-handover history (and not the new one).
-   *  - New dispatcher sees only their post-handover chat.
+   *  - Old manager keeps their pre-handover history (and not the new one).
+   *  - New manager sees only their post-handover chat.
    *  - Driver, if unchanged, sees both as one continuous stream.
    */
   async getVisibleSessionIds(
@@ -48,7 +48,7 @@ export class TripChatSessionsService {
           : {
               OR: [
                 { driverId: requester.id },
-                { dispatcherId: requester.id },
+                { managerId: requester.id },
               ],
             }),
       },
@@ -69,11 +69,11 @@ export class TripChatSessionsService {
   async openInitial(
     tripId: string,
     driverId: string,
-    dispatcherId: string,
+    managerId: string,
     tx: Prisma.TransactionClient = this.prisma,
   ) {
     return tx.tripChatSession.create({
-      data: { tripId, driverId, dispatcherId },
+      data: { tripId, driverId, managerId },
     });
   }
 
@@ -87,7 +87,7 @@ export class TripChatSessionsService {
     tripId: string,
     reason: SessionEndReason,
     newDriverId: string,
-    newDispatcherId: string,
+    newManagerId: string,
     triggeredById: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -96,14 +96,14 @@ export class TripChatSessionsService {
       // Single canonical wording: one system message in the NEW session only.
       // The old session simply ends — its last visible chat line is whatever
       // the previous participants exchanged. This avoids any duplication for
-      // a continuing participant (e.g. driver kept across a dispatcher swap).
-      const [driver, dispatcher, trip] = await Promise.all([
+      // a continuing participant (e.g. driver kept across a manager swap).
+      const [driver, manager, trip] = await Promise.all([
         tx.user.findUnique({
           where: { id: newDriverId },
           select: { name: true },
         }),
         tx.user.findUnique({
-          where: { id: newDispatcherId },
+          where: { id: newManagerId },
           select: { name: true },
         }),
         tx.trip.findUnique({
@@ -116,8 +116,8 @@ export class TripChatSessionsService {
       let content = '';
       if (reason === 'DRIVER_CHANGED') {
         content = `До вантажівки ${plate} призначений водій ${driver?.name ?? 'без імені'}`;
-      } else if (reason === 'DISPATCHER_CHANGED') {
-        content = `До вантажівки ${plate} призначений диспетчер ${dispatcher?.name ?? 'без імені'}`;
+      } else if (reason === 'MANAGER_CHANGED') {
+        content = `До вантажівки ${plate} призначений менеджер ${manager?.name ?? 'без імені'}`;
       }
 
       // 1. Close the old session.
@@ -133,7 +133,7 @@ export class TripChatSessionsService {
         data: {
           tripId,
           driverId: newDriverId,
-          dispatcherId: newDispatcherId,
+          managerId: newManagerId,
         },
       });
 
@@ -156,7 +156,7 @@ export class TripChatSessionsService {
           },
           include: {
             sender: { select: { id: true, name: true, role: true } },
-            session: { select: { driverId: true, dispatcherId: true } },
+            session: { select: { driverId: true, managerId: true } },
           },
         });
       }
@@ -195,13 +195,13 @@ export class TripChatSessionsService {
           : {
               OR: [
                 { driverId: requester.id },
-                { dispatcherId: requester.id },
+                { managerId: requester.id },
               ],
             }),
       },
       include: {
         driver: { select: { id: true, name: true, role: true } },
-        dispatcher: { select: { id: true, name: true, role: true } },
+        manager: { select: { id: true, name: true, role: true } },
       },
       orderBy: { startedAt: 'desc' },
     });
@@ -219,7 +219,7 @@ export class TripChatSessionsService {
 
     const isManager = requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
     const isParticipant =
-      session.driverId === requester.id || session.dispatcherId === requester.id;
+      session.driverId === requester.id || session.managerId === requester.id;
 
     if (!isManager && !isParticipant) {
       throw new ForbiddenException('No access to this chat session');

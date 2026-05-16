@@ -53,14 +53,14 @@ export class MailService {
     });
   }
 
-  async sendDispatcherInvite(to: string, inviteLink: string) {
+  async sendManagerInvite(to: string, inviteLink: string) {
     await this.transporter.sendMail({
       from: `"IS Fleet" <${this.config.get('MAIL_USER')}>`,
       to,
       subject: 'Запрошення до IS Fleet',
       html: `
         <h2>Вітаємо!</h2>
-        <p>Вас запросили до системи IS Fleet як диспетчера.</p>
+        <p>Вас запросили до системи IS Fleet як менеджера.</p>
         <p>Перейдіть по посиланню щоб зареєструватись:</p>
         <a href="${inviteLink}">${inviteLink}</a>
       `,

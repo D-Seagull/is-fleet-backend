@@ -25,13 +25,13 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class TrucksController {
   constructor(private trucksService: TrucksService) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post()
   create(@GetUser('companyId') companyId: string, @Body() dto: CreateTruckDto) {
     return this.trucksService.create(companyId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get()
   findAll(@GetUser('companyId') companyId: string) {
     return this.trucksService.findAll(companyId);
@@ -44,7 +44,7 @@ export class TrucksController {
     return this.trucksService.findDriverTruck(userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get('my')
   findMy(
     @GetUser('id') userId: string,
@@ -65,13 +65,13 @@ export class TrucksController {
     return this.trucksService.activate(id, companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get(':id')
   findOne(@Param('id') id: string, @GetUser('companyId') companyId: string) {
     return this.trucksService.findOne(id, companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -82,13 +82,13 @@ export class TrucksController {
     return this.trucksService.update(id, companyId, dto, userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete(':id')
   remove(@Param('id') id: string, @GetUser('companyId') companyId: string) {
     return this.trucksService.remove(id, companyId);
   }
   /***Notes */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post(':id/notes')
   createNote(
     @Param('id') truckId: string,
@@ -99,13 +99,13 @@ export class TrucksController {
     return this.trucksService.createNote(truckId, companyId, userId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/notes')
   getNotes(@Param('id') truckId: string) {
     return this.trucksService.getNotes(truckId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete('notes/:id')
   removeNote(@Param('id') id: string, @GetUser('id') userId: string) {
     return this.trucksService.removeNote(id, userId);

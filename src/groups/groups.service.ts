@@ -17,9 +17,9 @@ export class GroupsService {
     role: string,
     dto: CreateGroupDto,
   ) {
-    if (dto.type === 'DISPATCHERS' && role === 'DISPATCHER') {
+    if (dto.type === 'MANAGERS' && role === 'MANAGER') {
       throw new ForbiddenException(
-        'Диспетчер не може створювати групи диспетчерів',
+        'Менеджер не може створювати групи менеджерів',
       );
     }
     if (dto.type === 'TRUCKS' && role === 'TEAMLEAD') {
@@ -44,8 +44,8 @@ export class GroupsService {
       include: {
         creator: { select: { id: true, name: true, role: true } },
         trucks: { include: { truck: true } },
-        dispatchers: {
-          include: { dispatcher: { select: { id: true, name: true } } },
+        managers: {
+          include: { manager: { select: { id: true, name: true } } },
         },
       },
     });
@@ -55,7 +55,7 @@ export class GroupsService {
     const group = await this.prisma.group.findFirst({ where: { id } });
     if (!group) throw new NotFoundException('Група не знайдена');
 
-    if (role === 'DISPATCHER' && group.createdBy !== userId) {
+    if (role === 'MANAGER' && group.createdBy !== userId) {
       throw new ForbiddenException('Можна редагувати тільки свої групи');
     }
 
@@ -69,7 +69,7 @@ export class GroupsService {
     const group = await this.prisma.group.findFirst({ where: { id } });
     if (!group) throw new NotFoundException('Група не знайдена');
 
-    if (role === 'DISPATCHER' && group.createdBy !== userId) {
+    if (role === 'MANAGER' && group.createdBy !== userId) {
       throw new ForbiddenException('Можна видаляти тільки свої групи');
     }
 
@@ -86,12 +86,12 @@ export class GroupsService {
     const group = await this.prisma.group.findFirst({ where: { id: groupId } });
     if (!group) throw new NotFoundException('Група не знайдена');
 
-    if (role === 'DISPATCHER' && group.createdBy !== userId) {
+    if (role === 'MANAGER' && group.createdBy !== userId) {
       throw new ForbiddenException('Можна редагувати тільки свої групи');
     }
     if (group.type !== 'TRUCKS') {
       throw new ForbiddenException(
-        'Це група диспетчерів — не можна додавати вантажівки',
+        'Це група менеджерів — не можна додавати вантажівки',
       );
     }
 
@@ -113,7 +113,7 @@ export class GroupsService {
       throw new NotFoundException('Вантажівка не знайдена в групі');
 
     const group = await this.prisma.group.findFirst({ where: { id: groupId } });
-    if (role === 'DISPATCHER' && group!.createdBy !== userId) {
+    if (role === 'MANAGER' && group!.createdBy !== userId) {
       throw new ForbiddenException('Можна редагувати тільки свої групи');
     }
 
@@ -121,40 +121,41 @@ export class GroupsService {
     return { message: 'Вантажівка видалена з групи' };
   }
 
-  async addDispatcher(groupId: string, dispatcherId: string) {
+  async addManager(groupId: string, managerId: string) {
     const group = await this.prisma.group.findFirst({ where: { id: groupId } });
     if (!group) throw new NotFoundException('Група не знайдена');
 
-    if (group.type !== 'DISPATCHERS') {
+    if (group.type !== 'MANAGERS') {
       throw new ForbiddenException(
-        'Це група вантажівок — не можна додавати диспетчерів',
+        'Це група вантажівок — не можна додавати менеджерів',
       );
     }
 
     const user = await this.prisma.user.findFirst({
-      where: { id: dispatcherId },
+      where: { id: managerId },
     });
-    if (!user || user.role !== 'DISPATCHER') {
-      throw new ForbiddenException('Можна додавати тільки диспетчерів');
+    if (!user || user.role !== 'MANAGER') {
+      throw new ForbiddenException('Можна додавати тільки менеджерів');
     }
 
-    return this.prisma.groupDispatcher.create({
-      data: { groupId, dispatcherId },
+    return this.prisma.groupManager.create({
+      data: { groupId, managerId },
     });
   }
 
-  async removeDispatcher(groupId: string, dispatcherId: string) {
-    const groupDispatcher = await this.prisma.groupDispatcher.findFirst({
-      where: { groupId, dispatcherId },
+  async removeManager(groupId: string, managerId: string) {
+    const groupManager = await this.prisma.groupManager.findFirst({
+      where: { groupId, managerId },
     });
-    if (!groupDispatcher)
-      throw new NotFoundException('Диспетчер не знайдений в групі');
+    if (!groupManager)
+      throw new NotFoundException('Менеджер не знайдений в групі');
 
-    await this.prisma.groupDispatcher.delete({
-      where: { id: groupDispatcher.id },
+    await this.prisma.groupManager.delete({
+      where: { id: groupManager.id },
     });
-    return { message: 'Диспетчер видалений з групи' };
+    return { message: 'Менеджер видалений з групи' };
   }
+
   async findAllTrucksGroups(companyId: string | null) {
     return await this.prisma.group.findMany({
       where: companyId ? { companyId, type: 'TRUCKS' } : { type: 'TRUCKS' },
@@ -176,26 +177,26 @@ export class GroupsService {
     });
   }
 
-  async findAllDispatchersGroups(
+  async findAllManagersGroups(
     companyId: string | null,
     role?: string,
     userId?: string,
   ) {
     const where: Record<string, unknown> = companyId
-      ? { companyId, type: 'DISPATCHERS' }
-      : { type: 'DISPATCHERS' };
+      ? { companyId, type: 'MANAGERS' }
+      : { type: 'MANAGERS' };
 
-    if (role === 'DISPATCHER' && userId) {
-      where.dispatchers = { some: { dispatcherId: userId } };
+    if (role === 'MANAGER' && userId) {
+      where.managers = { some: { managerId: userId } };
     }
 
     return await this.prisma.group.findMany({
       where,
       include: {
         creator: { select: { id: true, name: true, role: true } },
-        dispatchers: {
+        managers: {
           include: {
-            dispatcher: { select: { id: true, name: true } },
+            manager: { select: { id: true, name: true } },
           },
         },
       },

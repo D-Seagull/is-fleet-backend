@@ -7,9 +7,9 @@ export class AssignTripDto {
   driverId: string;
 }
 
-export class AssignDispatcherDto {
+export class AssignManagerDto {
   @IsString()
-  dispatcherId: string;
+  managerId: string;
 }
 
 export class UpdateStopDto {

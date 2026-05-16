@@ -25,7 +25,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class DocumentsController {
   constructor(private documentsService: DocumentsService) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('upload-many')
   @UseInterceptors(FilesInterceptor('files', 10, { storage: memoryStorage() }))
   uploadMany(
@@ -36,37 +36,37 @@ export class DocumentsController {
     return this.documentsService.uploadMany(tripId, userId, files);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get()
   findAll(@GetUser('companyId') companyId: string) {
     return this.documentsService.findByCompany(companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('trip/:tripId')
   findByTrip(@Param('tripId') tripId: string) {
     return this.documentsService.findByTrip(tripId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('truck/:truckId')
   findByTruck(@Param('truckId') truckId: string) {
     return this.documentsService.findByTruck(truckId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/view')
   view(@Param('id') id: string) {
     return this.documentsService.view(id);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/download')
   download(@Param('id') id: string) {
     return this.documentsService.download(id);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
   remove(
     @Param('id') id: string,

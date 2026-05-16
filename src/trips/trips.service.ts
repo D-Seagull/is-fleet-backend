@@ -13,7 +13,7 @@ import { PushService } from '../push/push.service';
 const tripInclude = {
   driver: { select: { id: true, name: true, phone: true } },
   truck: { select: { id: true, plate: true } },
-  dispatcher: { select: { id: true, name: true } },
+  manager: { select: { id: true, name: true } },
   stops: { orderBy: { order: 'asc' as const } },
   documents: true,
 };
@@ -29,11 +29,11 @@ export class TripsService {
     private push: PushService,
   ) {}
 
-  async create(companyId: string, dispatcherId: string, dto: CreateTripDto) {
+  async create(companyId: string, managerId: string, dto: CreateTripDto) {
     const trip = await this.prisma.trip.create({
       data: {
         title: dto.title,
-        dispatcherId,
+        managerId,
         driverId: dto.driverId,
         truckId: dto.truckId,
         companyId,
@@ -53,7 +53,7 @@ export class TripsService {
       },
       include: tripInclude,
     });
-    await this.sessions.openInitial(trip.id, trip.driverId, trip.dispatcherId);
+    await this.sessions.openInitial(trip.id, trip.driverId, trip.managerId);
 
     // Push: notify the assigned driver about the new trip — body shows the
     // first loading address so they can act without opening the app. The
@@ -126,7 +126,7 @@ export class TripsService {
 
   // load message history for a trip.
   // Privacy: requester sees only sessions they participated in (or all if
-  // they're a manager). Drivers retained across a dispatcher swap see both
+  // they're a manager). Drivers retained across a manager swap see both
   // their old and new chats as one continuous stream.
   async getMessages(
     tripId: string,
@@ -186,7 +186,7 @@ export class TripsService {
     });
   }
 
-  /** Reassign a trip to a different driver (dispatcher action).
+  /** Reassign a trip to a different driver (manager action).
    *  Якщо водій змінюється — закриваємо поточну чат-сесію і відкриваємо нову,
    *  щоб новий водій бачив чистий чат. Стара переписка зберігається в архіві. */
   async assignDriver(
@@ -213,7 +213,7 @@ export class TripsService {
         id,
         'DRIVER_CHANGED',
         driverId,
-        trip.dispatcherId,
+        trip.managerId,
         triggeredById,
       );
       this.gateway.server.to(id).emit('tripUpdated', { tripId: id });
@@ -235,11 +235,11 @@ export class TripsService {
     return updated;
   }
 
-  /** Reassign an existing trip to a different dispatcher. */
-  async assignDispatcher(
+  /** Reassign an existing trip to a different manager. */
+  async assignManager(
     id: string,
     companyId: string,
-    dispatcherId: string,
+    managerId: string,
     triggeredById: string,
   ) {
     const trip = await this.prisma.trip.findFirst({
@@ -247,20 +247,20 @@ export class TripsService {
     });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
-    const dispatcherChanged = trip.dispatcherId !== dispatcherId;
+    const managerChanged = trip.managerId !== managerId;
 
     const updated = await this.prisma.trip.update({
       where: { id },
-      data: { dispatcherId },
+      data: { managerId },
       include: tripInclude,
     });
 
-    if (dispatcherChanged) {
+    if (managerChanged) {
       const { systemMessage } = await this.sessions.closeAndOpenNew(
         id,
-        'DISPATCHER_CHANGED',
+        'MANAGER_CHANGED',
         trip.driverId,
-        dispatcherId,
+        managerId,
         triggeredById,
       );
       this.gateway.server.to(id).emit('tripUpdated', { tripId: id });
@@ -322,7 +322,7 @@ export class TripsService {
       where: {
         companyId,
         status: { in: [...ACTIVE_STATUSES] },
-        truck: { dispatcherId: userId },
+        truck: { managerId: userId },
       },
     });
 

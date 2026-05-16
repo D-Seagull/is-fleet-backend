@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
-import { CreateDispatcherDto } from './dto/create-dispatcher.dto';
+import { CreateManagerDto } from './dto/create-manager.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { RegisterPushTokenDto } from './dto/push-token.dto';
@@ -31,16 +31,16 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Roles('ADMIN', 'TEAMLEAD')
-  @Post('dispatcher')
-  createDispatcher(
+  @Post('manager')
+  createManager(
     @GetUser('companyId') companyId: string,
     @GetUser('id') creatorId: string,
-    @Body() dto: CreateDispatcherDto,
+    @Body() dto: CreateManagerDto,
   ) {
-    return this.usersService.createDispatcher(companyId, creatorId, dto);
+    return this.usersService.createManager(companyId, creatorId, dto);
   }
 
-  @Roles('ADMIN', 'DISPATCHER', 'TEAMLEAD')
+  @Roles('ADMIN', 'MANAGER', 'TEAMLEAD')
   @Post('driver')
   createDriver(
     @GetUser('companyId') companyId: string,
@@ -50,19 +50,19 @@ export class UsersController {
     return this.usersService.createDriver(companyId, creatorId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get()
   getUsers(@GetUser('companyId') companyId: string) {
     return this.usersService.getCompanyUsers(companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id')
   getUserById(@Param('id') id: string) {
     return this.usersService.getUserById(id);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id')
   updateDriver(
     @Param('id') id: string,
@@ -72,13 +72,13 @@ export class UsersController {
     return this.usersService.updateDriver(id, companyId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id/activate')
   activate(@Param('id') id: string, @GetUser('companyId') companyId: string) {
     return this.usersService.activate(id, companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id/deactivate')
   deactivate(
     @Param('id') id: string,
@@ -88,7 +88,7 @@ export class UsersController {
     return this.usersService.deactivate(id, companyId, role);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post(':id/ratings')
   upsertRating(
     @Param('id') driverId: string,
@@ -104,13 +104,38 @@ export class UsersController {
     );
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get(':id/ratings')
   getDriverRatings(@Param('id') driverId: string) {
     return this.usersService.getDriverRatings(driverId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  // ── Manager rating: only drivers in the company can rate managers ─────
+  @Roles('DRIVER')
+  @Post(':id/manager-ratings')
+  upsertManagerRating(
+    @Param('id') managerId: string,
+    @GetUser('id') ratedById: string,
+    @GetUser('companyId') companyId: string,
+    @Body() body: { score: number; comment?: string; anonymous?: boolean },
+  ) {
+    return this.usersService.upsertManagerRating(
+      managerId,
+      ratedById,
+      companyId,
+      body.score,
+      body.comment,
+      body.anonymous,
+    );
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Get(':id/manager-ratings')
+  getManagerRatings(@Param('id') managerId: string) {
+    return this.usersService.getManagerRatings(managerId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('avatar')
   @UseInterceptors(FileInterceptor('file'))
   uploadAvatar(
@@ -120,7 +145,7 @@ export class UsersController {
     return this.usersService.uploadAvatar(userId, file);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete('avatar')
   deleteAvatar(@GetUser('id') userId: string) {
     return this.usersService.deleteAvatar(userId);
@@ -128,7 +153,7 @@ export class UsersController {
 
   // ── Push tokens (mobile-driven) ───────────────────────────────────────
   /** Register / refresh an Expo push token for the current device. */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('me/push-token')
   registerPushToken(
     @GetUser('id') userId: string,
@@ -138,7 +163,7 @@ export class UsersController {
   }
 
   /** Unregister this device (call from logout flow). */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete('me/push-token/:token')
   unregisterPushToken(
     @GetUser('id') userId: string,
@@ -149,7 +174,7 @@ export class UsersController {
 
   /** Update the current user's IANA timezone. Called by clients on auth so
    *  alarms scheduled by others fire on the user's wall-clock time. */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Patch('me/timezone')
   setTimezone(
     @GetUser('id') userId: string,

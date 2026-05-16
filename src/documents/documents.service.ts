@@ -59,7 +59,7 @@ export class DocumentsService {
       }),
     );
 
-    // Real-time push to everyone in the trip room — dispatcher web + driver
+    // Real-time push to everyone in the trip room — manager web + driver
     // app see the doc appear in chat without refetching.
     for (const doc of created) {
       this.gateway.emitNewDocument(tripId, doc);
@@ -75,7 +75,7 @@ export class DocumentsService {
     if (!document) throw new NotFoundException('Документ не знайдений');
 
     // Drivers can only delete their own uploads; managers can delete anything.
-    const isManager = ['ADMIN', 'TEAMLEAD', 'DISPATCHER'].includes(userRole);
+    const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(userRole);
     if (!isManager && document.uploadedBy !== userId) {
       throw new ForbiddenException('Ви не можете видалити цей документ');
     }
@@ -132,7 +132,7 @@ export class DocumentsService {
     return Promise.all(docs.map((d) => this.withSignedUrl(d)));
   }
 
-  // All documents within a company. Used by the dispatcher web UI to show a
+  // All documents within a company. Used by the manager web UI to show a
   // single "all my docs" page grouped by trip.
   async findByCompany(companyId: string) {
     const docs = await this.prisma.tripDocument.findMany({

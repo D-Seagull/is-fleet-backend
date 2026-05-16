@@ -85,7 +85,7 @@ export class AlarmsService {
     }
 
     // Resolve the alarm's absolute moment using the target's timezone — so a
-    // dispatcher who types "08:00" really means "08:00 on the driver's clock".
+    // manager who types "08:00" really means "08:00 on the driver's clock".
     const target = await this.prisma.user.findUnique({
       where: { id: dto.targetUserId },
       select: { timezone: true },
@@ -132,14 +132,14 @@ export class AlarmsService {
   ) {
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, companyId: requester.companyId },
-      select: { driverId: true, dispatcherId: true },
+      select: { driverId: true, managerId: true },
     });
     if (!trip) throw new NotFoundException('Trip not found');
 
     const isManager =
       requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
     const isParticipant =
-      trip.driverId === requester.id || trip.dispatcherId === requester.id;
+      trip.driverId === requester.id || trip.managerId === requester.id;
     if (!isManager && !isParticipant) {
       throw new ForbiddenException('No access to this trip');
     }
@@ -152,18 +152,18 @@ export class AlarmsService {
   }
 
   /** All alarms for a truck — based on trips that touch this truck OR
-   *  alarms targeted at the truck's current driver/dispatcher. */
+   *  alarms targeted at the truck's current driver/manager. */
   async findByTruck(
     truckId: string,
     requester: { id: string; role: string; companyId: string },
   ) {
     const truck = await this.prisma.truck.findFirst({
       where: { id: truckId, companyId: requester.companyId },
-      select: { currentDriverId: true, dispatcherId: true },
+      select: { currentDriverId: true, managerId: true },
     });
     if (!truck) throw new NotFoundException('Truck not found');
 
-    const targetIds = [truck.currentDriverId, truck.dispatcherId].filter(
+    const targetIds = [truck.currentDriverId, truck.managerId].filter(
       (x): x is string => !!x,
     );
 
@@ -252,7 +252,7 @@ export class AlarmsService {
       }
 
       // Socket — for web clients (no Expo push). Emit to the target's
-      // personal room so a logged-in dispatcher gets a modal in the browser.
+      // personal room so a logged-in manager gets a modal in the browser.
       try {
         this.gateway.server.to(alarm.targetUserId).emit('alarmFired', {
           id: alarm.id,

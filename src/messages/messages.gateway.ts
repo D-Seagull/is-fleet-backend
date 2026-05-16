@@ -98,7 +98,7 @@ export class MessagesGateway {
 
     try {
       const message = await this.messagesService.create(senderId, dto);
-      // Emit to the trip room (driver + dispatcher in that trip).
+      // Emit to the trip room (driver + manager in that trip).
       this.server.to(dto.tripId).emit('newMessage', message);
       // Also emit to the company room so managers on the trucks-list page
       // receive instant unread-summary invalidation without joining the trip.
@@ -140,7 +140,7 @@ export class MessagesGateway {
 
   /**
    * Ephemeral "is typing" signal. Privacy: only the trip's current driver or
-   * dispatcher may broadcast — old participants who still hold the room can't
+   * manager may broadcast — old participants who still hold the room can't
    * leak presence into the new pair's chat.
    */
   @SubscribeMessage('typing')
@@ -152,10 +152,10 @@ export class MessagesGateway {
     if (!userId || !body?.tripId) return;
     const trip = await this.prisma.trip.findUnique({
       where: { id: body.tripId },
-      select: { driverId: true, dispatcherId: true },
+      select: { driverId: true, managerId: true },
     });
     if (!trip) return;
-    if (userId !== trip.driverId && userId !== trip.dispatcherId) return;
+    if (userId !== trip.driverId && userId !== trip.managerId) return;
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

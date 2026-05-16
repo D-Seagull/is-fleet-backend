@@ -11,7 +11,7 @@ import {
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import {
-  AssignDispatcherDto,
+  AssignManagerDto,
   AssignTripDto,
   UpdateTripDto,
 } from './dto/update-trip.dto';
@@ -28,23 +28,23 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class TripsController {
   constructor(private tripsService: TripsService) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post()
   create(
     @GetUser('companyId') companyId: string,
-    @GetUser('id') dispatcherId: string,
+    @GetUser('id') managerId: string,
     @Body() dto: CreateTripDto,
   ) {
-    return this.tripsService.create(companyId, dispatcherId, dto);
+    return this.tripsService.create(companyId, managerId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get()
   findAll(@GetUser('companyId') companyId: string) {
     return this.tripsService.findAll(companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post('broadcast')
   broadcast(
     @GetUser('id') userId: string,
@@ -55,7 +55,7 @@ export class TripsController {
   }
 
   // NOTE: must come before :id to avoid route conflict
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('truck/:truckId')
   findByTruck(
     @Param('truckId') truckId: string,
@@ -77,14 +77,14 @@ export class TripsController {
     return this.tripsService.findMyActiveTrip(driverId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id')
   findOne(@Param('id') id: string, @GetUser('companyId') companyId: string) {
     return this.tripsService.findOne(id, companyId);
   }
 
   // load message history for a trip
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/messages')
   getMessages(
     @Param('id') id: string,
@@ -96,7 +96,7 @@ export class TripsController {
   }
 
   // update trip info (notes + stops)
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id/info')
   updateInfo(
     @Param('id') id: string,
@@ -107,7 +107,7 @@ export class TripsController {
   }
 
   /** Reassign an existing trip to a different driver. */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id/assign')
   assignDriver(
     @Param('id') id: string,
@@ -118,25 +118,25 @@ export class TripsController {
     return this.tripsService.assignDriver(id, companyId, dto.driverId, userId);
   }
 
-  /** Reassign an existing trip to a different dispatcher. */
+  /** Reassign an existing trip to a different manager. */
   @Roles('ADMIN', 'TEAMLEAD')
-  @Patch(':id/dispatcher')
-  assignDispatcher(
+  @Patch(':id/manager')
+  assignManager(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
     @GetUser('id') userId: string,
-    @Body() dto: AssignDispatcherDto,
+    @Body() dto: AssignManagerDto,
   ) {
-    return this.tripsService.assignDispatcher(
+    return this.tripsService.assignManager(
       id,
       companyId,
-      dto.dispatcherId,
+      dto.managerId,
       userId,
     );
   }
 
   // ─── Chat archive (closed sessions) ──────────────────────────────────────
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/chat/archive')
   getChatArchive(
     @Param('id') id: string,
@@ -147,7 +147,7 @@ export class TripsController {
     return this.tripsService.getChatArchive(id, companyId, { id: userId, role });
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/chat/sessions/:sessionId/messages')
   getSessionMessages(
     @Param('sessionId') sessionId: string,
@@ -157,7 +157,7 @@ export class TripsController {
     return this.tripsService.getSessionMessages(sessionId, { id: userId, role });
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id/status')
   updateStatus(
     @Param('id') id: string,

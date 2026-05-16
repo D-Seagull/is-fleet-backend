@@ -24,7 +24,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class GroupsController {
   constructor(private groupsService: GroupsService) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post()
   create(
     @GetUser('companyId') companyId: string,
@@ -35,7 +35,7 @@ export class GroupsController {
     return this.groupsService.create(companyId, userId, role, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get()
   findAll(
     @GetUser('companyId') companyId: string,
@@ -45,23 +45,23 @@ export class GroupsController {
     return this.groupsService.findAll(companyId, role, userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get('trucks')
   findAllTrucks(@GetUser('companyId') companyId: string) {
     return this.groupsService.findAllTrucksGroups(companyId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
-  @Get('dispatchers')
-  findAllDispatchers(
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Get('managers')
+  findAllManagers(
     @GetUser('companyId') companyId: string,
     @GetUser('role') role: string,
     @GetUser('id') userId: string,
   ) {
-    return this.groupsService.findAllDispatchersGroups(companyId, role, userId);
+    return this.groupsService.findAllManagersGroups(companyId, role, userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -72,7 +72,7 @@ export class GroupsController {
     return this.groupsService.update(id, userId, role, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete(':id')
   remove(
     @Param('id') id: string,
@@ -82,7 +82,7 @@ export class GroupsController {
     return this.groupsService.remove(id, userId, role);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post(':id/trucks/:truckId')
   addTruck(
     @Param('id') groupId: string,
@@ -93,7 +93,7 @@ export class GroupsController {
     return this.groupsService.addTruck(groupId, truckId, userId, role);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete(':id/trucks/:truckId')
   removeTruck(
     @Param('id') groupId: string,
@@ -105,20 +105,20 @@ export class GroupsController {
   }
 
   @Roles('ADMIN', 'TEAMLEAD')
-  @Post(':id/dispatchers/:dispatcherId')
-  addDispatcher(
+  @Post(':id/managers/:managerId')
+  addManager(
     @Param('id') groupId: string,
-    @Param('dispatcherId') dispatcherId: string,
+    @Param('managerId') managerId: string,
   ) {
-    return this.groupsService.addDispatcher(groupId, dispatcherId);
+    return this.groupsService.addManager(groupId, managerId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD')
-  @Delete(':id/dispatchers/:dispatcherId')
-  removeDispatcher(
+  @Delete(':id/managers/:managerId')
+  removeManager(
     @Param('id') groupId: string,
-    @Param('dispatcherId') dispatcherId: string,
+    @Param('managerId') managerId: string,
   ) {
-    return this.groupsService.removeDispatcher(groupId, dispatcherId);
+    return this.groupsService.removeManager(groupId, managerId);
   }
 }

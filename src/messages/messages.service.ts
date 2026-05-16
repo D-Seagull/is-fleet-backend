@@ -22,20 +22,20 @@ export class MessagesService {
     private gateway: MessagesGateway,
   ) {}
   async create(senderId: string, dto: CreateMessageDto) {
-    // Privacy: only the trip's current driver or current dispatcher may write.
+    // Privacy: only the trip's current driver or current manager may write.
     // Otherwise an old participant could still post into the active session
     // they're no longer part of (and the new participants would receive it).
     const trip = await this.prisma.trip.findUnique({
       where: { id: dto.tripId },
       include: {
         driver: { select: { id: true, language: true } },
-        dispatcher: { select: { id: true, language: true } },
+        manager: { select: { id: true, language: true } },
       },
     });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
-    if (senderId !== trip.driverId && senderId !== trip.dispatcherId) {
+    if (senderId !== trip.driverId && senderId !== trip.managerId) {
       throw new ForbiddenException(
-        'Тільки поточний водій або диспетчер можуть писати в цей чат',
+        'Тільки поточний водій або менеджер можуть писати в цей чат',
       );
     }
 
@@ -44,7 +44,7 @@ export class MessagesService {
     if (dto.translate) {
       // Визначаємо мову отримувача
       const receiver =
-        trip.driverId === senderId ? trip.dispatcher : trip.driver;
+        trip.driverId === senderId ? trip.manager : trip.driver;
       const receiverLanguage = receiver?.language || 'EN';
 
       // Перекладаємо
@@ -70,9 +70,9 @@ export class MessagesService {
           select: { id: true, name: true, role: true },
         },
         // Recipients filter on the client side: drop the message if my id is
-        // neither driverId nor dispatcherId (and I'm not a manager).
+        // neither driverId nor managerId (and I'm not a manager-tier user).
         session: {
-          select: { driverId: true, dispatcherId: true },
+          select: { driverId: true, managerId: true },
         },
       },
     });
@@ -81,7 +81,7 @@ export class MessagesService {
     // (no live socket). Online recipients already get the message via the
     // `newMessage` socket event — a push would just blink the banner.
     const recipientId =
-      senderId === trip.driverId ? trip.dispatcherId : trip.driverId;
+      senderId === trip.driverId ? trip.managerId : trip.driverId;
     if (recipientId) {
       void (async () => {
         const online = await this.gateway.isUserOnline(recipientId);
@@ -111,7 +111,7 @@ export class MessagesService {
     const msg = await this.prisma.message.findUnique({ where: { id } });
     if (!msg) throw new NotFoundException('Повідомлення не знайдене');
 
-    const isManager = ['ADMIN', 'TEAMLEAD', 'DISPATCHER'].includes(userRole);
+    const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(userRole);
     if (!isManager && msg.senderId !== userId) {
       throw new ForbiddenException('Ви не можете видалити це повідомлення');
     }
@@ -120,7 +120,7 @@ export class MessagesService {
     return { tripId: msg.tripId };
   }
 
-  // Unread summary for the dispatcher — one DB round-trip,
+  // Unread summary for the manager — one DB round-trip,
   // grouped by truck, split into active-trip vs past-trip buckets.
   async getUnreadSummary(
     companyId: string,
@@ -131,23 +131,23 @@ export class MessagesService {
       'ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED',
     ] as const;
 
-    const isManager =
+    const isAdminTier =
       requesterRole === 'ADMIN' || requesterRole === 'TEAMLEAD';
 
     // Privacy: requester counts unread only for sessions they participated
-    // in. Managers see everything in their company.
+    // in. Admin/Teamlead see everything in their company.
     const allUnread = await this.prisma.message.findMany({
       where: {
         trip: { companyId },
         isRead: false,
         senderId: { not: requesterId },
-        ...(isManager
+        ...(isAdminTier
           ? {}
           : {
               session: {
                 OR: [
                   { driverId: requesterId },
-                  { dispatcherId: requesterId },
+                  { managerId: requesterId },
                 ],
               },
             }),
@@ -239,7 +239,7 @@ export class MessagesService {
   }
 
   // Unread summary for the driver — only their own trips, only messages from
-  // others (dispatchers / managers). Filters to the currently active session.
+  // others (managers / admin). Filters to the currently active session.
   async getDriverUnreadSummary(driverId: string) {
     const ACTIVE_STATUSES = [
       'ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED',
@@ -297,7 +297,7 @@ export class MessagesService {
       if (!entry.latestMessage) {
         entry.latestMessage = {
           content: msg.content,
-          senderName: msg.sender.name ?? 'Dispatcher',
+          senderName: msg.sender.name ?? 'Manager',
           createdAt: msg.createdAt.toISOString(),
         };
       }

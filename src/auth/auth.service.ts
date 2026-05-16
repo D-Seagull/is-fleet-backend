@@ -44,7 +44,7 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    // Спочатку шукаємо по токену юзера (dispatcher/driver)
+    // Спочатку шукаємо по токену юзера (manager/driver)
     const existingUser = await this.prisma.user.findFirst({
       where: {
         inviteToken: dto.inviteToken,
@@ -53,7 +53,7 @@ export class AuthService {
     });
 
     if (existingUser) {
-      // Реєструємо dispatcher або driver
+      // Реєструємо manager або driver
       const hash = await bcrypt.hash(dto.password, 10);
 
       const user = await this.prisma.user.update({
@@ -155,7 +155,7 @@ export class AuthService {
         language: true,
         timezone: true,
         avatar: true,
-        // For driver routing: which truck am I on, who is my dispatcher.
+        // For driver routing: which truck am I on, who is my manager.
         // Null for non-drivers — safe to expose either way.
         currentTruck: {
           select: {
@@ -164,7 +164,7 @@ export class AuthService {
             status: true,
           },
         },
-        dispatcher: {
+        manager: {
           select: {
             id: true,
             name: true,

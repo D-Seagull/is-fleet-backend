@@ -26,7 +26,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class AnnouncementsController {
   constructor(private announcementsService: AnnouncementsService) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post()
   create(
     @GetUser('companyId') companyId: string,
@@ -36,7 +36,7 @@ export class AnnouncementsController {
     return this.announcementsService.create(companyId, userId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get()
   findAll(
     @GetUser('companyId') companyId: string,
@@ -45,7 +45,7 @@ export class AnnouncementsController {
     return this.announcementsService.findAll(companyId, userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post(':id/read')
   markAsRead(
     @Param('id') announcementId: string,
@@ -54,7 +54,7 @@ export class AnnouncementsController {
     return this.announcementsService.markAsRead(announcementId, userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post('drafts')
   createDraft(
     @GetUser('companyId') companyId: string,
@@ -64,7 +64,7 @@ export class AnnouncementsController {
     return this.announcementsService.createDraft(companyId, userId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get('drafts')
   findDrafts(
     @GetUser('companyId') companyId: string,
@@ -78,7 +78,7 @@ export class AnnouncementsController {
     );
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post('drafts/:id/publish')
   publishDraft(
     @Param('id') draftId: string,
@@ -88,7 +88,7 @@ export class AnnouncementsController {
     return this.announcementsService.publishDraft(draftId, companyId, userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -98,7 +98,7 @@ export class AnnouncementsController {
     return this.announcementsService.update(id, userId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete('drafts/:id')
   removeDraft(@Param('id') id: string) {
     return this.announcementsService.removeDraft(id);

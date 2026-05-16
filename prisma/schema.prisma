@@ -47,31 +47,31 @@ model User {
   phone              String?             @unique
   password           String?
   avatar String?
-  avatarPublicId String? 
+  avatarPublicId String?
   role               Role
   language           Language            @default(EN)
   timezone           String?             // IANA tz, e.g. "Europe/Warsaw"
   isActive           Boolean             @default(true)
   companyId          String
   createdAt          DateTime            @default(now())
-  dispatcherId String?
+  managerId    String?
   teamleadId   String?
-  inviteToken    String?   
+  inviteToken    String?
   inviteExpiry   DateTime?
   sentMessages     DirectMessage[] @relation("SentMessages")
   receivedMessages DirectMessage[] @relation("ReceivedMessages")
   groupMessages GroupMessage[]
-  
-  dispatcher User?  @relation("DriverDispatcher", fields: [dispatcherId], references: [id])
-  teamlead   User?  @relation("DispatcherTeamlead", fields: [teamleadId], references: [id])
-  drivers     User[] @relation("DriverDispatcher")
-  dispatchers User[] @relation("DispatcherTeamlead")
+
+  manager    User?  @relation("DriverManager", fields: [managerId], references: [id])
+  teamlead   User?  @relation("ManagerTeamlead", fields: [teamleadId], references: [id])
+  drivers     User[] @relation("DriverManager")
+  managers    User[] @relation("ManagerTeamlead")
   groupsCreated      Group[]             @relation("GroupCreator")
-  groupDispatchers   GroupDispatcher[]
+  groupManagers      GroupManager[]
   truckNotes         TruckNote[]
   company            Company             @relation(fields: [companyId], references: [id])
   tripsAsDriver      Trip[]              @relation("DriverTrips")
-  tripsAsDispatcher  Trip[]              @relation("DispatcherTrips")
+  tripsAsManager     Trip[]              @relation("ManagerTrips")
   messages           Message[]
   comments           TripComment[]
   alarmsCreated      Alarm[]             @relation("AlarmCreator")
@@ -81,13 +81,15 @@ model User {
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
   currentTruck       Truck?              @relation("CurrentDriver")
-  assignedTrucks     Truck[]             @relation("TruckDispatcher")
+  assignedTrucks     Truck[]             @relation("TruckManager")
   advanceRequests AdvanceRequest[] @relation("DriverAdvanceRequests")
   otpCodes           OtpCode[]
-  ratingsReceived    DriverRating[] @relation("DriverRatings")
-  ratingsGiven       DriverRating[] @relation("GivenRatings")
+  ratingsReceived         DriverRating[]  @relation("DriverRatings")
+  ratingsGiven            DriverRating[]  @relation("GivenRatings")
+  managerRatingsReceived  ManagerRating[] @relation("ManagerRatings")
+  managerRatingsGiven     ManagerRating[] @relation("GivenManagerRatings")
   sessionsAsDriver     TripChatSession[] @relation("SessionDriver")
-  sessionsAsDispatcher TripChatSession[] @relation("SessionDispatcher")
+  sessionsAsManager    TripChatSession[] @relation("SessionManager")
   pushTokens         PushToken[]
 }
 
@@ -107,7 +109,7 @@ model PushToken {
 enum Role {
   ADMIN
   TEAMLEAD
-  DISPATCHER
+  MANAGER
   DRIVER
 }
 
@@ -130,13 +132,13 @@ model Truck {
   truckNotes      TruckNote[]
   companyId       String
   currentDriverId String?     @unique
-  dispatcherId    String?
+  managerId       String?
   createdAt       DateTime    @default(now())
 
   groups        GroupTruck[]
   company       Company      @relation(fields: [companyId], references: [id])
   currentDriver User?        @relation("CurrentDriver", fields: [currentDriverId], references: [id])
-  dispatcher    User?        @relation("TruckDispatcher", fields: [dispatcherId], references: [id])
+  manager       User?        @relation("TruckManager", fields: [managerId], references: [id])
   trips         Trip[]
 }
 
@@ -150,7 +152,7 @@ model Trip {
   id           String     @id @default(uuid())
   title        String
   status       TripStatus @default(ASSIGNED)
-  dispatcherId String
+  managerId    String
   driverId     String
   truckId      String
   companyId    String
@@ -160,7 +162,7 @@ model Trip {
   updatedAt    DateTime   @updatedAt
   chatResetAt  DateTime?  // встановлюється при зміні водія — чат "починається заново"
 
-  dispatcher User           @relation("DispatcherTrips", fields: [dispatcherId], references: [id])
+  manager    User           @relation("ManagerTrips", fields: [managerId], references: [id])
   driver     User           @relation("DriverTrips", fields: [driverId], references: [id])
   truck      Truck          @relation(fields: [truckId], references: [id])
   company    Company        @relation(fields: [companyId], references: [id])
@@ -173,27 +175,27 @@ model Trip {
 }
 
 model TripChatSession {
-  id           String            @id @default(uuid())
-  tripId       String
-  driverId     String?           // null only for LEGACY_RESET sessions
-  dispatcherId String?           // null only for LEGACY_RESET sessions
-  startedAt    DateTime          @default(now())
-  endedAt      DateTime?
-  endReason    SessionEndReason?
+  id         String            @id @default(uuid())
+  tripId     String
+  driverId   String?           // null only for LEGACY_RESET sessions
+  managerId  String?           // null only for LEGACY_RESET sessions
+  startedAt  DateTime          @default(now())
+  endedAt    DateTime?
+  endReason  SessionEndReason?
 
-  trip       Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  driver     User?     @relation("SessionDriver", fields: [driverId], references: [id])
-  dispatcher User?     @relation("SessionDispatcher", fields: [dispatcherId], references: [id])
-  messages   Message[]
+  trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  driver   User?     @relation("SessionDriver", fields: [driverId], references: [id])
+  manager  User?     @relation("SessionManager", fields: [managerId], references: [id])
+  messages Message[]
 
   @@index([tripId, endedAt])
   @@index([driverId])
-  @@index([dispatcherId])
+  @@index([managerId])
 }
 
 enum SessionEndReason {
   DRIVER_CHANGED
-  DISPATCHER_CHANGED
+  MANAGER_CHANGED
   TRIP_COMPLETED
   LEGACY_RESET
 }
@@ -250,7 +252,7 @@ model DirectMessage {
   senderId   String
   receiverId String
   content    String
-  isRead     Boolean  @default(false) 
+  isRead     Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])
@@ -265,7 +267,7 @@ model Message {
   content           String
   translatedContent String?
   isRead            Boolean  @default(false)
-  isSystem          Boolean  @default(false)  // system event (driver/dispatcher changed) — rendered specially
+  isSystem          Boolean  @default(false)  // system event (driver/manager changed) — rendered specially
   createdAt         DateTime @default(now())
 
   trip    Trip            @relation(fields: [tripId], references: [id])
@@ -340,7 +342,7 @@ model Announcement {
 
 enum AnnouncementTarget {
   ALL_DRIVERS
-  ALL_DISPATCHERS
+  ALL_MANAGERS
   ALL
 }
 
@@ -387,7 +389,7 @@ model OtpCode {
 
 enum GroupType {
   TRUCKS
-  DISPATCHERS
+  MANAGERS
 }
 
 model Group {
@@ -401,7 +403,7 @@ model Group {
   company            Company             @relation(fields: [companyId], references: [id])
   creator            User                @relation("GroupCreator", fields: [createdBy], references: [id])
   trucks             GroupTruck[]
-  dispatchers        GroupDispatcher[]
+  managers           GroupManager[]
   announcements      Announcement[]
   announcementsDraft AnnouncementDraft[]
 }
@@ -425,13 +427,13 @@ model GroupTruck {
   truck Truck @relation(fields: [truckId], references: [id])
 }
 
-model GroupDispatcher {
-  id           String @id @default(uuid())
-  groupId      String
-  dispatcherId String
+model GroupManager {
+  id        String @id @default(uuid())
+  groupId   String
+  managerId String
 
-  group      Group @relation(fields: [groupId], references: [id])
-  dispatcher User  @relation(fields: [dispatcherId], references: [id])
+  group   Group @relation(fields: [groupId], references: [id])
+  manager User  @relation(fields: [managerId], references: [id])
 }
 model DriverRating {
   id        String   @id @default(uuid())
@@ -446,6 +448,21 @@ model DriverRating {
   ratedBy User @relation("GivenRatings", fields: [ratedById], references: [id])
 
   @@unique([driverId, ratedById])
+}
+
+model ManagerRating {
+  id        String   @id @default(uuid())
+  managerId String
+  ratedById String
+  score     Int
+  comment   String?
+  anonymous Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  manager User @relation("ManagerRatings", fields: [managerId], references: [id])
+  ratedBy User @relation("GivenManagerRatings", fields: [ratedById], references: [id])
+
+  @@unique([managerId, ratedById])
 }
 
 model AdvanceRequest {

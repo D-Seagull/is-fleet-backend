@@ -25,7 +25,7 @@ import { memoryStorage } from 'multer';
 export class CompaniesController {
   constructor(private companiesService: CompaniesService) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get()
   getCompany(@GetUser('companyId') companyId: string) {
     return this.companiesService.getCompany(companyId);

@@ -17,11 +17,11 @@ export class AdvanceRequestsService {
     companyId: string,
     dto: CreateAdvanceRequestDto,
   ) {
-    // знаходимо водія з диспетчером і тімлідом
+    // знаходимо водія з менеджером і тімлідом
     const driver = await this.prisma.user.findFirst({
       where: { id: driverId },
       include: {
-        dispatcher: {
+        manager: {
           select: {
             email: true,
             teamlead: { select: { email: true } },
@@ -42,9 +42,9 @@ export class AdvanceRequestsService {
       },
     });
 
-    // email диспетчера як from
+    // email менеджера як from
     const fromEmail: string =
-      driver.dispatcher?.email ?? this.config.get<string>('MAIL_FROM')!;
+      driver.manager?.email ?? this.config.get<string>('MAIL_FROM')!;
 
     // бухгалтерія
     const toEmail: string = this.config.get<string>('ACCOUNTING_EMAIL')!;
@@ -53,10 +53,10 @@ export class AdvanceRequestsService {
 
     const ccEmail: string | null =
       dto.amount >= 200
-        ? [driver.dispatcher?.teamlead?.email, driver.dispatcher?.email]
+        ? [driver.manager?.teamlead?.email, driver.manager?.email]
             .filter(Boolean)
             .join(',') || null
-        : (driver.dispatcher?.email ?? null);
+        : (driver.manager?.email ?? null);
 
     await this.mail.sendAdvanceRequest(
       fromEmail,
@@ -78,10 +78,10 @@ export class AdvanceRequestsService {
       });
     }
 
-    if (role === 'DISPATCHER') {
+    if (role === 'MANAGER') {
       return await this.prisma.advanceRequest.findMany({
         where: {
-          driver: { dispatcherId: userId },
+          driver: { managerId: userId },
         },
         include: {
           driver: { select: { id: true, name: true } },
@@ -93,7 +93,7 @@ export class AdvanceRequestsService {
     if (role === 'TEAMLEAD') {
       return await this.prisma.advanceRequest.findMany({
         where: {
-          driver: { dispatcher: { teamleadId: userId } },
+          driver: { manager: { teamleadId: userId } },
         },
         include: {
           driver: { select: { id: true, name: true } },

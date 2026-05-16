@@ -37,7 +37,7 @@ export class AnnouncementsService {
         where: { id: dto.groupId },
         include: {
           trucks: { include: { truck: { select: { currentDriverId: true } } } },
-          dispatchers: { select: { dispatcherId: true } },
+          managers: { select: { managerId: true } },
         },
       });
 
@@ -45,14 +45,14 @@ export class AnnouncementsService {
         recipients = group.trucks
           .filter((t) => t.truck.currentDriverId)
           .map((t) => ({ id: t.truck.currentDriverId! }));
-      } else if (group?.type === 'DISPATCHERS') {
-        recipients = group.dispatchers.map((d) => ({ id: d.dispatcherId }));
+      } else if (group?.type === 'MANAGERS') {
+        recipients = group.managers.map((d) => ({ id: d.managerId }));
       }
     } else {
       // по target
       const where: any = { companyId };
       if (dto.target === 'ALL_DRIVERS') where.role = 'DRIVER';
-      if (dto.target === 'ALL_DISPATCHERS') where.role = 'DISPATCHER';
+      if (dto.target === 'ALL_MANAGERS') where.role = 'MANAGER';
 
       recipients = await this.prisma.user.findMany({
         where,
@@ -156,7 +156,7 @@ export class AnnouncementsService {
             trucks: {
               include: { truck: { select: { currentDriverId: true } } },
             },
-            dispatchers: { select: { dispatcherId: true } },
+            managers: { select: { managerId: true } },
           },
         },
       },
@@ -183,15 +183,15 @@ export class AnnouncementsService {
         recipients = announcement.group.trucks
           .filter((t) => t.truck.currentDriverId)
           .map((t) => ({ id: t.truck.currentDriverId! }));
-      } else if (announcement.group.type === 'DISPATCHERS') {
-        recipients = announcement.group.dispatchers.map((d) => ({
-          id: d.dispatcherId,
+      } else if (announcement.group.type === 'MANAGERS') {
+        recipients = announcement.group.managers.map((d) => ({
+          id: d.managerId,
         }));
       }
     } else {
       const where: any = { companyId: announcement.companyId };
       if (announcement.target === 'ALL_DRIVERS') where.role = 'DRIVER';
-      if (announcement.target === 'ALL_DISPATCHERS') where.role = 'DISPATCHER';
+      if (announcement.target === 'ALL_MANAGERS') where.role = 'MANAGER';
 
       console.log('target:', announcement.target);
       console.log('where:', where);

@@ -7,7 +7,7 @@ export class UpdateDriverDto {
 
   @IsString()
   @IsOptional()
-  dispatcherId?: string | null;
+  managerId?: string | null;
 
   @IsString()
   @IsOptional()

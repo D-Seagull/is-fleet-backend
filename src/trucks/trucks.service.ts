@@ -40,7 +40,7 @@ export class TrucksService {
         currentDriver: {
           select: { id: true, name: true, phone: true },
         },
-        dispatcher: {
+        manager: {
           select: { id: true, name: true },
         },
         truckNotes: {
@@ -59,7 +59,7 @@ export class TrucksService {
         currentDriver: {
           select: { id: true, name: true, phone: true },
         },
-        dispatcher: {
+        manager: {
           select: { id: true, name: true },
         },
       },
@@ -107,7 +107,7 @@ export class TrucksService {
     });
 
     // Push the change to everyone who needs to refresh: the company room
-    // (so dispatchers' truck lists update) and the driver's personal room
+    // (so managers' truck lists update) and the driver's personal room
     // (so the mobile app drops/picks up the truck immediately).
     const driverChanged =
       dto.currentDriverId !== undefined &&
@@ -152,18 +152,18 @@ export class TrucksService {
       }
     }
 
-    // Якщо диспетчер вантажівки змінився — синхронізуємо це з активними
-    // тріпами (Trip.dispatcherId) і закриваємо/відкриваємо чат-сесії, щоб
-    // новий диспетчер бачив чистий чат, а стара переписка лишилась в архіві.
-    const dispatcherChanged =
-      dto.dispatcherId !== undefined &&
-      dto.dispatcherId !== oldTruck.dispatcherId &&
-      dto.dispatcherId !== null;
+    // Якщо менеджер вантажівки змінився — синхронізуємо це з активними
+    // тріпами (Trip.managerId) і закриваємо/відкриваємо чат-сесії, щоб
+    // новий менеджер бачив чистий чат, а стара переписка лишилась в архіві.
+    const managerChanged =
+      dto.managerId !== undefined &&
+      dto.managerId !== oldTruck.managerId &&
+      dto.managerId !== null;
 
-    // Push truckChanged on dispatcher swap too — drivers' mobile app shows
-    // the new dispatcher in the drawer, other web dispatchers see the new
+    // Push truckChanged on manager swap too — drivers' mobile app shows
+    // the new manager in the drawer, other web managers see the new
     // assignment in their truck list, all without manual refresh.
-    if (dispatcherChanged) {
+    if (managerChanged) {
       const payload = {
         truckId: id,
         previousTruckId: null as string | null,
@@ -180,27 +180,27 @@ export class TrucksService {
       }
     }
 
-    if (dispatcherChanged) {
-      const newDispatcherId = dto.dispatcherId as string;
+    if (managerChanged) {
+      const newManagerId = dto.managerId as string;
       const activeTrips = await this.prisma.trip.findMany({
         where: {
           truckId: id,
           status: { in: [...ACTIVE_TRIP_STATUSES] },
         },
-        select: { id: true, driverId: true, dispatcherId: true },
+        select: { id: true, driverId: true, managerId: true },
       });
 
       for (const trip of activeTrips) {
-        if (trip.dispatcherId === newDispatcherId) continue;
+        if (trip.managerId === newManagerId) continue;
         await this.prisma.trip.update({
           where: { id: trip.id },
-          data: { dispatcherId: newDispatcherId },
+          data: { managerId: newManagerId },
         });
         const { systemMessage } = await this.sessions.closeAndOpenNew(
           trip.id,
-          'DISPATCHER_CHANGED',
+          'MANAGER_CHANGED',
           trip.driverId,
-          newDispatcherId,
+          newManagerId,
           triggeredById,
         );
         this.gateway.server.to(trip.id).emit('tripUpdated', { tripId: trip.id });
@@ -224,7 +224,7 @@ export class TrucksService {
     return this.prisma.truck.findFirst({
       where: { currentDriverId: driverId, isActive: true },
       include: {
-        dispatcher: {
+        manager: {
           select: { id: true, name: true, phone: true, avatar: true },
         },
         truckNotes: {
@@ -239,7 +239,7 @@ export class TrucksService {
 
   async findMyTrucks(userId: string, companyId: string) {
     return this.prisma.truck.findMany({
-      where: { companyId, isActive: true, dispatcherId: userId },
+      where: { companyId, isActive: true, managerId: userId },
       include: {
         currentDriver: {
           select: { id: true, name: true, phone: true },

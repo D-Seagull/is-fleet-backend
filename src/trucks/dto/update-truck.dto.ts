@@ -17,5 +17,5 @@ export class UpdateTruckDto {
 
   @IsString()
   @IsOptional()
-  dispatcherId?: string | null;
+  managerId?: string | null;
 }

@@ -23,7 +23,7 @@ export class AdvanceRequestsController {
   ) {
     return this.advanceRequestsService.create(driverId, companyId, dto);
   }
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get()
   findMyRequests(@GetUser('id') userId: string, @GetUser('role') role: string) {
     return this.advanceRequestsService.findMyRequests(userId, role);

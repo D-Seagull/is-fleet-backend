@@ -26,7 +26,7 @@ export class AlarmsController {
 
   /** Create an alarm. Drivers may only target themselves; managers can
    *  target any user from the same company. */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post()
   create(
     @GetUser('id') userId: string,
@@ -38,20 +38,20 @@ export class AlarmsController {
   }
 
   /** Alarms targeted at the current user — their personal inbox. */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('my')
   findMy(@GetUser('id') userId: string) {
     return this.alarmsService.findMy(userId);
   }
 
   /** Alarms the current user has scheduled. */
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('created')
   findCreated(@GetUser('id') userId: string) {
     return this.alarmsService.findCreated(userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('trip/:tripId')
   findByTrip(
     @Param('tripId') tripId: string,
@@ -66,7 +66,7 @@ export class AlarmsController {
     });
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get('truck/:truckId')
   findByTruck(
     @Param('truckId') truckId: string,
@@ -81,7 +81,7 @@ export class AlarmsController {
     });
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -91,7 +91,7 @@ export class AlarmsController {
     return this.alarmsService.update(id, userId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
   remove(@Param('id') id: string, @GetUser('id') userId: string) {
     return this.alarmsService.remove(id, userId);

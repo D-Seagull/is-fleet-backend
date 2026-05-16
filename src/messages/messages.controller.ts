@@ -24,7 +24,7 @@ export class MessagesController {
     private readonly gateway: MessagesGateway,
   ) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get('unread')
   getUnreadSummary(
     @GetUser('companyId') companyId: string,
@@ -40,7 +40,7 @@ export class MessagesController {
     return this.messagesService.getDriverUnreadSummary(userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'DISPATCHER', 'DRIVER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
   async remove(
     @Param('id') id: string,
