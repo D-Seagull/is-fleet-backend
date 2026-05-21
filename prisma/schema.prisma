@@ -77,6 +77,9 @@ model User {
   alarmsCreated      Alarm[]             @relation("AlarmCreator")
   alarmsTargeted     Alarm[]             @relation("AlarmTarget")
   uploadedDocuments  TripDocument[]
+  dmDocsUploaded     DirectMessageDocument[] @relation("DMDocsUploader")
+  dmDocsReceived     DirectMessageDocument[] @relation("DMDocsOtherUser")
+  groupDocsUploaded  GroupMessageDocument[]  @relation("GroupDocsUploader")
   announcementReads  AnnouncementRead[]
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
@@ -247,6 +250,42 @@ model TripDocument {
   @@index([tripId, isRead])
 }
 
+model DirectMessageDocument {
+  id          String      @id @default(uuid())
+  uploadedBy  String      // хто завантажив
+  otherUserId String      // інший учасник conversation
+  fileUrl     String
+  fileName    String
+  fileType    FileDocType @default(DOCUMENT)
+  isRead      Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  publicId    String?
+
+  uploader  User @relation("DMDocsUploader",  fields: [uploadedBy],  references: [id])
+  otherUser User @relation("DMDocsOtherUser", fields: [otherUserId], references: [id])
+
+  @@index([uploadedBy, otherUserId])
+  @@index([otherUserId, uploadedBy])
+}
+
+model GroupMessageDocument {
+  id         String      @id @default(uuid())
+  groupId    String
+  uploadedBy String
+  fileUrl    String
+  fileName   String
+  fileType   FileDocType @default(DOCUMENT)
+  isRead     Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  publicId   String?
+
+  group    Group @relation(fields: [groupId],   references: [id])
+  uploader User  @relation("GroupDocsUploader", fields: [uploadedBy], references: [id])
+
+  @@index([groupId])
+  @@index([uploadedBy])
+}
+
 model DirectMessage {
   id         String   @id @default(uuid())
   senderId   String
@@ -400,6 +439,7 @@ model Group {
   createdBy String
   createdAt DateTime  @default(now())
   messages GroupMessage[]
+  documents GroupMessageDocument[]
   company            Company             @relation(fields: [companyId], references: [id])
   creator            User                @relation("GroupCreator", fields: [createdBy], references: [id])
   trucks             GroupTruck[]

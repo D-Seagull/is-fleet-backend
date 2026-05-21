@@ -19,7 +19,9 @@ import { CompaniesModule } from './companies/companies.module';
 import { AdminModule } from './admin/admin.module';
 import { DirectMessagesModule } from './direct-messages/direct-messages.module';
 import { DirectMessagesService } from './direct-messages/direct-messages.service';
+import { DirectMessageDocumentsModule } from './direct-message-documents/direct-message-documents.module';
 import { GroupMessagesModule } from './group-messages/group-messages.module';
+import { GroupMessageDocumentsModule } from './group-message-documents/group-message-documents.module';
 
 @Module({
   imports: [
@@ -43,7 +45,9 @@ import { GroupMessagesModule } from './group-messages/group-messages.module';
     CompaniesModule,
     AdminModule,
     DirectMessagesModule,
+    DirectMessageDocumentsModule,
     GroupMessagesModule,
+    GroupMessageDocumentsModule,
   ],
   controllers: [],
   providers: [TranslationService, DirectMessagesService],

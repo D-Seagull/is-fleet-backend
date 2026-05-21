@@ -159,4 +159,38 @@ export class DirectMessagesGateway
       userId: client.data.userId,
     });
   }
+
+  // ─── Conversation documents (called from services) ────────────────────────
+
+  emitNewDirectDocument(
+    uploaderId: string,
+    otherUserId: string,
+    doc: unknown,
+  ) {
+    this.server.to(`user:${uploaderId}`).emit('new_direct_document', doc);
+    this.server.to(`user:${otherUserId}`).emit('new_direct_document', doc);
+  }
+
+  emitDirectDocumentDeleted(
+    uploaderId: string,
+    otherUserId: string,
+    docId: string,
+  ) {
+    this.server
+      .to(`user:${uploaderId}`)
+      .emit('direct_document_deleted', { id: docId });
+    this.server
+      .to(`user:${otherUserId}`)
+      .emit('direct_document_deleted', { id: docId });
+  }
+
+  emitNewGroupDocument(groupId: string, doc: unknown) {
+    this.server.to(`group:${groupId}`).emit('new_group_document', doc);
+  }
+
+  emitGroupDocumentDeleted(groupId: string, docId: string) {
+    this.server
+      .to(`group:${groupId}`)
+      .emit('group_document_deleted', { id: docId });
+  }
 }

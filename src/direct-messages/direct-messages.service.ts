@@ -71,7 +71,8 @@ export class DirectMessagesService {
     return Array.from(conversations.values());
   }
   async markAsRead(userId: string, senderId: string) {
-    return this.prisma.directMessage.updateMany({
+    // Mark text messages as read.
+    const messages = await this.prisma.directMessage.updateMany({
       where: {
         senderId,
         receiverId: userId,
@@ -79,6 +80,19 @@ export class DirectMessagesService {
       },
       data: { isRead: true },
     });
+    // Mark documents in this conversation as read too (uploaded by senderId
+    // for me as otherUser, OR sent to senderId from me — only inbound ones
+    // need to be flipped, but we update both sides for simplicity and
+    // idempotency since "false → true" is a no-op on already-read rows).
+    await this.prisma.directMessageDocument.updateMany({
+      where: {
+        uploadedBy: senderId,
+        otherUserId: userId,
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
+    return messages;
   }
   async getUnreadCount(userId: string, senderId: string) {
     return this.prisma.directMessage.count({

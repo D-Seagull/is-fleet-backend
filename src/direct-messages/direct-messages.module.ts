@@ -20,5 +20,6 @@ import { GroupMessagesModule } from 'src/group-messages/group-messages.module';
   ],
   controllers: [DirectMessagesController],
   providers: [DirectMessagesGateway, DirectMessagesService],
+  exports: [DirectMessagesGateway],
 })
 export class DirectMessagesModule {}
