@@ -1,18 +1,30 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { ReactionsService } from 'src/reactions/reactions.service';
 
 @Injectable()
 export class GroupMessagesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private reactions: ReactionsService,
+  ) {}
 
   async getMessages(groupId: string) {
-    return await this.prisma.groupMessage.findMany({
+    const messages = await this.prisma.groupMessage.findMany({
       where: { groupId },
       include: {
         sender: { select: { id: true, name: true, role: true } },
       },
       orderBy: { createdAt: 'asc' },
     });
+    const reactionsByMsg = await this.reactions.getForMessages(
+      'GROUP',
+      messages.map((m) => m.id),
+    );
+    return messages.map((m) => ({
+      ...m,
+      reactions: reactionsByMsg[m.id] ?? [],
+    }));
   }
 
   async createMessage(groupId: string, senderId: string, content: string) {

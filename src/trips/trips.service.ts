@@ -9,6 +9,7 @@ import { UpdateTripDto } from './dto/update-trip.dto';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
 import { PushService } from '../push/push.service';
+import { ReactionsService } from '../reactions/reactions.service';
 
 const tripInclude = {
   driver: { select: { id: true, name: true, phone: true } },
@@ -27,6 +28,7 @@ export class TripsService {
     private gateway: MessagesGateway,
     private sessions: TripChatSessionsService,
     private push: PushService,
+    private reactions: ReactionsService,
   ) {}
 
   async create(companyId: string, managerId: string, dto: CreateTripDto) {
@@ -141,13 +143,21 @@ export class TripsService {
     const sessionIds = await this.sessions.getVisibleSessionIds(tripId, requester);
     if (sessionIds.length === 0) return [];
 
-    return this.prisma.message.findMany({
+    const messages = await this.prisma.message.findMany({
       where: { sessionId: { in: sessionIds } },
       include: {
         sender: { select: { id: true, name: true, role: true } },
       },
       orderBy: { createdAt: 'asc' },
     });
+    const reactionsByMsg = await this.reactions.getForMessages(
+      'TRIP',
+      messages.map((m) => m.id),
+    );
+    return messages.map((m) => ({
+      ...m,
+      reactions: reactionsByMsg[m.id] ?? [],
+    }));
   }
 
   async updateStatus(id: string, companyId: string, dto: UpdateTripDto) {

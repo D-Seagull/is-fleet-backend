@@ -1,5 +1,8 @@
-import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { DirectMessagesService } from './direct-messages.service';
+import { ReactionsService } from '../reactions/reactions.service';
+import { ReactionsGateway } from '../reactions/reactions.gateway';
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -9,7 +12,12 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 @UseGuards(JwtGuard)
 @Controller('direct-messages')
 export class DirectMessagesController {
-  constructor(private service: DirectMessagesService) {}
+  constructor(
+    private service: DirectMessagesService,
+    private reactions: ReactionsService,
+    private reactionsGateway: ReactionsGateway,
+    private prisma: PrismaService,
+  ) {}
 
   @Get('conversations')
   getConversations(@GetUser('id') userId: string) {
@@ -35,5 +43,30 @@ export class DirectMessagesController {
     @Param('userId') senderId: string,
   ) {
     return this.service.markAsRead(currentUserId, senderId);
+  }
+
+  @Post('messages/:messageId/react')
+  async react(
+    @Param('messageId') messageId: string,
+    @Body('emoji') emoji: string,
+    @GetUser('id') userId: string,
+  ) {
+    const reactions = await this.reactions.toggle(
+      'DM',
+      messageId,
+      userId,
+      emoji,
+    );
+    const message = await this.prisma.directMessage.findUnique({
+      where: { id: messageId },
+      select: { senderId: true, receiverId: true },
+    });
+    if (message) {
+      this.reactionsGateway.emit('DM', messageId, reactions, [
+        `user:${message.senderId}`,
+        `user:${message.receiverId}`,
+      ]);
+    }
+    return reactions;
   }
 }

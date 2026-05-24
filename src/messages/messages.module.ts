@@ -7,9 +7,10 @@ import { JwtModule } from '@nestjs/jwt';
 
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { PushModule } from '../push/push.module';
+import { ReactionsModule } from '../reactions/reactions.module';
 
 @Module({
-  imports: [PrismaModule, JwtModule, PushModule],
+  imports: [PrismaModule, JwtModule, PushModule, ReactionsModule],
   providers: [MessagesService, MessagesGateway, TripChatSessionsService],
   controllers: [MessagesController],
   exports: [MessagesGateway, MessagesService, TripChatSessionsService],

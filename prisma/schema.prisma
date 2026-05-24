@@ -95,6 +95,7 @@ model User {
   sessionsAsManager    TripChatSession[] @relation("SessionManager")
   pushTokens         PushToken[]
   groupMessageReads  GroupMessageRead[] @relation("GroupMessageReads")
+  messageReactions   MessageReaction[]  @relation("MessageReactions")
 }
 
 model PushToken {
@@ -458,6 +459,27 @@ model GroupMessage {
   group  Group              @relation(fields: [groupId], references: [id])
   sender User               @relation(fields: [senderId], references: [id])
   reads  GroupMessageRead[]
+}
+
+// Generic reaction table — one row per (message, user). One reaction max
+// per user per message; pressing another emoji replaces it (toggle).
+// targetType discriminates which message table targetId points into:
+//   "TRIP"  → Message.id
+//   "DM"    → DirectMessage.id
+//   "GROUP" → GroupMessage.id
+model MessageReaction {
+  id         String   @id @default(uuid())
+  targetType String // "TRIP" | "DM" | "GROUP"
+  targetId   String
+  userId     String
+  emoji      String // "👍" | "😮" | "😢"
+  createdAt  DateTime @default(now())
+
+  user User @relation("MessageReactions", fields: [userId], references: [id])
+
+  @@unique([targetType, targetId, userId])
+  @@index([targetType, targetId])
+  @@index([userId])
 }
 
 model GroupMessageRead {

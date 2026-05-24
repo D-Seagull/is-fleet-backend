@@ -22,6 +22,7 @@ import { DirectMessagesService } from './direct-messages/direct-messages.service
 import { DirectMessageDocumentsModule } from './direct-message-documents/direct-message-documents.module';
 import { GroupMessagesModule } from './group-messages/group-messages.module';
 import { GroupMessageDocumentsModule } from './group-message-documents/group-message-documents.module';
+import { ReactionsModule } from './reactions/reactions.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { GroupMessageDocumentsModule } from './group-message-documents/group-mes
     DirectMessageDocumentsModule,
     GroupMessagesModule,
     GroupMessageDocumentsModule,
+    ReactionsModule,
   ],
   controllers: [],
   providers: [TranslationService, DirectMessagesService],

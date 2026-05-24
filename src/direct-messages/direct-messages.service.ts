@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReactionsService } from '../reactions/reactions.service';
 
 @Injectable()
 export class DirectMessagesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private reactions: ReactionsService,
+  ) {}
 
-  getMessages(userId1: string, userId2: string) {
-    return this.prisma.directMessage.findMany({
+  async getMessages(userId1: string, userId2: string) {
+    const messages = await this.prisma.directMessage.findMany({
       where: {
         OR: [
           { senderId: userId1, receiverId: userId2 },
@@ -20,6 +24,14 @@ export class DirectMessagesService {
       },
       orderBy: { createdAt: 'asc' },
     });
+    const reactionsByMsg = await this.reactions.getForMessages(
+      'DM',
+      messages.map((m) => m.id),
+    );
+    return messages.map((m) => ({
+      ...m,
+      reactions: reactionsByMsg[m.id] ?? [],
+    }));
   }
 
   createMessage(senderId: string, receiverId: string, content: string) {
