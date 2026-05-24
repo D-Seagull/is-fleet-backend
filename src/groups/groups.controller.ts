@@ -104,7 +104,7 @@ export class GroupsController {
     return this.groupsService.removeTruck(groupId, truckId, userId, role);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post(':id/managers/:managerId')
   addManager(
     @Param('id') groupId: string,
@@ -113,7 +113,7 @@ export class GroupsController {
     return this.groupsService.addManager(groupId, managerId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete(':id/managers/:managerId')
   removeManager(
     @Param('id') groupId: string,

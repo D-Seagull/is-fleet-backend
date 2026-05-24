@@ -14,26 +14,22 @@ export class GroupsService {
   async create(
     companyId: string,
     userId: string,
-    role: string,
+    _role: string,
     dto: CreateGroupDto,
   ) {
-    if (dto.type === 'MANAGERS' && role === 'MANAGER') {
-      throw new ForbiddenException(
-        'Менеджер не може створювати групи менеджерів',
-      );
-    }
-    if (dto.type === 'TRUCKS' && role === 'TEAMLEAD') {
-      throw new ForbiddenException(
-        'Тімлід не може створювати групи вантажівок',
-      );
-    }
-
+    // Any logged-in MANAGER/TEAMLEAD/ADMIN can create groups of any type.
     return await this.prisma.group.create({
       data: {
         name: dto.name,
         type: dto.type,
         companyId,
         createdBy: userId,
+        // Auto-add the creator as a member so they appear in the Members
+        // list (only for MANAGERS-type groups; TRUCKS uses a different
+        // relation).
+        ...(dto.type === 'MANAGERS' && {
+          managers: { create: { managerId: userId } },
+        }),
       },
     });
   }
@@ -45,7 +41,7 @@ export class GroupsService {
         creator: { select: { id: true, name: true, role: true } },
         trucks: { include: { truck: true } },
         managers: {
-          include: { manager: { select: { id: true, name: true } } },
+          include: { manager: { select: { id: true, name: true, email: true, role: true } } },
         },
       },
     });
@@ -196,7 +192,7 @@ export class GroupsService {
         creator: { select: { id: true, name: true, role: true } },
         managers: {
           include: {
-            manager: { select: { id: true, name: true } },
+            manager: { select: { id: true, name: true, email: true, role: true } },
           },
         },
       },
