@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { DirectMessagesService } from './direct-messages.service';
 import { GroupMessagesService } from 'src/group-messages/group-messages.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class DirectMessagesGateway
@@ -23,22 +24,26 @@ export class DirectMessagesGateway
     private service: DirectMessagesService,
     private groupService: GroupMessagesService,
     private jwt: JwtService,
+    private prisma: PrismaService,
   ) {}
 
-  async handleConnection(client: Socket) {
+  handleConnection(client: Socket) {
     try {
       // Accept token from web (auth.token) OR mobile (query.userId)
       const token =
         (client.handshake.auth?.token as string | undefined) ||
         (client.handshake.query?.userId as string | undefined);
-      console.log('Received token:', token ? 'exists' : 'missing');
       if (!token) throw new Error('No token');
-      const payload = this.jwt.verify(token);
+      // Explicit secret — mirrors MessagesGateway. Without it `jwt.verify`
+      // can silently fail when the JwtModule default differs.
+      const payload = this.jwt.verify(token, {
+        secret: process.env.JWT_SECRET,
+      });
       // userId may already be set by MessagesGateway.handleConnection — only overwrite if missing
       if (!client.data.userId) client.data.userId = payload.sub;
-      // Приєднуємо до особистої кімнати
-      await client.join(`user:${payload.sub}`);
-      console.log(`✅ User ${payload.sub} connected`);
+      // Sync join — `void` so we don't block event delivery while waiting.
+      void client.join(`user:${payload.sub}`);
+      console.log(`[dm-gateway] user ${payload.sub} joined user:${payload.sub}`);
     } catch (e) {
       // Soft fail: log but do NOT disconnect — the socket may still be valid
       // for trip-chat (MessagesGateway). Disconnecting here kills trip chat too.
@@ -101,6 +106,11 @@ export class DirectMessagesGateway
     this.server
       .to(`user:${data.senderId}`)
       .emit('messages_read', { readBy: client.data.userId });
+    // Also notify the reader so their own DM-unread counter can refresh
+    // immediately (without waiting for the 20s polling fallback).
+    this.server
+      .to(`user:${client.data.userId}`)
+      .emit('messages_read', { readBy: client.data.userId });
 
     console.log('messages_read emitted to:', `user:${data.senderId}`);
   }
@@ -136,6 +146,27 @@ export class DirectMessagesGateway
       data.content,
     );
     this.server.to(`group:${data.groupId}`).emit('new_group_message', message);
+    // Also broadcast a lightweight notification to every group member's
+    // personal room so their unread counter updates even when they're not
+    // currently viewing the group (e.g. on /trucks, /managers, etc).
+    const group = await this.prisma.group.findUnique({
+      where: { id: data.groupId },
+      select: {
+        createdBy: true,
+        managers: { select: { managerId: true } },
+      },
+    });
+    if (group) {
+      const memberIds = new Set<string>([
+        group.createdBy,
+        ...group.managers.map((m) => m.managerId),
+      ]);
+      for (const memberId of memberIds) {
+        this.server
+          .to(`user:${memberId}`)
+          .emit('group_unread_update', { groupId: data.groupId });
+      }
+    }
     return message;
   }
 
@@ -158,6 +189,23 @@ export class DirectMessagesGateway
     client.to(`group:${data.groupId}`).emit('group_stopped_typing', {
       userId: client.data.userId,
     });
+  }
+
+  @SubscribeMessage('mark_group_read')
+  async handleMarkGroupRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { groupId: string },
+  ) {
+    const userId = client.data.userId as string;
+    await this.groupService.markAsRead(userId, data.groupId);
+    // Emit to the group room so other members may update read indicators,
+    // and to the reader so their own unread-summary refreshes.
+    this.server
+      .to(`group:${data.groupId}`)
+      .emit('group_messages_read', { groupId: data.groupId, readBy: userId });
+    this.server
+      .to(`user:${userId}`)
+      .emit('group_messages_read', { groupId: data.groupId, readBy: userId });
   }
 
   // ─── Conversation documents (called from services) ────────────────────────

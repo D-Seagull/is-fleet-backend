@@ -94,6 +94,13 @@ export class DirectMessagesService {
     });
     return messages;
   }
+  async getUnreadSummary(userId: string) {
+    const conversations = await this.getConversations(userId);
+    const items = conversations.filter((c) => c.unreadCount > 0);
+    const total = items.reduce((sum, c) => sum + c.unreadCount, 0);
+    return { total, items };
+  }
+
   async getUnreadCount(userId: string, senderId: string) {
     return this.prisma.directMessage.count({
       where: {

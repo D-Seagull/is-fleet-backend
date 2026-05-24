@@ -16,6 +16,11 @@ export class DirectMessagesController {
     return this.service.getConversations(userId);
   }
 
+  @Get('unread')
+  getUnreadSummary(@GetUser('id') userId: string) {
+    return this.service.getUnreadSummary(userId);
+  }
+
   @Get(':userId')
   getMessages(
     @GetUser('id') currentUserId: string,

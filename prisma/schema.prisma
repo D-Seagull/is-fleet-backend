@@ -94,6 +94,7 @@ model User {
   sessionsAsDriver     TripChatSession[] @relation("SessionDriver")
   sessionsAsManager    TripChatSession[] @relation("SessionManager")
   pushTokens         PushToken[]
+  groupMessageReads  GroupMessageRead[] @relation("GroupMessageReads")
 }
 
 model PushToken {
@@ -454,8 +455,23 @@ model GroupMessage {
   content   String
   createdAt DateTime @default(now())
 
-  group  Group @relation(fields: [groupId], references: [id])
-  sender User  @relation(fields: [senderId], references: [id])
+  group  Group              @relation(fields: [groupId], references: [id])
+  sender User               @relation(fields: [senderId], references: [id])
+  reads  GroupMessageRead[]
+}
+
+model GroupMessageRead {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message GroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User         @relation("GroupMessageReads", fields: [userId], references: [id])
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@index([messageId])
 }
 
 model GroupTruck {
