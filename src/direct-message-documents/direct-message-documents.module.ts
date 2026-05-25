@@ -3,9 +3,10 @@ import { DirectMessageDocumentsService } from './direct-message-documents.servic
 import { DirectMessageDocumentsController } from './direct-message-documents.controller';
 import { SupabaseStorageModule } from '../supabase-storage/supabase-storage.module';
 import { DirectMessagesModule } from '../direct-messages/direct-messages.module';
+import { ReactionsModule } from '../reactions/reactions.module';
 
 @Module({
-  imports: [SupabaseStorageModule, DirectMessagesModule],
+  imports: [SupabaseStorageModule, DirectMessagesModule, ReactionsModule],
   providers: [DirectMessageDocumentsService],
   controllers: [DirectMessageDocumentsController],
 })

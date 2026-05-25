@@ -6,6 +6,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
+import { ReactionsService } from '../reactions/reactions.service';
 
 @Injectable()
 export class GroupMessageDocumentsService {
@@ -13,6 +14,7 @@ export class GroupMessageDocumentsService {
     private prisma: PrismaService,
     private storage: SupabaseStorageService,
     private gateway: DirectMessagesGateway,
+    private reactions: ReactionsService,
   ) {}
 
   async uploadMany(
@@ -79,10 +81,15 @@ export class GroupMessageDocumentsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const reactionsByDoc = await this.reactions.getForMessages(
+      'GROUP_DOC',
+      docs.map((d) => d.id),
+    );
     return Promise.all(
       docs.map(async (d) => ({
         ...d,
         signedUrl: await this.storage.getSignedUrl(d.fileUrl, 3600),
+        reactions: reactionsByDoc[d.id] ?? [],
       })),
     );
   }

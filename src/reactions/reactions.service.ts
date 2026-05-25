@@ -1,7 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type ReactionTarget = 'TRIP' | 'DM' | 'GROUP';
+export type ReactionTarget =
+  | 'TRIP'
+  | 'DM'
+  | 'GROUP'
+  | 'TRIP_DOC'
+  | 'DM_DOC'
+  | 'GROUP_DOC';
 const ALLOWED_EMOJI = ['👍', '😮', '😢'] as const;
 export type AllowedEmoji = (typeof ALLOWED_EMOJI)[number];
 

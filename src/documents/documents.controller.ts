@@ -12,6 +12,9 @@ import {
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { DocumentsService } from './documents.service';
+import { ReactionsService } from '../reactions/reactions.service';
+import { ReactionsGateway } from '../reactions/reactions.gateway';
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -23,7 +26,12 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('documents')
 export class DocumentsController {
-  constructor(private documentsService: DocumentsService) {}
+  constructor(
+    private documentsService: DocumentsService,
+    private reactions: ReactionsService,
+    private reactionsGateway: ReactionsGateway,
+    private prisma: PrismaService,
+  ) {}
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('upload-many')
@@ -74,5 +82,28 @@ export class DocumentsController {
     @GetUser('role') role: string,
   ) {
     return this.documentsService.remove(id, userId, role);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Post(':docId/react')
+  async react(
+    @Param('docId') docId: string,
+    @Body('emoji') emoji: string,
+    @GetUser('id') userId: string,
+  ) {
+    const reactions = await this.reactions.toggle(
+      'TRIP_DOC',
+      docId,
+      userId,
+      emoji,
+    );
+    const doc = await this.prisma.tripDocument.findUnique({
+      where: { id: docId },
+      select: { tripId: true },
+    });
+    if (doc) {
+      this.reactionsGateway.emit('TRIP_DOC', docId, reactions, [doc.tripId]);
+    }
+    return reactions;
   }
 }

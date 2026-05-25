@@ -6,6 +6,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { MessagesGateway } from '../messages/messages.gateway';
+import { ReactionsService } from '../reactions/reactions.service';
 
 @Injectable()
 export class DocumentsService {
@@ -13,6 +14,7 @@ export class DocumentsService {
     private prisma: PrismaService,
     private storage: SupabaseStorageService,
     private gateway: MessagesGateway,
+    private reactions: ReactionsService,
   ) {}
 
   async uploadMany(
@@ -117,7 +119,16 @@ export class DocumentsService {
       include: { uploader: { select: { id: true, name: true, role: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    return Promise.all(docs.map((d) => this.withSignedUrl(d)));
+    const reactionsByDoc = await this.reactions.getForMessages(
+      'TRIP_DOC',
+      docs.map((d) => d.id),
+    );
+    return Promise.all(
+      docs.map(async (d) => ({
+        ...(await this.withSignedUrl(d)),
+        reactions: reactionsByDoc[d.id] ?? [],
+      })),
+    );
   }
 
   async findByTruck(truckId: string) {
