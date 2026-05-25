@@ -1,5 +1,16 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  forwardRef,
+  Get,
+  Inject,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { GroupMessagesService } from './group-messages.service';
+import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
 import { ReactionsGateway } from '../reactions/reactions.gateway';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +25,8 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class GroupMessagesController {
   constructor(
     private service: GroupMessagesService,
+    @Inject(forwardRef(() => DirectMessagesGateway))
+    private dmGateway: DirectMessagesGateway,
     private reactions: ReactionsService,
     private reactionsGateway: ReactionsGateway,
     private prisma: PrismaService,
@@ -35,6 +48,16 @@ export class GroupMessagesController {
     @GetUser('id') userId: string,
   ) {
     return this.service.markAsRead(userId, groupId);
+  }
+
+  @Delete('messages/:messageId')
+  async delete(
+    @Param('messageId') messageId: string,
+    @GetUser('id') userId: string,
+  ) {
+    const msg = await this.service.softDelete(messageId, userId);
+    this.dmGateway.emitGroupMessageDeleted(msg.groupId, messageId);
+    return { id: messageId };
   }
 
   @Post('messages/:messageId/react')

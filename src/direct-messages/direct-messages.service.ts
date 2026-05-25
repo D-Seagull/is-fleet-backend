@@ -106,6 +106,22 @@ export class DirectMessagesService {
     });
     return messages;
   }
+  async softDelete(messageId: string, userId: string) {
+    const msg = await this.prisma.directMessage.findUnique({
+      where: { id: messageId },
+    });
+    if (!msg) {
+      throw new Error("Повідомлення не знайдене");
+    }
+    if (msg.senderId !== userId) {
+      throw new Error("Ви можете видаляти лише свої повідомлення");
+    }
+    return this.prisma.directMessage.update({
+      where: { id: messageId },
+      data: { deletedAt: new Date(), content: "" },
+    });
+  }
+
   async getUnreadSummary(userId: string) {
     const conversations = await this.getConversations(userId);
     const items = conversations.filter((c) => c.unreadCount > 0);

@@ -289,27 +289,29 @@ model GroupMessageDocument {
 }
 
 model DirectMessage {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   senderId   String
   receiverId String
   content    String
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  isRead     Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])
   receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
 }
 
 model Message {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   tripId            String
   sessionId         String
   senderId          String
   content           String
   translatedContent String?
-  isRead            Boolean  @default(false)
-  isSystem          Boolean  @default(false)  // system event (driver/manager changed) — rendered specially
-  createdAt         DateTime @default(now())
+  isRead            Boolean   @default(false)
+  isSystem          Boolean   @default(false) // system event (driver/manager changed) — rendered specially
+  createdAt         DateTime  @default(now())
+  deletedAt         DateTime?
 
   trip    Trip            @relation(fields: [tripId], references: [id])
   session TripChatSession @relation(fields: [sessionId], references: [id])
@@ -450,11 +452,12 @@ model Group {
   announcementsDraft AnnouncementDraft[]
 }
 model GroupMessage {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   groupId   String
   senderId  String
   content   String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   group  Group              @relation(fields: [groupId], references: [id])
   sender User               @relation(fields: [senderId], references: [id])

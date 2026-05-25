@@ -36,6 +36,20 @@ export class GroupMessagesService {
     });
   }
 
+  async softDelete(messageId: string, userId: string) {
+    const msg = await this.prisma.groupMessage.findUnique({
+      where: { id: messageId },
+    });
+    if (!msg) throw new Error("Повідомлення не знайдене");
+    if (msg.senderId !== userId) {
+      throw new Error("Ви можете видаляти лише свої повідомлення");
+    }
+    return this.prisma.groupMessage.update({
+      where: { id: messageId },
+      data: { deletedAt: new Date(), content: "" },
+    });
+  }
+
   /**
    * Mark every message in the group that the user hasn't read yet as read.
    * Uses createMany + skipDuplicates so re-marking is a no-op.

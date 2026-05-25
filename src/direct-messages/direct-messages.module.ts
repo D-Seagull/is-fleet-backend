@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DirectMessagesGateway } from './direct-messages.gateway';
@@ -10,7 +10,7 @@ import { ReactionsModule } from 'src/reactions/reactions.module';
 @Module({
   imports: [
     PrismaModule,
-    GroupMessagesModule,
+    forwardRef(() => GroupMessagesModule),
     ReactionsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

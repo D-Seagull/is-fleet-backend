@@ -1,5 +1,14 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { DirectMessagesService } from './direct-messages.service';
+import { DirectMessagesGateway } from './direct-messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
 import { ReactionsGateway } from '../reactions/reactions.gateway';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +23,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class DirectMessagesController {
   constructor(
     private service: DirectMessagesService,
+    private gateway: DirectMessagesGateway,
     private reactions: ReactionsService,
     private reactionsGateway: ReactionsGateway,
     private prisma: PrismaService,
@@ -43,6 +53,20 @@ export class DirectMessagesController {
     @Param('userId') senderId: string,
   ) {
     return this.service.markAsRead(currentUserId, senderId);
+  }
+
+  @Delete('messages/:messageId')
+  async delete(
+    @Param('messageId') messageId: string,
+    @GetUser('id') userId: string,
+  ) {
+    const msg = await this.service.softDelete(messageId, userId);
+    this.gateway.emitDmMessageDeleted(
+      messageId,
+      msg.senderId,
+      msg.receiverId,
+    );
+    return { id: messageId };
   }
 
   @Post('messages/:messageId/react')

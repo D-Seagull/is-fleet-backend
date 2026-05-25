@@ -241,4 +241,20 @@ export class DirectMessagesGateway
       .to(`group:${groupId}`)
       .emit('group_document_deleted', { id: docId });
   }
+
+  emitDmMessageDeleted(
+    messageId: string,
+    senderId: string,
+    receiverId: string,
+  ) {
+    const payload = { id: messageId };
+    this.server.to(`user:${senderId}`).emit('dm_message_deleted', payload);
+    this.server.to(`user:${receiverId}`).emit('dm_message_deleted', payload);
+  }
+
+  emitGroupMessageDeleted(groupId: string, messageId: string) {
+    this.server
+      .to(`group:${groupId}`)
+      .emit('group_message_deleted', { id: messageId });
+  }
 }

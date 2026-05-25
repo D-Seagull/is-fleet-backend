@@ -116,7 +116,11 @@ export class MessagesService {
       throw new ForbiddenException('Ви не можете видалити це повідомлення');
     }
 
-    await this.prisma.message.delete({ where: { id } });
+    // Soft delete — keep the row so the bubble can show "Message deleted".
+    await this.prisma.message.update({
+      where: { id },
+      data: { deletedAt: new Date(), content: "" },
+    });
     return { tripId: msg.tripId };
   }
 
