@@ -6,6 +6,7 @@ import {
   Get,
   Inject,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -58,6 +59,17 @@ export class GroupMessagesController {
     const msg = await this.service.softDelete(messageId, userId);
     this.dmGateway.emitGroupMessageDeleted(msg.groupId, messageId);
     return { id: messageId };
+  }
+
+  @Patch('messages/:messageId')
+  async edit(
+    @Param('messageId') messageId: string,
+    @Body('content') content: string,
+    @GetUser('id') userId: string,
+  ) {
+    const msg = await this.service.editMessage(messageId, userId, content);
+    this.dmGateway.emitGroupMessageEdited(msg.groupId, msg);
+    return msg;
   }
 
   @Post('messages/:messageId/react')

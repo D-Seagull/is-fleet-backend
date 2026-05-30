@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -59,6 +60,18 @@ export class MessagesController {
     // Broadcast so every client in the trip room drops the message instantly.
     this.gateway.emitMessageDeleted(tripId, id);
     return { id };
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Patch(':id')
+  async edit(
+    @Param('id') id: string,
+    @Body('content') content: string,
+    @GetUser('id') userId: string,
+  ) {
+    const message = await this.messagesService.editMessage(id, userId, content);
+    this.gateway.emitMessageEdited(message.tripId, message);
+    return message;
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')

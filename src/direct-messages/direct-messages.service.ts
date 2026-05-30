@@ -139,6 +139,46 @@ export class DirectMessagesService {
     });
   }
 
+  // 15-minute edit window — mirrors Telegram-style behaviour for chat msgs.
+  // Author-only; rejects deleted messages and stale edits.
+  async editMessage(messageId: string, userId: string, content: string) {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new Error('Повідомлення не може бути порожнім');
+    }
+    const msg = await this.prisma.directMessage.findUnique({
+      where: { id: messageId },
+    });
+    if (!msg) {
+      throw new Error('Повідомлення не знайдене');
+    }
+    if (msg.senderId !== userId) {
+      throw new Error('Ви можете редагувати лише свої повідомлення');
+    }
+    if (msg.deletedAt) {
+      throw new Error('Не можна редагувати видалене повідомлення');
+    }
+    const ageMs = Date.now() - msg.createdAt.getTime();
+    if (ageMs > 15 * 60 * 1000) {
+      throw new Error('Час на редагування минув (15 хв)');
+    }
+    return this.prisma.directMessage.update({
+      where: { id: messageId },
+      data: { content: trimmed, editedAt: new Date() },
+      include: {
+        sender: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+  }
+
   async getUnreadSummary(userId: string) {
     const conversations = await this.getConversations(userId);
     const items = conversations.filter((c) => c.unreadCount > 0);

@@ -110,6 +110,48 @@ export class MessagesService {
     return message;
   }
 
+  // 15-min edit window — author-only, rejects deleted/system messages and
+  // stale edits. Returns the updated message ready for emit to the trip room.
+  async editMessage(messageId: string, userId: string, content: string) {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new ForbiddenException('Повідомлення не може бути порожнім');
+    }
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
+    if (!msg) throw new NotFoundException('Повідомлення не знайдене');
+    if (msg.senderId !== userId) {
+      throw new ForbiddenException('Ви можете редагувати лише свої повідомлення');
+    }
+    if (msg.deletedAt) {
+      throw new ForbiddenException('Не можна редагувати видалене повідомлення');
+    }
+    if (msg.isSystem) {
+      throw new ForbiddenException('Системні повідомлення не редагуються');
+    }
+    const ageMs = Date.now() - msg.createdAt.getTime();
+    if (ageMs > 15 * 60 * 1000) {
+      throw new ForbiddenException('Час на редагування минув (15 хв)');
+    }
+    return this.prisma.message.update({
+      where: { id: messageId },
+      data: { content: trimmed, editedAt: new Date() },
+      include: {
+        sender: { select: { id: true, name: true, role: true } },
+        session: { select: { driverId: true, managerId: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+  }
+
   // Drivers can only delete their own; managers can delete any. Returns the
   // tripId so the controller can broadcast `messageDeleted` to the room.
   async remove(

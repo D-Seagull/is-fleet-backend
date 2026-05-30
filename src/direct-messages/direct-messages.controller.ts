@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -67,6 +68,17 @@ export class DirectMessagesController {
       msg.receiverId,
     );
     return { id: messageId };
+  }
+
+  @Patch('messages/:messageId')
+  async edit(
+    @Param('messageId') messageId: string,
+    @Body('content') content: string,
+    @GetUser('id') userId: string,
+  ) {
+    const msg = await this.service.editMessage(messageId, userId, content);
+    this.gateway.emitDmMessageEdited(msg.senderId, msg.receiverId, msg);
+    return msg;
   }
 
   @Post('messages/:messageId/react')

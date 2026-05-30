@@ -196,6 +196,10 @@ export class MessagesGateway {
     this.server.to(tripId).emit('messageDeleted', { tripId, messageId });
   }
 
+  emitMessageEdited(tripId: string, message: unknown) {
+    this.server.to(tripId).emit('messageEdited', { tripId, message });
+  }
+
   /** True only when at least one of the user's sockets is currently in the
    *  *foreground*. iOS keeps the socket alive a while after the app moves to
    *  background, so we can't rely on socket existence alone — clients flip

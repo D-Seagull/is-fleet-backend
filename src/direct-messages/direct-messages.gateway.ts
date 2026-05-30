@@ -273,4 +273,13 @@ export class DirectMessagesGateway
       .to(`group:${groupId}`)
       .emit('group_message_deleted', { id: messageId });
   }
+
+  emitDmMessageEdited(senderId: string, receiverId: string, message: unknown) {
+    this.server.to(`user:${senderId}`).emit('dm_message_edited', message);
+    this.server.to(`user:${receiverId}`).emit('dm_message_edited', message);
+  }
+
+  emitGroupMessageEdited(groupId: string, message: unknown) {
+    this.server.to(`group:${groupId}`).emit('group_message_edited', message);
+  }
 }

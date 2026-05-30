@@ -71,6 +71,44 @@ export class GroupMessagesService {
     });
   }
 
+  // 15-min edit window for group messages — author-only, rejects deleted &
+  // stale edits. Returns the full updated row ready for emit to the group room.
+  async editMessage(messageId: string, userId: string, content: string) {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new Error('Повідомлення не може бути порожнім');
+    }
+    const msg = await this.prisma.groupMessage.findUnique({
+      where: { id: messageId },
+    });
+    if (!msg) throw new Error('Повідомлення не знайдене');
+    if (msg.senderId !== userId) {
+      throw new Error('Ви можете редагувати лише свої повідомлення');
+    }
+    if (msg.deletedAt) {
+      throw new Error('Не можна редагувати видалене повідомлення');
+    }
+    const ageMs = Date.now() - msg.createdAt.getTime();
+    if (ageMs > 15 * 60 * 1000) {
+      throw new Error('Час на редагування минув (15 хв)');
+    }
+    return this.prisma.groupMessage.update({
+      where: { id: messageId },
+      data: { content: trimmed, editedAt: new Date() },
+      include: {
+        sender: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+  }
+
   /**
    * Mark every message in the group that the user hasn't read yet as read.
    * Uses createMany + skipDuplicates so re-marking is a no-op.

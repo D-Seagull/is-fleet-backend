@@ -296,6 +296,7 @@ model DirectMessage {
   isRead     Boolean   @default(false)
   createdAt  DateTime  @default(now())
   deletedAt  DateTime?
+  editedAt   DateTime?
   replyToId  String?
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])
@@ -316,6 +317,7 @@ model Message {
   isSystem          Boolean   @default(false) // system event (driver/manager changed) — rendered specially
   createdAt         DateTime  @default(now())
   deletedAt         DateTime?
+  editedAt          DateTime?
   replyToId         String?
 
   trip    Trip            @relation(fields: [tripId], references: [id])
@@ -466,6 +468,7 @@ model GroupMessage {
   content   String
   createdAt DateTime  @default(now())
   deletedAt DateTime?
+  editedAt  DateTime?
   replyToId String?
 
   group  Group              @relation(fields: [groupId], references: [id])
