@@ -296,9 +296,13 @@ model DirectMessage {
   isRead     Boolean   @default(false)
   createdAt  DateTime  @default(now())
   deletedAt  DateTime?
+  replyToId  String?
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])
   receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  replyTo DirectMessage?  @relation("DmReplies", fields: [replyToId], references: [id])
+  replies DirectMessage[] @relation("DmReplies")
 }
 
 model Message {
@@ -312,10 +316,14 @@ model Message {
   isSystem          Boolean   @default(false) // system event (driver/manager changed) — rendered specially
   createdAt         DateTime  @default(now())
   deletedAt         DateTime?
+  replyToId         String?
 
   trip    Trip            @relation(fields: [tripId], references: [id])
   session TripChatSession @relation(fields: [sessionId], references: [id])
   sender  User            @relation(fields: [senderId], references: [id])
+
+  replyTo Message?  @relation("TripMsgReplies", fields: [replyToId], references: [id])
+  replies Message[] @relation("TripMsgReplies")
 
   @@index([tripId, isRead])
   @@index([sessionId])
@@ -458,10 +466,14 @@ model GroupMessage {
   content   String
   createdAt DateTime  @default(now())
   deletedAt DateTime?
+  replyToId String?
 
   group  Group              @relation(fields: [groupId], references: [id])
   sender User               @relation(fields: [senderId], references: [id])
   reads  GroupMessageRead[]
+
+  replyTo GroupMessage?  @relation("GroupMsgReplies", fields: [replyToId], references: [id])
+  replies GroupMessage[] @relation("GroupMsgReplies")
 }
 
 // Generic reaction table — one row per (message, user). One reaction max

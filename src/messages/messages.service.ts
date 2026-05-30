@@ -64,6 +64,7 @@ export class MessagesService {
         senderId,
         content: dto.content,
         translatedContent,
+        replyToId: dto.replyToId ?? null,
       },
       include: {
         sender: {
@@ -73,6 +74,14 @@ export class MessagesService {
         // neither driverId nor managerId (and I'm not a manager-tier user).
         session: {
           select: { driverId: true, managerId: true },
+        },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
         },
       },
     });

@@ -58,13 +58,21 @@ export class DirectMessagesGateway
   @SubscribeMessage('send_direct_message')
   async handleMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { receiverId: string; content: string },
+    @MessageBody()
+    data: { receiverId: string; content: string; replyToId?: string | null },
   ) {
-    const senderId = client.data.userId as string;
+    const senderId = client.data.userId as string | undefined;
+    if (!senderId) {
+      console.warn(
+        `[dm-gateway] send_direct_message rejected — no senderId on socket ${client.id}. Client likely connected without a valid JWT.`,
+      );
+      return { error: 'unauthenticated' };
+    }
     const message = await this.service.createMessage(
       senderId,
       data.receiverId,
       data.content,
+      data.replyToId ?? null,
     );
 
     // Відправляємо обом учасникам
@@ -134,16 +142,24 @@ export class DirectMessagesGateway
   @SubscribeMessage('send_group_message')
   async handleGroupMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { groupId: string; content: string },
+    @MessageBody()
+    data: { groupId: string; content: string; replyToId?: string | null },
   ) {
     console.log(
       `💬 send_group_message from ${client.data.userId} to group ${data.groupId}`,
     );
-    const senderId = client.data.userId as string;
+    const senderId = client.data.userId as string | undefined;
+    if (!senderId) {
+      console.warn(
+        `[dm-gateway] send_group_message rejected — no senderId on socket ${client.id}.`,
+      );
+      return { error: 'unauthenticated' };
+    }
     const message = await this.groupService.createMessage(
       data.groupId,
       senderId,
       data.content,
+      data.replyToId ?? null,
     );
     this.server.to(`group:${data.groupId}`).emit('new_group_message', message);
     // Also broadcast a lightweight notification to every group member's

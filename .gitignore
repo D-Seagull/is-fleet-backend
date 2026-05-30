@@ -9,6 +9,11 @@ prisma/*.js
 prisma/*.js.map
 prisma/*.d.ts
 
+# src/ should only contain .ts sources — guard against stray tsc output.
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+
 # Logs
 logs
 *.log

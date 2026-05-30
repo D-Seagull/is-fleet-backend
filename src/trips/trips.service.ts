@@ -147,6 +147,14 @@ export class TripsService {
       where: { sessionId: { in: sessionIds } },
       include: {
         sender: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });

@@ -10,4 +10,8 @@ export class CreateMessageDto {
   @IsBoolean()
   @IsOptional()
   translate?: boolean;
+
+  @IsString()
+  @IsOptional()
+  replyToId?: string | null;
 }

@@ -14,6 +14,14 @@ export class GroupMessagesService {
       where: { groupId },
       include: {
         sender: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -27,11 +35,24 @@ export class GroupMessagesService {
     }));
   }
 
-  async createMessage(groupId: string, senderId: string, content: string) {
+  async createMessage(
+    groupId: string,
+    senderId: string,
+    content: string,
+    replyToId?: string | null,
+  ) {
     return await this.prisma.groupMessage.create({
-      data: { groupId, senderId, content },
+      data: { groupId, senderId, content, replyToId: replyToId ?? null },
       include: {
         sender: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
       },
     });
   }

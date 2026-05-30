@@ -18,8 +18,14 @@ export class DirectMessagesService {
         ],
       },
       include: {
-        sender: {
-          select: { id: true, name: true, role: true },
+        sender: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -34,12 +40,23 @@ export class DirectMessagesService {
     }));
   }
 
-  createMessage(senderId: string, receiverId: string, content: string) {
+  createMessage(
+    senderId: string,
+    receiverId: string,
+    content: string,
+    replyToId?: string | null,
+  ) {
     return this.prisma.directMessage.create({
-      data: { senderId, receiverId, content },
+      data: { senderId, receiverId, content, replyToId: replyToId ?? null },
       include: {
-        sender: {
-          select: { id: true, name: true, role: true },
+        sender: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
         },
       },
     });
