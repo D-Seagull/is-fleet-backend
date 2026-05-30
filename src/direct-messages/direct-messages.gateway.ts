@@ -59,7 +59,12 @@ export class DirectMessagesGateway
   async handleMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    data: { receiverId: string; content: string; replyToId?: string | null },
+    data: {
+      receiverId: string;
+      content: string;
+      replyToId?: string | null;
+      replyToDocumentId?: string | null;
+    },
   ) {
     const senderId = client.data.userId as string | undefined;
     if (!senderId) {
@@ -73,6 +78,7 @@ export class DirectMessagesGateway
       data.receiverId,
       data.content,
       data.replyToId ?? null,
+      data.replyToDocumentId ?? null,
     );
 
     // Відправляємо обом учасникам
@@ -143,7 +149,12 @@ export class DirectMessagesGateway
   async handleGroupMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    data: { groupId: string; content: string; replyToId?: string | null },
+    data: {
+      groupId: string;
+      content: string;
+      replyToId?: string | null;
+      replyToDocumentId?: string | null;
+    },
   ) {
     console.log(
       `💬 send_group_message from ${client.data.userId} to group ${data.groupId}`,
@@ -160,6 +171,7 @@ export class DirectMessagesGateway
       senderId,
       data.content,
       data.replyToId ?? null,
+      data.replyToDocumentId ?? null,
     );
     this.server.to(`group:${data.groupId}`).emit('new_group_message', message);
     // Also broadcast a lightweight notification to every group member's

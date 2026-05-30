@@ -65,6 +65,7 @@ export class MessagesService {
         content: dto.content,
         translatedContent,
         replyToId: dto.replyToId ?? null,
+        replyToDocumentId: dto.replyToDocumentId ?? null,
       },
       include: {
         sender: {
@@ -81,6 +82,15 @@ export class MessagesService {
             content: true,
             deletedAt: true,
             sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
           },
         },
       },
@@ -146,6 +156,15 @@ export class MessagesService {
             content: true,
             deletedAt: true,
             sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
           },
         },
       },

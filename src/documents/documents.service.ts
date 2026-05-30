@@ -21,6 +21,9 @@ export class DocumentsService {
     tripId: string,
     uploadedBy: string,
     files: Express.Multer.File[],
+    replyToMessageId?: string | null,
+    replyToDocumentId?: string | null,
+    caption?: string | null,
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
@@ -42,6 +45,9 @@ export class DocumentsService {
             fileName: file.originalname,
             uploadedBy,
             fileType,
+            replyToMessageId: replyToMessageId ?? null,
+            replyToDocumentId: replyToDocumentId ?? null,
+            caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
             uploader: { select: { id: true, name: true, role: true } },
@@ -51,6 +57,23 @@ export class DocumentsService {
                 title: true,
                 orderNumber: true,
                 truck: { select: { id: true, plate: true } },
+              },
+            },
+            replyTo: {
+              select: {
+                id: true,
+                content: true,
+                deletedAt: true,
+                sender: { select: { id: true, name: true } },
+              },
+            },
+            replyToDocument: {
+              select: {
+                id: true,
+                fileName: true,
+                fileType: true,
+                deletedAt: true,
+                uploader: { select: { id: true, name: true } },
               },
             },
           },
@@ -81,17 +104,26 @@ export class DocumentsService {
     if (!isManager && document.uploadedBy !== userId) {
       throw new ForbiddenException('Ви не можете видалити цей документ');
     }
-
-    // fileUrl тепер = storagePath у Supabase bucket
-    if (document.fileUrl) {
-      await this.storage.deleteFile(document.fileUrl);
+    if (document.deletedAt) {
+      return { id: document.id };
     }
 
-    await this.prisma.tripDocument.delete({ where: { id } });
-    // Broadcast to everyone in the trip room — both sides drop the doc from
-    // their cache without refetching.
+    // Free the storage but keep the row so chat shows a "File deleted"
+    // tombstone (mirrors message soft-delete behaviour).
+    if (document.fileUrl) {
+      try {
+        await this.storage.deleteFile(document.fileUrl);
+      } catch {
+        // ignore — proceed with soft delete
+      }
+    }
+
+    await this.prisma.tripDocument.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
     this.gateway.emitDocumentDeleted(document.tripId, document.id);
-    return { message: `Документ ${document.fileName} видалений` };
+    return { id: document.id };
   }
 
   async view(id: string): Promise<{ url: string }> {
@@ -108,15 +140,38 @@ export class DocumentsService {
     return { url };
   }
 
-  private async withSignedUrl<T extends { fileUrl: string }>(doc: T) {
-    const signedUrl = await this.storage.getSignedUrl(doc.fileUrl, 3600);
+  private async withSignedUrl<T extends { fileUrl: string; deletedAt?: Date | null }>(
+    doc: T,
+  ) {
+    const signedUrl = doc.deletedAt
+      ? ''
+      : await this.storage.getSignedUrl(doc.fileUrl, 3600);
     return { ...doc, signedUrl };
   }
 
   async findByTrip(tripId: string) {
     const docs = await this.prisma.tripDocument.findMany({
       where: { tripId },
-      include: { uploader: { select: { id: true, name: true, role: true } } },
+      include: {
+        uploader: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
     const reactionsByDoc = await this.reactions.getForMessages(

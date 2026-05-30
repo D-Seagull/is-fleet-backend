@@ -22,6 +22,15 @@ export class GroupMessagesService {
             sender: { select: { id: true, name: true } },
           },
         },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -40,9 +49,16 @@ export class GroupMessagesService {
     senderId: string,
     content: string,
     replyToId?: string | null,
+    replyToDocumentId?: string | null,
   ) {
     return await this.prisma.groupMessage.create({
-      data: { groupId, senderId, content, replyToId: replyToId ?? null },
+      data: {
+        groupId,
+        senderId,
+        content,
+        replyToId: replyToId ?? null,
+        replyToDocumentId: replyToDocumentId ?? null,
+      },
       include: {
         sender: { select: { id: true, name: true, role: true } },
         replyTo: {
@@ -51,6 +67,15 @@ export class GroupMessagesService {
             content: true,
             deletedAt: true,
             sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
           },
         },
       },
@@ -103,6 +128,15 @@ export class GroupMessagesService {
             content: true,
             deletedAt: true,
             sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
           },
         },
       },

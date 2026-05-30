@@ -21,6 +21,9 @@ export class DirectMessageDocumentsService {
     uploadedBy: string,
     otherUserId: string,
     files: Express.Multer.File[],
+    replyToMessageId?: string | null,
+    replyToDocumentId?: string | null,
+    caption?: string | null,
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
@@ -44,10 +47,33 @@ export class DirectMessageDocumentsService {
             publicId: storagePath,
             fileName: file.originalname,
             fileType,
+            replyToMessageId: replyToMessageId ?? null,
+            replyToDocumentId: replyToDocumentId ?? null,
+            // Caption — same text for every file in this upload batch. Empty
+            // strings get normalised to null so the bubble doesn't render a
+            // blank caption row.
+            caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
             uploader: { select: { id: true, name: true, role: true } },
             otherUser: { select: { id: true, name: true, role: true } },
+            replyTo: {
+              select: {
+                id: true,
+                content: true,
+                deletedAt: true,
+                sender: { select: { id: true, name: true } },
+              },
+            },
+            replyToDocument: {
+              select: {
+                id: true,
+                fileName: true,
+                fileType: true,
+                deletedAt: true,
+                uploader: { select: { id: true, name: true } },
+              },
+            },
           },
         });
 
@@ -74,6 +100,23 @@ export class DirectMessageDocumentsService {
       },
       include: {
         uploader: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -84,7 +127,11 @@ export class DirectMessageDocumentsService {
     return Promise.all(
       docs.map(async (d) => ({
         ...d,
-        signedUrl: await this.storage.getSignedUrl(d.fileUrl, 3600),
+        // For deleted docs the file is already gone from storage — skip the
+        // signed URL request (it would 404 anyway).
+        signedUrl: d.deletedAt
+          ? ''
+          : await this.storage.getSignedUrl(d.fileUrl, 3600),
         reactions: reactionsByDoc[d.id] ?? [],
       })),
     );
@@ -122,17 +169,29 @@ export class DirectMessageDocumentsService {
     if (doc.uploadedBy !== userId) {
       throw new ForbiddenException('Ви не можете видалити цей документ');
     }
-
-    if (doc.fileUrl) {
-      await this.storage.deleteFile(doc.fileUrl);
+    if (doc.deletedAt) {
+      // Already deleted — idempotent.
+      return { id: doc.id };
     }
 
-    await this.prisma.directMessageDocument.delete({ where: { id } });
+    // Free the storage but keep the row so the chat shows a tombstone.
+    if (doc.fileUrl) {
+      try {
+        await this.storage.deleteFile(doc.fileUrl);
+      } catch {
+        // Storage may have been cleaned up already — soft delete should still proceed.
+      }
+    }
+
+    await this.prisma.directMessageDocument.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
     this.gateway.emitDirectDocumentDeleted(
       doc.uploadedBy,
       doc.otherUserId,
       doc.id,
     );
-    return { message: `Документ ${doc.fileName} видалений` };
+    return { id: doc.id };
   }
 }

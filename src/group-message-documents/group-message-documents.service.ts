@@ -21,6 +21,9 @@ export class GroupMessageDocumentsService {
     uploadedBy: string,
     groupId: string,
     files: Express.Multer.File[],
+    replyToMessageId?: string | null,
+    replyToDocumentId?: string | null,
+    caption?: string | null,
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
@@ -53,10 +56,30 @@ export class GroupMessageDocumentsService {
             publicId: storagePath,
             fileName: file.originalname,
             fileType,
+            replyToMessageId: replyToMessageId ?? null,
+            replyToDocumentId: replyToDocumentId ?? null,
+            caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
             uploader: { select: { id: true, name: true, role: true } },
             group: { select: { id: true, name: true } },
+            replyTo: {
+              select: {
+                id: true,
+                content: true,
+                deletedAt: true,
+                sender: { select: { id: true, name: true } },
+              },
+            },
+            replyToDocument: {
+              select: {
+                id: true,
+                fileName: true,
+                fileType: true,
+                deletedAt: true,
+                uploader: { select: { id: true, name: true } },
+              },
+            },
           },
         });
 
@@ -78,6 +101,23 @@ export class GroupMessageDocumentsService {
       where: { groupId },
       include: {
         uploader: { select: { id: true, name: true, role: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -88,7 +128,9 @@ export class GroupMessageDocumentsService {
     return Promise.all(
       docs.map(async (d) => ({
         ...d,
-        signedUrl: await this.storage.getSignedUrl(d.fileUrl, 3600),
+        signedUrl: d.deletedAt
+          ? ''
+          : await this.storage.getSignedUrl(d.fileUrl, 3600),
         reactions: reactionsByDoc[d.id] ?? [],
       })),
     );
@@ -126,13 +168,23 @@ export class GroupMessageDocumentsService {
     if (doc.uploadedBy !== userId) {
       throw new ForbiddenException('Ви не можете видалити цей документ');
     }
-
-    if (doc.fileUrl) {
-      await this.storage.deleteFile(doc.fileUrl);
+    if (doc.deletedAt) {
+      return { id: doc.id };
     }
 
-    await this.prisma.groupMessageDocument.delete({ where: { id } });
+    if (doc.fileUrl) {
+      try {
+        await this.storage.deleteFile(doc.fileUrl);
+      } catch {
+        // ignore — proceed with soft delete
+      }
+    }
+
+    await this.prisma.groupMessageDocument.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
     this.gateway.emitGroupDocumentDeleted(doc.groupId, doc.id);
-    return { message: `Документ ${doc.fileName} видалений` };
+    return { id: doc.id };
   }
 }

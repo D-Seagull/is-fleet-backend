@@ -39,9 +39,19 @@ export class GroupMessageDocumentsController {
   uploadMany(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('groupId') groupId: string,
+    @Body('replyToMessageId') replyToMessageId: string | undefined,
+    @Body('replyToDocumentId') replyToDocumentId: string | undefined,
+    @Body('caption') caption: string | undefined,
     @GetUser('id') userId: string,
   ) {
-    return this.service.uploadMany(userId, groupId, files);
+    return this.service.uploadMany(
+      userId,
+      groupId,
+      files,
+      replyToMessageId || null,
+      replyToDocumentId || null,
+      caption || null,
+    );
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

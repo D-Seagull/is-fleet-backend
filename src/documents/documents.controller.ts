@@ -39,9 +39,19 @@ export class DocumentsController {
   uploadMany(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('tripId') tripId: string,
+    @Body('replyToMessageId') replyToMessageId: string | undefined,
+    @Body('replyToDocumentId') replyToDocumentId: string | undefined,
+    @Body('caption') caption: string | undefined,
     @GetUser('id') userId: string,
   ) {
-    return this.documentsService.uploadMany(tripId, userId, files);
+    return this.documentsService.uploadMany(
+      tripId,
+      userId,
+      files,
+      replyToMessageId || null,
+      replyToDocumentId || null,
+      caption || null,
+    );
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

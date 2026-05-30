@@ -39,9 +39,19 @@ export class DirectMessageDocumentsController {
   uploadMany(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('otherUserId') otherUserId: string,
+    @Body('replyToMessageId') replyToMessageId: string | undefined,
+    @Body('replyToDocumentId') replyToDocumentId: string | undefined,
+    @Body('caption') caption: string | undefined,
     @GetUser('id') userId: string,
   ) {
-    return this.service.uploadMany(userId, otherUserId, files);
+    return this.service.uploadMany(
+      userId,
+      otherUserId,
+      files,
+      replyToMessageId || null,
+      replyToDocumentId || null,
+      caption || null,
+    );
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')

@@ -27,6 +27,15 @@ export class DirectMessagesService {
             sender: { select: { id: true, name: true } },
           },
         },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -45,9 +54,16 @@ export class DirectMessagesService {
     receiverId: string,
     content: string,
     replyToId?: string | null,
+    replyToDocumentId?: string | null,
   ) {
     return this.prisma.directMessage.create({
-      data: { senderId, receiverId, content, replyToId: replyToId ?? null },
+      data: {
+        senderId,
+        receiverId,
+        content,
+        replyToId: replyToId ?? null,
+        replyToDocumentId: replyToDocumentId ?? null,
+      },
       include: {
         sender: { select: { id: true, name: true, role: true } },
         replyTo: {
@@ -56,6 +72,15 @@ export class DirectMessagesService {
             content: true,
             deletedAt: true,
             sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
           },
         },
       },
@@ -173,6 +198,15 @@ export class DirectMessagesService {
             content: true,
             deletedAt: true,
             sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
           },
         },
       },

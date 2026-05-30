@@ -98,16 +98,19 @@ export class MessagesGateway {
 
     try {
       const message = await this.messagesService.create(senderId, dto);
+      // Echo the client-side tempId so the sender's UI can locate its
+      // optimistic placeholder bubble and replace it with the real row.
+      const payload = { ...message, tempId: dto.tempId ?? null };
       // Emit to the trip room (driver + manager in that trip).
-      this.server.to(dto.tripId).emit('newMessage', message);
+      this.server.to(dto.tripId).emit('newMessage', payload);
       // Also emit to the company room so managers on the trucks-list page
       // receive instant unread-summary invalidation without joining the trip.
       const companyId = client.data.companyId as string | undefined;
       if (companyId) {
-        this.server.to(`company-${companyId}`).emit('newMessage', message);
+        this.server.to(`company-${companyId}`).emit('newMessage', payload);
       }
       console.log('[ws] newMessage emitted to room', dto.tripId, 'id=', message.id);
-      return message;
+      return payload;
     } catch (e) {
       console.error('[ws] sendMessage FAILED', e);
       throw e;

@@ -237,73 +237,107 @@ enum FileDocType {
 }
 
 model TripDocument {
-  id         String      @id @default(uuid())
-  tripId     String
-  fileUrl    String
-  fileName   String
-  uploadedBy String
-  fileType   FileDocType @default(DOCUMENT)
-  isRead     Boolean     @default(false)
-  createdAt  DateTime    @default(now())
-  publicId   String?
+  id                String      @id @default(uuid())
+  tripId            String
+  fileUrl           String
+  fileName          String
+  uploadedBy        String
+  fileType          FileDocType @default(DOCUMENT)
+  isRead            Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+  deletedAt         DateTime?
+  publicId          String?
+  caption           String?
+  replyToMessageId  String?
+  replyToDocumentId String?
   trip     Trip @relation(fields: [tripId], references: [id])
   uploader User @relation(fields: [uploadedBy], references: [id])
+
+  replyTo         Message?      @relation("TripMsgDocReplies", fields: [replyToMessageId], references: [id])
+  replyToDocument TripDocument? @relation("TripDocToDocReplies", fields: [replyToDocumentId], references: [id])
+
+  msgRepliedFrom Message[]       @relation("TripMsgToDocReplies")
+  docRepliedFrom TripDocument[]  @relation("TripDocToDocReplies")
 
   @@index([tripId, isRead])
 }
 
 model DirectMessageDocument {
-  id          String      @id @default(uuid())
-  uploadedBy  String      // хто завантажив
-  otherUserId String      // інший учасник conversation
-  fileUrl     String
-  fileName    String
-  fileType    FileDocType @default(DOCUMENT)
-  isRead      Boolean     @default(false)
-  createdAt   DateTime    @default(now())
-  publicId    String?
+  id                String      @id @default(uuid())
+  uploadedBy        String      // хто завантажив
+  otherUserId       String      // інший учасник conversation
+  fileUrl           String
+  fileName          String
+  fileType          FileDocType @default(DOCUMENT)
+  isRead            Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+  deletedAt         DateTime?
+  publicId          String?
+  caption           String?
+  replyToMessageId  String?
+  replyToDocumentId String?
 
   uploader  User @relation("DMDocsUploader",  fields: [uploadedBy],  references: [id])
   otherUser User @relation("DMDocsOtherUser", fields: [otherUserId], references: [id])
+
+  replyTo         DirectMessage?         @relation("DmMsgDocReplies", fields: [replyToMessageId], references: [id])
+  replyToDocument DirectMessageDocument? @relation("DmDocToDocReplies", fields: [replyToDocumentId], references: [id])
+
+  msgRepliedFrom DirectMessage[]         @relation("DmMsgToDocReplies")
+  docRepliedFrom DirectMessageDocument[] @relation("DmDocToDocReplies")
 
   @@index([uploadedBy, otherUserId])
   @@index([otherUserId, uploadedBy])
 }
 
 model GroupMessageDocument {
-  id         String      @id @default(uuid())
-  groupId    String
-  uploadedBy String
-  fileUrl    String
-  fileName   String
-  fileType   FileDocType @default(DOCUMENT)
-  isRead     Boolean     @default(false)
-  createdAt  DateTime    @default(now())
-  publicId   String?
+  id                String      @id @default(uuid())
+  groupId           String
+  uploadedBy        String
+  fileUrl           String
+  fileName          String
+  fileType          FileDocType @default(DOCUMENT)
+  isRead            Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+  deletedAt         DateTime?
+  publicId          String?
+  caption           String?
+  replyToMessageId  String?
+  replyToDocumentId String?
 
   group    Group @relation(fields: [groupId],   references: [id])
   uploader User  @relation("GroupDocsUploader", fields: [uploadedBy], references: [id])
+
+  replyTo         GroupMessage?         @relation("GroupMsgDocReplies", fields: [replyToMessageId], references: [id])
+  replyToDocument GroupMessageDocument? @relation("GroupDocToDocReplies", fields: [replyToDocumentId], references: [id])
+
+  msgRepliedFrom GroupMessage[]         @relation("GroupMsgToDocReplies")
+  docRepliedFrom GroupMessageDocument[] @relation("GroupDocToDocReplies")
 
   @@index([groupId])
   @@index([uploadedBy])
 }
 
 model DirectMessage {
-  id         String    @id @default(uuid())
-  senderId   String
-  receiverId String
-  content    String
-  isRead     Boolean   @default(false)
-  createdAt  DateTime  @default(now())
-  deletedAt  DateTime?
-  editedAt   DateTime?
-  replyToId  String?
+  id                 String    @id @default(uuid())
+  senderId           String
+  receiverId         String
+  content            String
+  isRead             Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  deletedAt          DateTime?
+  editedAt           DateTime?
+  replyToId          String?
+  replyToDocumentId  String?
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])
   receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
 
-  replyTo DirectMessage?  @relation("DmReplies", fields: [replyToId], references: [id])
-  replies DirectMessage[] @relation("DmReplies")
+  replyTo         DirectMessage?         @relation("DmReplies", fields: [replyToId], references: [id])
+  replies         DirectMessage[]        @relation("DmReplies")
+  replyToDocument DirectMessageDocument? @relation("DmMsgToDocReplies", fields: [replyToDocumentId], references: [id])
+
+  docReplies DirectMessageDocument[] @relation("DmMsgDocReplies")
 }
 
 model Message {
@@ -319,13 +353,17 @@ model Message {
   deletedAt         DateTime?
   editedAt          DateTime?
   replyToId         String?
+  replyToDocumentId String?
 
   trip    Trip            @relation(fields: [tripId], references: [id])
   session TripChatSession @relation(fields: [sessionId], references: [id])
   sender  User            @relation(fields: [senderId], references: [id])
 
-  replyTo Message?  @relation("TripMsgReplies", fields: [replyToId], references: [id])
-  replies Message[] @relation("TripMsgReplies")
+  replyTo         Message?      @relation("TripMsgReplies", fields: [replyToId], references: [id])
+  replies         Message[]     @relation("TripMsgReplies")
+  replyToDocument TripDocument? @relation("TripMsgToDocReplies", fields: [replyToDocumentId], references: [id])
+
+  docReplies TripDocument[] @relation("TripMsgDocReplies")
 
   @@index([tripId, isRead])
   @@index([sessionId])
@@ -462,21 +500,25 @@ model Group {
   announcementsDraft AnnouncementDraft[]
 }
 model GroupMessage {
-  id        String    @id @default(uuid())
-  groupId   String
-  senderId  String
-  content   String
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
-  editedAt  DateTime?
-  replyToId String?
+  id                String    @id @default(uuid())
+  groupId           String
+  senderId          String
+  content           String
+  createdAt         DateTime  @default(now())
+  deletedAt         DateTime?
+  editedAt          DateTime?
+  replyToId         String?
+  replyToDocumentId String?
 
   group  Group              @relation(fields: [groupId], references: [id])
   sender User               @relation(fields: [senderId], references: [id])
   reads  GroupMessageRead[]
 
-  replyTo GroupMessage?  @relation("GroupMsgReplies", fields: [replyToId], references: [id])
-  replies GroupMessage[] @relation("GroupMsgReplies")
+  replyTo         GroupMessage?         @relation("GroupMsgReplies", fields: [replyToId], references: [id])
+  replies         GroupMessage[]        @relation("GroupMsgReplies")
+  replyToDocument GroupMessageDocument? @relation("GroupMsgToDocReplies", fields: [replyToDocumentId], references: [id])
+
+  docReplies GroupMessageDocument[] @relation("GroupMsgDocReplies")
 }
 
 // Generic reaction table — one row per (message, user). One reaction max
