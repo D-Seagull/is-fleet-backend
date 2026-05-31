@@ -1,15 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReactionsService } from '../reactions/reactions.service';
 
 @Injectable()
 export class DirectMessagesService {
+  private readonly logger = new Logger(DirectMessagesService.name);
   constructor(
     private prisma: PrismaService,
     private reactions: ReactionsService,
   ) {}
 
   async getMessages(userId1: string, userId2: string) {
+    const t0 = Date.now();
     const messages = await this.prisma.directMessage.findMany({
       where: {
         OR: [
@@ -39,9 +41,15 @@ export class DirectMessagesService {
       },
       orderBy: { createdAt: 'asc' },
     });
+    const tMessages = Date.now() - t0;
+    const t1 = Date.now();
     const reactionsByMsg = await this.reactions.getForMessages(
       'DM',
       messages.map((m) => m.id),
+    );
+    const tReactions = Date.now() - t1;
+    this.logger.log(
+      `getMessages DM (${userId1} ↔ ${userId2}) → messages=${tMessages}ms reactions=${tReactions}ms count=${messages.length}`,
     );
     return messages.map((m) => ({
       ...m,

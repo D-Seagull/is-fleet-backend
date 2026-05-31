@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -10,9 +11,11 @@ import { TripChatSessionsService } from './trip-chat-sessions.service';
 import { PushService } from '../push/push.service';
 import { Inject, forwardRef } from '@nestjs/common';
 import { MessagesGateway } from './messages.gateway';
+import { ReactionsService } from '../reactions/reactions.service';
 
 @Injectable()
 export class MessagesService {
+  private readonly logger = new Logger(MessagesService.name);
   constructor(
     private prisma: PrismaService,
     private translation: TranslationService,
@@ -20,6 +23,7 @@ export class MessagesService {
     private push: PushService,
     @Inject(forwardRef(() => MessagesGateway))
     private gateway: MessagesGateway,
+    private reactions: ReactionsService,
   ) {}
   async create(senderId: string, dto: CreateMessageDto) {
     // Privacy: only the trip's current driver or current manager may write.
@@ -401,19 +405,57 @@ export class MessagesService {
   }
 
   async findByTrip(tripId: string, requester: { id: string; role: string }) {
+    const t0 = Date.now();
     // Privacy: requester sees only sessions they participated in.
     // Managers (ADMIN/TEAMLEAD) see all sessions of the trip.
     const sessionIds = await this.sessions.getVisibleSessionIds(tripId, requester);
+    const tSessions = Date.now() - t0;
     if (sessionIds.length === 0) return [];
-    return this.prisma.message.findMany({
+
+    const t1 = Date.now();
+    const messages = await this.prisma.message.findMany({
       where: { sessionId: { in: sessionIds } },
       include: {
-        sender: {
-          select: { id: true, name: true, role: true },
+        sender: { select: { id: true, name: true, role: true } },
+        // Phase 5 fields: clients (web + driver) need these populated on
+        // initial fetch so the bubble can render quote + reactions without
+        // waiting for the next WS event.
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            deletedAt: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+        replyToDocument: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            deletedAt: true,
+            uploader: { select: { id: true, name: true } },
+          },
         },
       },
       orderBy: { createdAt: 'asc' },
     });
+    const tMessages = Date.now() - t1;
+
+    const t2 = Date.now();
+    const reactionsByMsg = await this.reactions.getForMessages(
+      'TRIP',
+      messages.map((m) => m.id),
+    );
+    const tReactions = Date.now() - t2;
+
+    this.logger.log(
+      `findByTrip ${tripId} → sessions=${tSessions}ms messages=${tMessages}ms reactions=${tReactions}ms count=${messages.length}`,
+    );
+    return messages.map((m) => ({
+      ...m,
+      reactions: reactionsByMsg[m.id] ?? [],
+    }));
   }
 
   // Mark every unread message AND document in a trip *not authored/uploaded
