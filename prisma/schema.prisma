@@ -341,6 +341,14 @@ model DirectMessage {
   replyToDocument DirectMessageDocument? @relation("DmMsgToDocReplies", fields: [replyToDocumentId], references: [id])
 
   docReplies DirectMessageDocument[] @relation("DmMsgDocReplies")
+
+  // getMessages scans a 1-to-1 conversation in chronological order. These
+  // compound indexes let the planner satisfy both the OR-of-pairs filter
+  // AND the createdAt sort without a separate sort step.
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, senderId, createdAt])
+  // Unread counters per conversation use (senderId, receiverId, isRead).
+  @@index([receiverId, isRead])
 }
 
 model Message {
@@ -370,6 +378,9 @@ model Message {
 
   @@index([tripId, isRead])
   @@index([sessionId])
+  // findByTrip orders by createdAt — composite index serves the WHERE
+  // + ORDER BY in a single index scan instead of "sort 500 rows".
+  @@index([sessionId, createdAt])
 }
 
 // Note: TripDocument also gets `isRead` so the trip chat shows ✓/✓✓ on docs
@@ -522,6 +533,9 @@ model GroupMessage {
   replyToDocument GroupMessageDocument? @relation("GroupMsgToDocReplies", fields: [replyToDocumentId], references: [id])
 
   docReplies GroupMessageDocument[] @relation("GroupMsgDocReplies")
+
+  // Group history is fetched WHERE groupId=… ORDER BY createdAt.
+  @@index([groupId, createdAt])
 }
 
 // Generic reaction table — one row per (message, user). One reaction max
