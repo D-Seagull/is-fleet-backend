@@ -130,9 +130,23 @@ export class GroupsService {
     const user = await this.prisma.user.findFirst({
       where: { id: managerId },
     });
-    if (!user || user.role !== 'MANAGER') {
-      throw new ForbiddenException('Можна додавати тільки менеджерів');
+    // Frontend's member picker lists MANAGER + TEAMLEAD (a teamlead is
+    // effectively a senior manager and belongs in manager chats); the API
+    // used to reject TEAMLEAD with 403, which left the picker advertising
+    // people the server then refused to add.
+    if (!user || (user.role !== 'MANAGER' && user.role !== 'TEAMLEAD')) {
+      throw new ForbiddenException(
+        'Можна додавати тільки менеджерів або тімлідів',
+      );
     }
+
+    // Idempotent add: if this user is already in the group, return the
+    // existing row instead of crashing on the unique constraint (which
+    // would surface as a confusing 500 on a second click).
+    const existing = await this.prisma.groupManager.findFirst({
+      where: { groupId, managerId },
+    });
+    if (existing) return existing;
 
     return this.prisma.groupManager.create({
       data: { groupId, managerId },
