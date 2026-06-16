@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -31,6 +32,8 @@ function requireValidPhone(input: string): string {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private prisma: PrismaService,
     private storage: SupabaseStorageService,
@@ -69,7 +72,19 @@ export class UsersService {
 
       const inviteLink = `${process.env.FRONTEND_URL}/register?token=${inviteToken}`;
 
-      await this.mail.sendManagerInvite(dto.email, inviteLink);
+      // Fire-and-forget: Gmail SMTP can be slow (especially from Render free
+      // tier with cold starts) — making the manager wait for SMTP to ACK
+      // froze the UI on "loading" for 30-60s. The user row is already
+      // persisted; the invite link is reproducible from inviteToken so we
+      // can also resend on demand. Log instead of throwing so failures stay
+      // visible without breaking the response.
+      void this.mail
+        .sendManagerInvite(dto.email, inviteLink)
+        .catch((err) =>
+          this.logger.error(
+            `sendManagerInvite failed for ${dto.email}: ${err?.message ?? err}`,
+          ),
+        );
 
       return user;
     } catch (e) {
