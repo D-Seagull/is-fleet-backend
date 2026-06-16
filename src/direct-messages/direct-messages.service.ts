@@ -20,13 +20,13 @@ export class DirectMessagesService {
         ],
       },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -35,7 +35,7 @@ export class DirectMessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -73,13 +73,13 @@ export class DirectMessagesService {
         replyToDocumentId: replyToDocumentId ?? null,
       },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -88,7 +88,7 @@ export class DirectMessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -101,8 +101,8 @@ export class DirectMessagesService {
         OR: [{ senderId: userId }, { receiverId: userId }],
       },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
-        receiver: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
+        receiver: { select: { id: true, firstName: true, lastName: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -199,13 +199,13 @@ export class DirectMessagesService {
       where: { id: messageId },
       data: { content: trimmed, editedAt: new Date() },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -214,7 +214,7 @@ export class DirectMessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },

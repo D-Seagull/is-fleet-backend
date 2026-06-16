@@ -61,14 +61,14 @@ export class GroupMessageDocumentsService {
             caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
-            uploader: { select: { id: true, name: true, role: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
             group: { select: { id: true, name: true } },
             replyTo: {
               select: {
                 id: true,
                 content: true,
                 deletedAt: true,
-                sender: { select: { id: true, name: true } },
+                sender: { select: { id: true, firstName: true, lastName: true } },
               },
             },
             replyToDocument: {
@@ -77,7 +77,7 @@ export class GroupMessageDocumentsService {
                 fileName: true,
                 fileType: true,
                 deletedAt: true,
-                uploader: { select: { id: true, name: true } },
+                uploader: { select: { id: true, firstName: true, lastName: true } },
               },
             },
           },
@@ -100,13 +100,13 @@ export class GroupMessageDocumentsService {
     const docs = await this.prisma.groupMessageDocument.findMany({
       where: { groupId },
       include: {
-        uploader: { select: { id: true, name: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -115,7 +115,7 @@ export class GroupMessageDocumentsService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },

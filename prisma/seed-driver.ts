@@ -55,9 +55,12 @@ async function main() {
   const rl = readline.createInterface({ input: stdin, output: stdout });
 
   try {
-    const name =
+    const nameInput =
       process.env.DRIVER_NAME ||
-      (await ask(rl, 'Driver name', 'Test Driver'));
+      (await ask(rl, 'Driver name (first [last])', 'Test Driver'));
+    const nameParts = nameInput.trim().split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] || 'Driver';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
 
     const phoneRaw =
       process.env.DRIVER_PHONE ||
@@ -84,14 +87,16 @@ async function main() {
     const driver = await prisma.user.upsert({
       where: { phone },
       update: {
-        name,
+        firstName,
+        lastName,
         role: 'DRIVER',
         language,
         isActive: true,
         companyId: company.id,
       },
       create: {
-        name,
+        firstName,
+        lastName,
         phone,
         role: 'DRIVER',
         language,
@@ -99,7 +104,8 @@ async function main() {
       },
       select: {
         id: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         phone: true,
         role: true,
         language: true,

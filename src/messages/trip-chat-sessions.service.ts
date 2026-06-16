@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, SessionEndReason } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { fullName } from 'src/common/utils/full-name';
 
 /**
  * Manages chat session lifecycle per trip.
@@ -100,11 +101,11 @@ export class TripChatSessionsService {
       const [driver, manager, trip] = await Promise.all([
         tx.user.findUnique({
           where: { id: newDriverId },
-          select: { name: true },
+          select: { firstName: true, lastName: true },
         }),
         tx.user.findUnique({
           where: { id: newManagerId },
-          select: { name: true },
+          select: { firstName: true, lastName: true },
         }),
         tx.trip.findUnique({
           where: { id: tripId },
@@ -115,9 +116,9 @@ export class TripChatSessionsService {
 
       let content = '';
       if (reason === 'DRIVER_CHANGED') {
-        content = `До вантажівки ${plate} призначений водій ${driver?.name ?? 'без імені'}`;
+        content = `До вантажівки ${plate} призначений водій ${fullName(driver) || 'без імені'}`;
       } else if (reason === 'MANAGER_CHANGED') {
-        content = `До вантажівки ${plate} призначений менеджер ${manager?.name ?? 'без імені'}`;
+        content = `До вантажівки ${plate} призначений менеджер ${fullName(manager) || 'без імені'}`;
       }
 
       // 1. Close the old session.
@@ -155,7 +156,7 @@ export class TripChatSessionsService {
             isRead: false,
           },
           include: {
-            sender: { select: { id: true, name: true, role: true } },
+            sender: { select: { id: true, firstName: true, lastName: true, role: true } },
             session: { select: { driverId: true, managerId: true } },
           },
         });
@@ -200,8 +201,8 @@ export class TripChatSessionsService {
             }),
       },
       include: {
-        driver: { select: { id: true, name: true, role: true } },
-        manager: { select: { id: true, name: true, role: true } },
+        driver: { select: { id: true, firstName: true, lastName: true, role: true } },
+        manager: { select: { id: true, firstName: true, lastName: true, role: true } },
       },
       orderBy: { startedAt: 'desc' },
     });
@@ -227,7 +228,7 @@ export class TripChatSessionsService {
 
     return this.prisma.message.findMany({
       where: { sessionId },
-      include: { sender: { select: { id: true, name: true, role: true } } },
+      include: { sender: { select: { id: true, firstName: true, lastName: true, role: true } } },
       orderBy: { createdAt: 'asc' },
     });
   }

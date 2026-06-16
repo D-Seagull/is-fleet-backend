@@ -3,8 +3,12 @@ import { Language } from '@prisma/client';
 
 export class CreateDriverDto {
   @IsString()
-  @MinLength(2)
-  name: string;
+  @MinLength(1)
+  firstName: string;
+
+  @IsString()
+  @IsOptional()
+  lastName?: string;
 
   @IsString()
   @Matches(/^\+?[\d\s\-()]{8,20}$/, {

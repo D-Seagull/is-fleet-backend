@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ReactionsService } from 'src/reactions/reactions.service';
+import { fullName } from 'src/common/utils/full-name';
 
 @Injectable()
 export class GroupMessagesService {
@@ -13,13 +14,13 @@ export class GroupMessagesService {
     const messages = await this.prisma.groupMessage.findMany({
       where: { groupId },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -28,7 +29,7 @@ export class GroupMessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -60,13 +61,13 @@ export class GroupMessagesService {
         replyToDocumentId: replyToDocumentId ?? null,
       },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -75,7 +76,7 @@ export class GroupMessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -121,13 +122,13 @@ export class GroupMessagesService {
       where: { id: messageId },
       data: { content: trimmed, editedAt: new Date() },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -136,7 +137,7 @@ export class GroupMessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -193,7 +194,7 @@ export class GroupMessagesService {
           },
           orderBy: { createdAt: 'desc' },
           include: {
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         });
         if (unread.length === 0) return null;
@@ -204,7 +205,7 @@ export class GroupMessagesService {
           unreadCount: unread.length,
           latestMessage: {
             content: latest.content,
-            senderName: latest.sender.name,
+            senderName: fullName(latest.sender),
             senderId: latest.senderId,
             createdAt: latest.createdAt,
           },

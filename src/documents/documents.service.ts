@@ -50,7 +50,7 @@ export class DocumentsService {
             caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
-            uploader: { select: { id: true, name: true, role: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
             trip: {
               select: {
                 id: true,
@@ -64,7 +64,7 @@ export class DocumentsService {
                 id: true,
                 content: true,
                 deletedAt: true,
-                sender: { select: { id: true, name: true } },
+                sender: { select: { id: true, firstName: true, lastName: true } },
               },
             },
             replyToDocument: {
@@ -73,7 +73,7 @@ export class DocumentsService {
                 fileName: true,
                 fileType: true,
                 deletedAt: true,
-                uploader: { select: { id: true, name: true } },
+                uploader: { select: { id: true, firstName: true, lastName: true } },
               },
             },
           },
@@ -153,13 +153,13 @@ export class DocumentsService {
     const docs = await this.prisma.tripDocument.findMany({
       where: { tripId },
       include: {
-        uploader: { select: { id: true, name: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -168,7 +168,7 @@ export class DocumentsService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -190,7 +190,7 @@ export class DocumentsService {
     const docs = await this.prisma.tripDocument.findMany({
       where: { trip: { truckId } },
       include: {
-        uploader: { select: { id: true, name: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
         trip: { select: { id: true, title: true, orderNumber: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -204,7 +204,7 @@ export class DocumentsService {
     const docs = await this.prisma.tripDocument.findMany({
       where: { trip: { companyId } },
       include: {
-        uploader: { select: { id: true, name: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
         trip: {
           select: {
             id: true,

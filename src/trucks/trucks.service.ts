@@ -6,6 +6,7 @@ import { CreateTruckNoteDto } from './dto/create-truck-note.dto';
 import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { PushService } from '../push/push.service';
+import { fullName } from '../common/utils/full-name';
 
 const ACTIVE_TRIP_STATUSES = [
   'ASSIGNED',
@@ -38,10 +39,10 @@ export class TrucksService {
       where: { companyId, isActive: true },
       include: {
         currentDriver: {
-          select: { id: true, name: true, phone: true },
+          select: { id: true, firstName: true, lastName: true, phone: true },
         },
         manager: {
-          select: { id: true, name: true },
+          select: { id: true, firstName: true, lastName: true },
         },
         truckNotes: {
           orderBy: { createdAt: 'desc' },
@@ -57,10 +58,10 @@ export class TrucksService {
       where: { id, companyId },
       include: {
         currentDriver: {
-          select: { id: true, name: true, phone: true },
+          select: { id: true, firstName: true, lastName: true, phone: true },
         },
         manager: {
-          select: { id: true, name: true },
+          select: { id: true, firstName: true, lastName: true },
         },
       },
     });
@@ -189,7 +190,7 @@ export class TrucksService {
       const [newManager] = await Promise.all([
         this.prisma.user.findUnique({
           where: { id: newManagerId },
-          select: { name: true },
+          select: { firstName: true, lastName: true },
         }),
         this.push.sendToUsers([newManagerId], {
           title: 'Призначення вантажівки',
@@ -205,7 +206,7 @@ export class TrucksService {
       if (oldTruck.currentDriverId) {
         await this.push.sendToUsers([oldTruck.currentDriverId], {
           title: 'Менеджер змінений',
-          body: `Ваш новий менеджер: ${newManager?.name ?? 'без імені'}`,
+          body: `Ваш новий менеджер: ${fullName(newManager) || 'без імені'}`,
           data: {
             type: 'MANAGER_CHANGED',
             truckId: id,
@@ -257,12 +258,12 @@ export class TrucksService {
       where: { currentDriverId: driverId, isActive: true },
       include: {
         manager: {
-          select: { id: true, name: true, phone: true, avatar: true },
+          select: { id: true, firstName: true, lastName: true, phone: true, avatar: true },
         },
         truckNotes: {
           orderBy: { createdAt: 'desc' },
           include: {
-            user: { select: { id: true, name: true, role: true } },
+            user: { select: { id: true, firstName: true, lastName: true, role: true } },
           },
         },
       },
@@ -274,7 +275,7 @@ export class TrucksService {
       where: { companyId, isActive: true, managerId: userId },
       include: {
         currentDriver: {
-          select: { id: true, name: true, phone: true },
+          select: { id: true, firstName: true, lastName: true, phone: true },
         },
         truckNotes: {
           orderBy: { createdAt: 'desc' },
@@ -289,7 +290,7 @@ export class TrucksService {
     return this.prisma.truck.findMany({
       where: { companyId, isActive: false },
       include: {
-        currentDriver: { select: { id: true, name: true, phone: true } },
+        currentDriver: { select: { id: true, firstName: true, lastName: true, phone: true } },
       },
     });
   }
@@ -327,7 +328,7 @@ export class TrucksService {
         content: dto.content,
       },
       include: {
-        user: { select: { id: true, name: true, role: true } },
+        user: { select: { id: true, firstName: true, lastName: true, role: true } },
       },
     });
   }
@@ -336,7 +337,7 @@ export class TrucksService {
     return this.prisma.truckNote.findMany({
       where: { truckId },
       include: {
-        user: { select: { id: true, name: true, role: true } },
+        user: { select: { id: true, firstName: true, lastName: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

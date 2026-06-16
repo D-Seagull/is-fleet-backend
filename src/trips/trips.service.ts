@@ -10,11 +10,12 @@ import { MessagesGateway } from '../messages/messages.gateway';
 import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
 import { PushService } from '../push/push.service';
 import { ReactionsService } from '../reactions/reactions.service';
+import { fullName } from '../common/utils/full-name';
 
 const tripInclude = {
-  driver: { select: { id: true, name: true, phone: true } },
+  driver: { select: { id: true, firstName: true, lastName: true, phone: true } },
   truck: { select: { id: true, plate: true } },
-  manager: { select: { id: true, name: true } },
+  manager: { select: { id: true, firstName: true, lastName: true } },
   stops: { orderBy: { order: 'asc' as const } },
   documents: true,
 };
@@ -146,13 +147,13 @@ export class TripsService {
     const messages = await this.prisma.message.findMany({
       where: { sessionId: { in: sessionIds } },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -304,7 +305,7 @@ export class TripsService {
       const [newManager] = await Promise.all([
         this.prisma.user.findUnique({
           where: { id: managerId },
-          select: { name: true },
+          select: { firstName: true, lastName: true },
         }),
         this.push.sendToUsers([managerId], {
           title: 'Призначено рейс',
@@ -320,7 +321,7 @@ export class TripsService {
       if (trip.driverId) {
         await this.push.sendToUsers([trip.driverId], {
           title: 'Менеджер змінений',
-          body: `Ваш новий менеджер: ${newManager?.name ?? 'без імені'}`,
+          body: `Ваш новий менеджер: ${fullName(newManager) || 'без імені'}`,
           data: {
             type: 'MANAGER_CHANGED',
             tripId: id,
@@ -388,7 +389,7 @@ export class TripsService {
             senderId: userId,
             content,
           },
-          include: { sender: { select: { id: true, name: true, role: true } } },
+          include: { sender: { select: { id: true, firstName: true, lastName: true, role: true } } },
         });
         this.gateway.server.to(trip.id).emit('newMessage', message);
 
@@ -399,7 +400,7 @@ export class TripsService {
             const online = await this.gateway.isUserOnline(trip.driverId);
             if (online) return;
             await this.push.sendToUsers([trip.driverId], {
-              title: message.sender.name ?? 'Нове повідомлення',
+              title: fullName(message.sender) || 'Нове повідомлення',
               body: content.slice(0, 200),
               data: {
                 type: 'MESSAGE',

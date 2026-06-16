@@ -40,7 +40,13 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.password!);
     if (!valid) throw new UnauthorizedException('Невірний email або пароль');
 
-    return this.signToken(user.id, user.role, user.companyId, user.name ?? '');
+    return this.signToken(
+      user.id,
+      user.role,
+      user.companyId,
+      user.firstName,
+      user.lastName,
+    );
   }
 
   async register(dto: RegisterDto) {
@@ -59,7 +65,8 @@ export class AuthService {
       const user = await this.prisma.user.update({
         where: { id: existingUser.id },
         data: {
-          name: dto.name,
+          firstName: dto.firstName.trim(),
+          lastName: dto.lastName?.trim() || null,
           password: hash,
           inviteToken: null, // очищаємо токен
           inviteExpiry: null,
@@ -70,7 +77,8 @@ export class AuthService {
         user.id,
         user.role,
         user.companyId,
-        user.name ?? '',
+        user.firstName,
+        user.lastName,
       );
     }
 
@@ -91,7 +99,8 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: {
-        name: dto.name,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName?.trim() || null,
         email: dto.email,
         password: hash,
         role: 'TEAMLEAD',
@@ -111,7 +120,13 @@ export class AuthService {
       });
     }
 
-    return this.signToken(user.id, user.role, user.companyId, user.name ?? '');
+    return this.signToken(
+      user.id,
+      user.role,
+      user.companyId,
+      user.firstName,
+      user.lastName,
+    );
   }
 
   async login(dto: LoginDto) {
@@ -122,23 +137,30 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.password!);
     if (!valid) throw new UnauthorizedException('Login or password is wrong');
-    return this.signToken(user.id, user.role, user.companyId, user.name ?? '');
+    return this.signToken(
+      user.id,
+      user.role,
+      user.companyId,
+      user.firstName,
+      user.lastName,
+    );
   }
   private signToken(
     userId: string,
     role: string,
     companyId: string,
-    name: string,
+    firstName: string,
+    lastName: string | null,
   ) {
     const payload = { sub: userId, role, companyId };
-    console.log(payload);
     return {
       access_token: this.jwt.sign(payload),
       user: {
         id: userId,
         role,
         companyId,
-        name,
+        firstName,
+        lastName,
       },
     };
   }
@@ -147,7 +169,8 @@ export class AuthService {
       where: { id: userId },
       select: {
         id: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         phone: true,
         role: true,
         companyId: true,
@@ -167,7 +190,8 @@ export class AuthService {
         manager: {
           select: {
             id: true,
-            name: true,
+            firstName: true,
+            lastName: true,
             phone: true,
             avatar: true,
           },
@@ -329,7 +353,8 @@ export class AuthService {
       otp.user.id,
       otp.user.role,
       otp.user.companyId,
-      otp.user.name ?? '',
+      otp.user.firstName,
+      otp.user.lastName,
     );
   }
 }

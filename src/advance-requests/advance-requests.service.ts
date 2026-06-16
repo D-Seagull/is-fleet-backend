@@ -3,6 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 import { CreateAdvanceRequestDto } from './dto/create-advance-request.dto';
+import { fullName } from 'src/common/utils/full-name';
 
 @Injectable()
 export class AdvanceRequestsService {
@@ -62,7 +63,7 @@ export class AdvanceRequestsService {
       fromEmail,
       toEmail,
       ccEmail,
-      driver.name ?? '',
+      fullName(driver),
       dto.amount,
       dto.reason,
     );
@@ -84,7 +85,7 @@ export class AdvanceRequestsService {
           driver: { managerId: userId },
         },
         include: {
-          driver: { select: { id: true, name: true } },
+          driver: { select: { id: true, firstName: true, lastName: true } },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -96,7 +97,7 @@ export class AdvanceRequestsService {
           driver: { manager: { teamleadId: userId } },
         },
         include: {
-          driver: { select: { id: true, name: true } },
+          driver: { select: { id: true, firstName: true, lastName: true } },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -105,7 +106,7 @@ export class AdvanceRequestsService {
     // ADMIN - всі заявки
     return await this.prisma.advanceRequest.findMany({
       include: {
-        driver: { select: { id: true, name: true } },
+        driver: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

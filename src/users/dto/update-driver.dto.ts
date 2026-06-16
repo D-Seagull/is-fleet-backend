@@ -3,14 +3,18 @@ import { Language } from '@prisma/client';
 
 /**
  * Generic user-profile patch — covers driver-side fields (phone, language,
- * managerId, truckId) AND manager-side fields (name, teamleadId).
+ * managerId, truckId) AND manager-side fields (firstName/lastName, teamleadId).
  * Naming kept as "UpdateDriverDto" for now to avoid touching every caller,
  * but it works for any role on PATCH /users/:id.
  */
 export class UpdateDriverDto {
   @IsString()
   @IsOptional()
-  name?: string;
+  firstName?: string;
+
+  @IsString()
+  @IsOptional()
+  lastName?: string | null;
 
   @IsString()
   @IsOptional()

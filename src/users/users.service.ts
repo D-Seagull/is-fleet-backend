@@ -16,6 +16,7 @@ import { MailService } from 'src/mail/mail.service';
 import { normalizePhone as toCanonicalPhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
+import { fullName } from 'src/common/utils/full-name';
 
 /** Same as shared util but throws 400 — used by create flows. */
 function requireValidPhone(input: string): string {
@@ -55,7 +56,8 @@ export class UsersService {
         data: {
           email: dto.email,
           phone,
-          name: dto.name?.trim() ?? null,
+          firstName: dto.firstName.trim(),
+          lastName: dto.lastName?.trim() || null,
           role: 'MANAGER',
           companyId,
           teamleadId: creatorId,
@@ -93,7 +95,8 @@ export class UsersService {
     try {
       const newDriver = await this.prisma.user.create({
         data: {
-          name: dto.name.trim(),
+          firstName: dto.firstName.trim(),
+          lastName: dto.lastName?.trim() || null,
           phone,
           password: hash,
           role: 'DRIVER',
@@ -122,7 +125,8 @@ export class UsersService {
       where: companyId ? { companyId } : {},
       select: {
         id: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
         avatar: true,
@@ -132,8 +136,8 @@ export class UsersService {
         createdAt: true,
         managerId: true,
         teamleadId: true,
-        manager: { select: { id: true, name: true } },
-        teamlead: { select: { id: true, name: true } },
+        manager: { select: { id: true, firstName: true, lastName: true } },
+        teamlead: { select: { id: true, firstName: true, lastName: true } },
         currentTruck: { select: { id: true, plate: true, status: true } },
         company: { select: { name: true } },
         _count: {
@@ -174,7 +178,8 @@ export class UsersService {
     id: string,
     companyId: string | null,
     dto: {
-      name?: string;
+      firstName?: string;
+      lastName?: string | null;
       phone?: string;
       language?: 'UK' | 'EN' | 'PL' | 'LT' | 'UZ' | 'KZ' | 'HI' | 'RU';
       managerId?: string | null;
@@ -237,7 +242,10 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.firstName !== undefined ? { firstName: dto.firstName.trim() } : {}),
+        ...(dto.lastName !== undefined
+          ? { lastName: dto.lastName === null ? null : dto.lastName.trim() || null }
+          : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
         ...(dto.language !== undefined ? { language: dto.language } : {}),
         ...(dto.managerId !== undefined ? { managerId: dto.managerId } : {}),
@@ -245,13 +253,14 @@ export class UsersService {
       },
       select: {
         id: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         phone: true,
         language: true,
         managerId: true,
         teamleadId: true,
-        manager: { select: { id: true, name: true } },
-        teamlead: { select: { id: true, name: true } },
+        manager: { select: { id: true, firstName: true, lastName: true } },
+        teamlead: { select: { id: true, firstName: true, lastName: true } },
         currentTruck: { select: { id: true, plate: true, status: true } },
       },
     });
@@ -297,7 +306,7 @@ export class UsersService {
       data: { isActive: true },
     });
 
-    return { message: `User ${user.name} activated!` };
+    return { message: `User ${fullName(user)} activated!` };
   }
 
   async deactivate(
@@ -325,7 +334,7 @@ export class UsersService {
       data: { isActive: false },
     });
 
-    return { message: `User ${user.name} deactivated!` };
+    return { message: `User ${fullName(user)} deactivated!` };
   }
 
   async getUserById(id: string) {
@@ -333,7 +342,8 @@ export class UsersService {
       where: { id },
       select: {
         id: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
         avatar: true,
@@ -344,10 +354,10 @@ export class UsersService {
         companyId: true,
         createdAt: true,
         manager: {
-          select: { id: true, name: true, email: true, phone: true, avatar: true },
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, avatar: true },
         },
         teamlead: {
-          select: { id: true, name: true, email: true, phone: true, avatar: true },
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, avatar: true },
         },
         currentTruck: {
           select: { id: true, plate: true, status: true },
@@ -360,7 +370,7 @@ export class UsersService {
             id: true,
             plate: true,
             status: true,
-            currentDriver: { select: { id: true, name: true } },
+            currentDriver: { select: { id: true, firstName: true, lastName: true } },
           },
           orderBy: { plate: 'asc' },
         },
@@ -369,12 +379,13 @@ export class UsersService {
           where: { isActive: true, role: 'DRIVER' },
           select: {
             id: true,
-            name: true,
+            firstName: true,
+            lastName: true,
             phone: true,
             avatar: true,
             currentTruck: { select: { id: true, plate: true } },
           },
-          orderBy: { name: 'asc' },
+          orderBy: { firstName: 'asc' },
         },
         ratingsReceived: {
           select: {
@@ -383,7 +394,7 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, name: true, role: true } },
+            ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -394,7 +405,7 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, name: true, role: true } },
+            ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -412,7 +423,7 @@ export class UsersService {
       ...r,
       anonymous,
       ratedBy: anonymous
-        ? { id: ratedBy.id, name: 'Anonymous', role: '' }
+        ? { id: ratedBy.id, firstName: 'Anonymous', lastName: null, role: '' }
         : ratedBy,
     }));
 
@@ -427,7 +438,7 @@ export class UsersService {
         ...r,
         anonymous,
         ratedBy: anonymous
-          ? { id: ratedBy.id, name: 'Anonymous', role: '' }
+          ? { id: ratedBy.id, firstName: 'Anonymous', lastName: null, role: '' }
           : ratedBy,
       }),
     );
@@ -467,7 +478,7 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, name: true, role: true } },
+        ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -481,7 +492,7 @@ export class UsersService {
       ...r,
       anonymous,
       ratedBy: anonymous
-        ? { id: ratedBy.id, name: 'Anonymous', role: '' }
+        ? { id: ratedBy.id, firstName: 'Anonymous', lastName: null, role: '' }
         : ratedBy,
     }));
 
@@ -528,7 +539,7 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, name: true, role: true } },
+        ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -542,7 +553,7 @@ export class UsersService {
       ...r,
       anonymous,
       ratedBy: anonymous
-        ? { id: ratedBy.id, name: 'Anonymous', role: '' }
+        ? { id: ratedBy.id, firstName: 'Anonymous', lastName: null, role: '' }
         : ratedBy,
     }));
 

@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 import { Language } from '@prisma/client';
 
 export class CreateManagerDto {
@@ -9,9 +9,13 @@ export class CreateManagerDto {
   @IsNotEmpty()
   phone: string;
 
+  @IsString()
+  @MinLength(1)
+  firstName: string;
+
   @IsOptional()
   @IsString()
-  name?: string;
+  lastName?: string;
 
   @IsOptional()
   @IsEnum(Language)

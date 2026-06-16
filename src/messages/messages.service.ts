@@ -12,6 +12,7 @@ import { PushService } from '../push/push.service';
 import { Inject, forwardRef } from '@nestjs/common';
 import { MessagesGateway } from './messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
+import { fullName } from '../common/utils/full-name';
 
 @Injectable()
 export class MessagesService {
@@ -73,7 +74,7 @@ export class MessagesService {
       },
       include: {
         sender: {
-          select: { id: true, name: true, role: true },
+          select: { id: true, firstName: true, lastName: true, role: true },
         },
         // Recipients filter on the client side: drop the message if my id is
         // neither driverId nor managerId (and I'm not a manager-tier user).
@@ -85,7 +86,7 @@ export class MessagesService {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -94,7 +95,7 @@ export class MessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -110,7 +111,7 @@ export class MessagesService {
         const online = await this.gateway.isUserOnline(recipientId);
         if (online) return;
         await this.push.sendToUsers([recipientId], {
-          title: message.sender.name ?? 'Нове повідомлення',
+          title: fullName(message.sender) || 'Нове повідомлення',
           body: dto.content.slice(0, 200),
           data: {
             type: 'MESSAGE',
@@ -152,14 +153,14 @@ export class MessagesService {
       where: { id: messageId },
       data: { content: trimmed, editedAt: new Date() },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         session: { select: { driverId: true, managerId: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -168,7 +169,7 @@ export class MessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
@@ -235,7 +236,7 @@ export class MessagesService {
         content: true,
         createdAt: true,
         tripId: true,
-        sender: { select: { name: true } },
+        sender: { select: { firstName: true, lastName: true } },
         trip: {
           select: {
             status: true,
@@ -290,7 +291,7 @@ export class MessagesService {
       if (!entry.latestMessage) {
         entry.latestMessage = {
           content: msg.content,
-          senderName: msg.sender.name ?? 'Driver',
+          senderName: fullName(msg.sender) || 'Driver',
           tripId: msg.tripId,
           isActiveTrip: isActive,
           createdAt: msg.createdAt.toISOString(),
@@ -336,7 +337,7 @@ export class MessagesService {
         tripId: true,
         content: true,
         createdAt: true,
-        sender: { select: { name: true } },
+        sender: { select: { firstName: true, lastName: true } },
         trip: {
           select: {
             status: true,
@@ -375,7 +376,7 @@ export class MessagesService {
       if (!entry.latestMessage) {
         entry.latestMessage = {
           content: msg.content,
-          senderName: msg.sender.name ?? 'Manager',
+          senderName: fullName(msg.sender) || 'Manager',
           createdAt: msg.createdAt.toISOString(),
         };
       }
@@ -416,7 +417,7 @@ export class MessagesService {
     const messages = await this.prisma.message.findMany({
       where: { sessionId: { in: sessionIds } },
       include: {
-        sender: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
         // Phase 5 fields: clients (web + driver) need these populated on
         // initial fetch so the bubble can render quote + reactions without
         // waiting for the next WS event.
@@ -425,7 +426,7 @@ export class MessagesService {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, name: true } },
+            sender: { select: { id: true, firstName: true, lastName: true } },
           },
         },
         replyToDocument: {
@@ -434,7 +435,7 @@ export class MessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, name: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true } },
           },
         },
       },
