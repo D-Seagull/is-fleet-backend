@@ -13,7 +13,7 @@ import { ReactionsService } from '../reactions/reactions.service';
 import { fullName } from '../common/utils/full-name';
 
 const tripInclude = {
-  driver: { select: { id: true, firstName: true, lastName: true, avatar: true, phone: true } },
+  driver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true } },
   truck: { select: { id: true, plate: true } },
   manager: { select: { id: true, firstName: true, lastName: true, avatar: true } },
   stops: { orderBy: { order: 'asc' as const } },
@@ -147,7 +147,7 @@ export class TripsService {
     const messages = await this.prisma.message.findMany({
       where: { sessionId: { in: sessionIds } },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         replyTo: {
           select: {
             id: true,
@@ -389,7 +389,7 @@ export class TripsService {
             senderId: userId,
             content,
           },
-          include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } } },
+          include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } } },
         });
         this.gateway.server.to(trip.id).emit('newMessage', message);
 

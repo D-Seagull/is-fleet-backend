@@ -55,6 +55,13 @@ model User {
   role               Role
   language           Language            @default(EN)
   timezone           String?             // IANA tz, e.g. "Europe/Warsaw"
+  /// Self-set presence status. Combined with socket presence on read:
+  /// no active socket -> displayed as OFFLINE regardless. ONLINE while a
+  /// socket is up. BUSY / SLEEP both suppress push notifications.
+  status             UserStatus          @default(ONLINE)
+  /// When non-null, BUSY/SLEEP auto-expires at this instant — the next
+  /// read resolves the user back to ONLINE.
+  statusUntil        DateTime?
   isActive           Boolean             @default(true)
   companyId          String
   createdAt          DateTime            @default(now())
@@ -113,6 +120,12 @@ model PushToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum UserStatus {
+  ONLINE
+  BUSY
+  SLEEP
 }
 
 enum Role {

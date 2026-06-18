@@ -1,11 +1,12 @@
 import {
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
   Matches,
   MinLength,
 } from 'class-validator';
-import { Language } from '@prisma/client';
+import { Language, UserStatus } from '@prisma/client';
 
 /**
  * Self-update DTO — what a user is allowed to change on their own row via
@@ -32,4 +33,17 @@ export class UpdateMeDto {
   @IsOptional()
   @IsEnum(Language)
   language?: Language;
+
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
+
+  /**
+   * ISO timestamp at which a BUSY/SLEEP state should auto-clear. Pass
+   * `null` (or omit) for indefinite. Server ignores `statusUntil` when
+   * `status` is ONLINE.
+   */
+  @IsOptional()
+  @IsDateString()
+  statusUntil?: string | null;
 }

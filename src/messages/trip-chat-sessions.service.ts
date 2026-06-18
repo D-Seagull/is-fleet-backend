@@ -156,7 +156,7 @@ export class TripChatSessionsService {
             isRead: false,
           },
           include: {
-            sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+            sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
             session: { select: { driverId: true, managerId: true } },
           },
         });
@@ -201,8 +201,8 @@ export class TripChatSessionsService {
             }),
       },
       include: {
-        driver: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
-        manager: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        driver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        manager: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
       },
       orderBy: { startedAt: 'desc' },
     });
@@ -228,7 +228,7 @@ export class TripChatSessionsService {
 
     return this.prisma.message.findMany({
       where: { sessionId },
-      include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } } },
+      include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } } },
       orderBy: { createdAt: 'asc' },
     });
   }

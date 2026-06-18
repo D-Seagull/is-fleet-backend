@@ -177,7 +177,7 @@ export class AuthService {
         email: true,
         language: true,
         timezone: true,
-        avatar: true,
+        avatar: true, status: true, statusUntil: true,
         // For driver routing: which truck am I on, who is my manager.
         // Null for non-drivers — safe to expose either way.
         currentTruck: {
@@ -193,7 +193,7 @@ export class AuthService {
             firstName: true,
             lastName: true,
             phone: true,
-            avatar: true,
+            avatar: true, status: true, statusUntil: true,
           },
         },
       },

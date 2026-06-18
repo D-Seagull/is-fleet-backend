@@ -28,8 +28,8 @@ function parseAlarmTime(input: string, tz: string | null | undefined): Date {
 }
 
 const ALARM_INCLUDE = {
-  creator: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
-  target: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+  creator: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+  target: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
   trip: { select: { id: true, title: true, truckId: true } },
 } as const;
 

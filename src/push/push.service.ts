@@ -26,8 +26,32 @@ export class PushService {
   async sendToUsers(userIds: string[], payload: PushPayload): Promise<void> {
     if (userIds.length === 0) return;
 
+    // Skip recipients whose status is BUSY/SLEEP (with a still-valid
+    // statusUntil, or no timer at all). This is the do-not-disturb gate
+    // — the message itself still lands via socket; we only silence the
+    // banner. ONLINE recipients and recipients whose timer already
+    // expired stay in the list.
+    const recipients = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, status: true, statusUntil: true },
+    });
+    const now = Date.now();
+    const deliverIds = recipients
+      .filter((u) => {
+        if (u.status === 'ONLINE') return true;
+        // BUSY/SLEEP: deliver only if the timer already expired.
+        return !!u.statusUntil && u.statusUntil.getTime() <= now;
+      })
+      .map((u) => u.id);
+    if (deliverIds.length === 0) {
+      this.logger.log(
+        `Push "${payload.title}" suppressed for all ${userIds.length} recipient(s) (BUSY/SLEEP)`,
+      );
+      return;
+    }
+
     const tokens = await this.prisma.pushToken.findMany({
-      where: { userId: { in: userIds } },
+      where: { userId: { in: deliverIds } },
       select: { token: true },
     });
     this.logger.log(

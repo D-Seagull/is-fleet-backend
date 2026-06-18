@@ -14,7 +14,7 @@ export class GroupMessagesService {
     const messages = await this.prisma.groupMessage.findMany({
       where: { groupId },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         replyTo: {
           select: {
             id: true,
@@ -61,7 +61,7 @@ export class GroupMessagesService {
         replyToDocumentId: replyToDocumentId ?? null,
       },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         replyTo: {
           select: {
             id: true,
@@ -122,7 +122,7 @@ export class GroupMessagesService {
       where: { id: messageId },
       data: { content: trimmed, editedAt: new Date() },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         replyTo: {
           select: {
             id: true,

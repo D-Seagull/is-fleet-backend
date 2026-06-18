@@ -144,7 +144,7 @@ export class UsersService {
         lastName: true,
         email: true,
         phone: true,
-        avatar: true,
+        avatar: true, status: true, statusUntil: true,
         role: true,
         language: true,
         isActive: true,
@@ -312,9 +312,11 @@ export class UsersService {
 
   /**
    * Self-update — narrower than updateDriver: a user is only allowed to
-   * change their own profile fields (firstName/lastName/phone/language).
-   * Used by the web Account Settings page and any future native equivalents.
-   * Phone uniqueness is enforced by Prisma; we surface 409 on collision.
+   * change their own profile fields (firstName/lastName/phone/language/
+   * status). Used by the web Account Settings page and any future native
+   * equivalents. Phone uniqueness is enforced by Prisma; we surface 409
+   * on collision. status=ONLINE always clears statusUntil so a returning
+   * user can't be re-frozen by stale data.
    */
   async updateMe(
     userId: string,
@@ -323,9 +325,33 @@ export class UsersService {
       lastName?: string | null;
       phone?: string;
       language?: 'UK' | 'EN' | 'PL' | 'LT' | 'UZ' | 'KZ' | 'HI' | 'RU';
+      status?: 'ONLINE' | 'BUSY' | 'SLEEP';
+      statusUntil?: string | null;
     },
   ) {
     const phone = dto.phone !== undefined ? requireValidPhone(dto.phone) : undefined;
+
+    const statusPatch: {
+      status?: 'ONLINE' | 'BUSY' | 'SLEEP';
+      statusUntil?: Date | null;
+    } = {};
+    if (dto.status !== undefined) {
+      statusPatch.status = dto.status;
+      // ONLINE wipes any pending timer; BUSY/SLEEP respect whatever the
+      // caller sent (null = indefinite).
+      if (dto.status === 'ONLINE') {
+        statusPatch.statusUntil = null;
+      } else if (dto.statusUntil !== undefined) {
+        statusPatch.statusUntil = dto.statusUntil
+          ? new Date(dto.statusUntil)
+          : null;
+      }
+    } else if (dto.statusUntil !== undefined) {
+      // Updating just the timer without touching the status itself.
+      statusPatch.statusUntil = dto.statusUntil
+        ? new Date(dto.statusUntil)
+        : null;
+    }
 
     try {
       return await this.prisma.user.update({
@@ -337,6 +363,7 @@ export class UsersService {
             : {}),
           ...(phone !== undefined ? { phone } : {}),
           ...(dto.language !== undefined ? { language: dto.language } : {}),
+          ...statusPatch,
         },
         select: {
           id: true,
@@ -348,6 +375,8 @@ export class UsersService {
           role: true,
           language: true,
           timezone: true,
+          status: true,
+          statusUntil: true,
           companyId: true,
         },
       });
@@ -415,7 +444,7 @@ export class UsersService {
         lastName: true,
         email: true,
         phone: true,
-        avatar: true,
+        avatar: true, status: true, statusUntil: true,
         role: true,
         language: true,
         isActive: true,
@@ -423,10 +452,10 @@ export class UsersService {
         companyId: true,
         createdAt: true,
         manager: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, email: true, phone: true,  },
+          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, email: true, phone: true,  },
         },
         teamlead: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, email: true, phone: true,  },
+          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, email: true, phone: true,  },
         },
         currentTruck: {
           select: { id: true, plate: true, status: true },
@@ -451,7 +480,7 @@ export class UsersService {
             firstName: true,
             lastName: true,
             phone: true,
-            avatar: true,
+            avatar: true, status: true, statusUntil: true,
             currentTruck: { select: { id: true, plate: true } },
           },
           orderBy: { firstName: 'asc' },
@@ -463,7 +492,7 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -474,7 +503,7 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -547,7 +576,7 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -608,7 +637,7 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

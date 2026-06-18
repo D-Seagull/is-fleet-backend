@@ -74,7 +74,7 @@ export class MessagesService {
       },
       include: {
         sender: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, role: true },
+          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true },
         },
         // Recipients filter on the client side: drop the message if my id is
         // neither driverId nor managerId (and I'm not a manager-tier user).
@@ -153,7 +153,7 @@ export class MessagesService {
       where: { id: messageId },
       data: { content: trimmed, editedAt: new Date() },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         session: { select: { driverId: true, managerId: true } },
         replyTo: {
           select: {
@@ -417,7 +417,7 @@ export class MessagesService {
     const messages = await this.prisma.message.findMany({
       where: { sessionId: { in: sessionIds } },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         // Phase 5 fields: clients (web + driver) need these populated on
         // initial fetch so the bubble can render quote + reactions without
         // waiting for the next WS event.

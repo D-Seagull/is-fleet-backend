@@ -61,7 +61,7 @@ export class GroupMessageDocumentsService {
             caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
-            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
             group: { select: { id: true, name: true } },
             replyTo: {
               select: {
@@ -100,7 +100,7 @@ export class GroupMessageDocumentsService {
     const docs = await this.prisma.groupMessageDocument.findMany({
       where: { groupId },
       include: {
-        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         replyTo: {
           select: {
             id: true,
