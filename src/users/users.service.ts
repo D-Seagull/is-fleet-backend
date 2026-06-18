@@ -151,8 +151,8 @@ export class UsersService {
         createdAt: true,
         managerId: true,
         teamleadId: true,
-        manager: { select: { id: true, firstName: true, lastName: true } },
-        teamlead: { select: { id: true, firstName: true, lastName: true } },
+        manager: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        teamlead: { select: { id: true, firstName: true, lastName: true, avatar: true } },
         currentTruck: { select: { id: true, plate: true, status: true } },
         company: { select: { name: true } },
         _count: {
@@ -274,8 +274,8 @@ export class UsersService {
         language: true,
         managerId: true,
         teamleadId: true,
-        manager: { select: { id: true, firstName: true, lastName: true } },
-        teamlead: { select: { id: true, firstName: true, lastName: true } },
+        manager: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        teamlead: { select: { id: true, firstName: true, lastName: true, avatar: true } },
         currentTruck: { select: { id: true, plate: true, status: true } },
       },
     });
@@ -308,6 +308,60 @@ export class UsersService {
     }
 
     return updated;
+  }
+
+  /**
+   * Self-update — narrower than updateDriver: a user is only allowed to
+   * change their own profile fields (firstName/lastName/phone/language).
+   * Used by the web Account Settings page and any future native equivalents.
+   * Phone uniqueness is enforced by Prisma; we surface 409 on collision.
+   */
+  async updateMe(
+    userId: string,
+    dto: {
+      firstName?: string;
+      lastName?: string | null;
+      phone?: string;
+      language?: 'UK' | 'EN' | 'PL' | 'LT' | 'UZ' | 'KZ' | 'HI' | 'RU';
+    },
+  ) {
+    const phone = dto.phone !== undefined ? requireValidPhone(dto.phone) : undefined;
+
+    try {
+      return await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(dto.firstName !== undefined ? { firstName: dto.firstName.trim() } : {}),
+          ...(dto.lastName !== undefined
+            ? { lastName: dto.lastName === null ? null : dto.lastName.trim() || null }
+            : {}),
+          ...(phone !== undefined ? { phone } : {}),
+          ...(dto.language !== undefined ? { language: dto.language } : {}),
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          avatar: true,
+          role: true,
+          language: true,
+          timezone: true,
+          companyId: true,
+        },
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Цей номер уже використовується іншим користувачем.',
+        );
+      }
+      throw e;
+    }
   }
 
   async activate(id: string, companyId: string | null) {
@@ -369,10 +423,10 @@ export class UsersService {
         companyId: true,
         createdAt: true,
         manager: {
-          select: { id: true, firstName: true, lastName: true, email: true, phone: true, avatar: true },
+          select: { id: true, firstName: true, lastName: true, avatar: true, email: true, phone: true,  },
         },
         teamlead: {
-          select: { id: true, firstName: true, lastName: true, email: true, phone: true, avatar: true },
+          select: { id: true, firstName: true, lastName: true, avatar: true, email: true, phone: true,  },
         },
         currentTruck: {
           select: { id: true, plate: true, status: true },
@@ -385,7 +439,7 @@ export class UsersService {
             id: true,
             plate: true,
             status: true,
-            currentDriver: { select: { id: true, firstName: true, lastName: true } },
+            currentDriver: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
           orderBy: { plate: 'asc' },
         },
@@ -409,7 +463,7 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -420,7 +474,7 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -493,7 +547,7 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -554,7 +608,7 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

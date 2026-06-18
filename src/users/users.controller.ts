@@ -15,6 +15,7 @@ import { UsersService } from './users.service';
 import { CreateManagerDto } from './dto/create-manager.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { RegisterPushTokenDto } from './dto/push-token.dto';
 import { SetTimezoneDto } from './dto/timezone.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -60,6 +61,17 @@ export class UsersController {
   @Get(':id')
   getUserById(@Param('id') id: string) {
     return this.usersService.getUserById(id);
+  }
+
+  // Self-update: every authenticated role can edit their own profile here.
+  // Declared before the `:id` patch so Nest doesn't treat "me" as a UUID.
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Patch('me')
+  updateMe(
+    @GetUser('id') userId: string,
+    @Body() dto: UpdateMeDto,
+  ) {
+    return this.usersService.updateMe(userId, dto);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

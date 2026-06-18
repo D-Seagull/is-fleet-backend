@@ -55,14 +55,14 @@ export class DirectMessageDocumentsService {
             caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
-            uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
-            otherUser: { select: { id: true, firstName: true, lastName: true, role: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+            otherUser: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
             replyTo: {
               select: {
                 id: true,
                 content: true,
                 deletedAt: true,
-                sender: { select: { id: true, firstName: true, lastName: true } },
+                sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
               },
             },
             replyToDocument: {
@@ -71,7 +71,7 @@ export class DirectMessageDocumentsService {
                 fileName: true,
                 fileType: true,
                 deletedAt: true,
-                uploader: { select: { id: true, firstName: true, lastName: true } },
+                uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
               },
             },
           },
@@ -99,13 +99,13 @@ export class DirectMessageDocumentsService {
         ],
       },
       include: {
-        uploader: { select: { id: true, firstName: true, lastName: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true } },
+            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
         replyToDocument: {
@@ -114,7 +114,7 @@ export class DirectMessageDocumentsService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
       },

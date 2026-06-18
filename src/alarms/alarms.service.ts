@@ -28,8 +28,8 @@ function parseAlarmTime(input: string, tz: string | null | undefined): Date {
 }
 
 const ALARM_INCLUDE = {
-  creator: { select: { id: true, firstName: true, lastName: true, role: true } },
-  target: { select: { id: true, firstName: true, lastName: true, role: true } },
+  creator: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+  target: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
   trip: { select: { id: true, title: true, truckId: true } },
 } as const;
 
@@ -231,7 +231,7 @@ export class AlarmsService {
     const due = await this.prisma.alarm.findMany({
       where: { time: { lte: now }, isSent: false },
       include: {
-        target: { select: { id: true, firstName: true, lastName: true } },
+        target: { select: { id: true, firstName: true, lastName: true, avatar: true } },
       },
     });
     if (due.length === 0) return;

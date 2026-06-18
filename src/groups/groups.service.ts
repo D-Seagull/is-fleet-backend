@@ -38,10 +38,10 @@ export class GroupsService {
     return await this.prisma.group.findMany({
       where: companyId ? { companyId } : {},
       include: {
-        creator: { select: { id: true, firstName: true, lastName: true, role: true } },
+        creator: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
         trucks: { include: { truck: true } },
         managers: {
-          include: { manager: { select: { id: true, firstName: true, lastName: true, email: true, role: true } } },
+          include: { manager: { select: { id: true, firstName: true, lastName: true, avatar: true, email: true, role: true } } },
         },
       },
     });
@@ -170,7 +170,7 @@ export class GroupsService {
     return await this.prisma.group.findMany({
       where: companyId ? { companyId, type: 'TRUCKS' } : { type: 'TRUCKS' },
       include: {
-        creator: { select: { id: true, firstName: true, lastName: true, role: true } },
+        creator: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
         trucks: {
           include: {
             truck: {
@@ -178,7 +178,7 @@ export class GroupsService {
                 id: true,
                 plate: true,
                 status: true,
-                currentDriver: { select: { id: true, firstName: true, lastName: true } },
+                currentDriver: { select: { id: true, firstName: true, lastName: true, avatar: true } },
               },
             },
           },
@@ -203,10 +203,10 @@ export class GroupsService {
     return await this.prisma.group.findMany({
       where,
       include: {
-        creator: { select: { id: true, firstName: true, lastName: true, role: true } },
+        creator: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
         managers: {
           include: {
-            manager: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
+            manager: { select: { id: true, firstName: true, lastName: true, avatar: true, email: true, role: true } },
           },
         },
       },

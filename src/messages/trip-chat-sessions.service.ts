@@ -101,11 +101,11 @@ export class TripChatSessionsService {
       const [driver, manager, trip] = await Promise.all([
         tx.user.findUnique({
           where: { id: newDriverId },
-          select: { firstName: true, lastName: true },
+          select: { firstName: true, lastName: true, avatar: true },
         }),
         tx.user.findUnique({
           where: { id: newManagerId },
-          select: { firstName: true, lastName: true },
+          select: { firstName: true, lastName: true, avatar: true },
         }),
         tx.trip.findUnique({
           where: { id: tripId },
@@ -156,7 +156,7 @@ export class TripChatSessionsService {
             isRead: false,
           },
           include: {
-            sender: { select: { id: true, firstName: true, lastName: true, role: true } },
+            sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
             session: { select: { driverId: true, managerId: true } },
           },
         });
@@ -201,8 +201,8 @@ export class TripChatSessionsService {
             }),
       },
       include: {
-        driver: { select: { id: true, firstName: true, lastName: true, role: true } },
-        manager: { select: { id: true, firstName: true, lastName: true, role: true } },
+        driver: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+        manager: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
       },
       orderBy: { startedAt: 'desc' },
     });
@@ -228,7 +228,7 @@ export class TripChatSessionsService {
 
     return this.prisma.message.findMany({
       where: { sessionId },
-      include: { sender: { select: { id: true, firstName: true, lastName: true, role: true } } },
+      include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } } },
       orderBy: { createdAt: 'asc' },
     });
   }

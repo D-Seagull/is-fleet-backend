@@ -85,7 +85,7 @@ export class AdvanceRequestsService {
           driver: { managerId: userId },
         },
         include: {
-          driver: { select: { id: true, firstName: true, lastName: true } },
+          driver: { select: { id: true, firstName: true, lastName: true, avatar: true } },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -97,7 +97,7 @@ export class AdvanceRequestsService {
           driver: { manager: { teamleadId: userId } },
         },
         include: {
-          driver: { select: { id: true, firstName: true, lastName: true } },
+          driver: { select: { id: true, firstName: true, lastName: true, avatar: true } },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -106,7 +106,7 @@ export class AdvanceRequestsService {
     // ADMIN - всі заявки
     return await this.prisma.advanceRequest.findMany({
       include: {
-        driver: { select: { id: true, firstName: true, lastName: true } },
+        driver: { select: { id: true, firstName: true, lastName: true, avatar: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

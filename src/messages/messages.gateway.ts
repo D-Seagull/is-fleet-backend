@@ -162,7 +162,7 @@ export class MessagesGateway {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, avatar: true },
     });
     // Broadcast to everyone else in the trip room (skip the sender's socket).
     client.to(body.tripId).emit('userTyping', {

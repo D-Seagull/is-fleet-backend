@@ -78,7 +78,7 @@ export class AnnouncementsService {
         ? { companyId, createdBy: userId }
         : { createdBy: userId },
       include: {
-        creator: { select: { id: true, firstName: true, lastName: true, role: true } },
+        creator: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
         reads: { select: { userId: true, readAt: true } },
         group: { select: { id: true, name: true } },
       },

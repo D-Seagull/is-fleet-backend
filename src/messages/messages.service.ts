@@ -74,7 +74,7 @@ export class MessagesService {
       },
       include: {
         sender: {
-          select: { id: true, firstName: true, lastName: true, role: true },
+          select: { id: true, firstName: true, lastName: true, avatar: true, role: true },
         },
         // Recipients filter on the client side: drop the message if my id is
         // neither driverId nor managerId (and I'm not a manager-tier user).
@@ -86,7 +86,7 @@ export class MessagesService {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true } },
+            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
         replyToDocument: {
@@ -95,7 +95,7 @@ export class MessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
       },
@@ -153,14 +153,14 @@ export class MessagesService {
       where: { id: messageId },
       data: { content: trimmed, editedAt: new Date() },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
         session: { select: { driverId: true, managerId: true } },
         replyTo: {
           select: {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true } },
+            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
         replyToDocument: {
@@ -169,7 +169,7 @@ export class MessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
       },
@@ -236,7 +236,7 @@ export class MessagesService {
         content: true,
         createdAt: true,
         tripId: true,
-        sender: { select: { firstName: true, lastName: true } },
+        sender: { select: { firstName: true, lastName: true, avatar: true } },
         trip: {
           select: {
             status: true,
@@ -337,7 +337,7 @@ export class MessagesService {
         tripId: true,
         content: true,
         createdAt: true,
-        sender: { select: { firstName: true, lastName: true } },
+        sender: { select: { firstName: true, lastName: true, avatar: true } },
         trip: {
           select: {
             status: true,
@@ -417,7 +417,7 @@ export class MessagesService {
     const messages = await this.prisma.message.findMany({
       where: { sessionId: { in: sessionIds } },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
         // Phase 5 fields: clients (web + driver) need these populated on
         // initial fetch so the bubble can render quote + reactions without
         // waiting for the next WS event.
@@ -426,7 +426,7 @@ export class MessagesService {
             id: true,
             content: true,
             deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true } },
+            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
         replyToDocument: {
@@ -435,7 +435,7 @@ export class MessagesService {
             fileName: true,
             fileType: true,
             deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           },
         },
       },
