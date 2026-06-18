@@ -65,4 +65,32 @@ export class CompaniesService {
       data: dto,
     });
   }
+
+  /**
+   * General profile patch: name + the three contact emails. Empty strings
+   * are normalised to null so cleared fields don't blow up the schema's
+   * `String?` columns. Used by Settings (TEAMLEAD only).
+   */
+  async updateCompany(
+    companyId: string,
+    dto: {
+      name?: string;
+      accountingEmail?: string | null;
+      hrEmail?: string | null;
+      directorEmail?: string | null;
+    },
+  ) {
+    const normEmail = (v: string | null | undefined) =>
+      v === undefined ? undefined : v && v.length > 0 ? v : null;
+
+    return this.prisma.company.update({
+      where: { id: companyId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        accountingEmail: normEmail(dto.accountingEmail),
+        hrEmail: normEmail(dto.hrEmail),
+        directorEmail: normEmail(dto.directorEmail),
+      },
+    });
+  }
 }

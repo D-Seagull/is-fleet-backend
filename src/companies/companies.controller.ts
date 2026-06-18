@@ -17,6 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 
 @ApiTags('companies')
 @ApiBearerAuth()
@@ -65,5 +66,15 @@ export class CompaniesController {
     dto: { accountingEmail?: string; hrEmail?: string; directorEmail?: string },
   ) {
     return this.companiesService.updateEmails(companyId, dto);
+  }
+
+  // General company profile patch used by the Settings page (TEAMLEAD).
+  @Roles('ADMIN', 'TEAMLEAD')
+  @Patch()
+  updateCompany(
+    @GetUser('companyId') companyId: string,
+    @Body() dto: UpdateCompanyDto,
+  ) {
+    return this.companiesService.updateCompany(companyId, dto);
   }
 }

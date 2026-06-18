@@ -499,12 +499,14 @@ enum GroupType {
 }
 
 model Group {
-  id        String    @id @default(uuid())
-  name      String
-  type      GroupType
-  companyId String
-  createdBy String
-  createdAt DateTime  @default(now())
+  id              String    @id @default(uuid())
+  name            String
+  avatar          String?
+  avatarPublicId  String?
+  type            GroupType
+  companyId       String
+  createdBy       String
+  createdAt       DateTime  @default(now())
   messages GroupMessage[]
   documents GroupMessageDocument[]
   company            Company             @relation(fields: [companyId], references: [id])

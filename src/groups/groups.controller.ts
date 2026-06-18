@@ -7,7 +7,11 @@ import {
   Param,
   Body,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
@@ -120,5 +124,28 @@ export class GroupsController {
     @Param('managerId') managerId: string,
   ) {
     return this.groupsService.removeManager(groupId, managerId);
+  }
+
+  // Group avatar — service enforces membership (creator + members + ADMIN).
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Post(':id/avatar')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  uploadAvatar(
+    @Param('id') groupId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.groupsService.uploadAvatar(groupId, userId, role, file);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Delete(':id/avatar')
+  deleteAvatar(
+    @Param('id') groupId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.groupsService.deleteAvatar(groupId, userId, role);
   }
 }

@@ -4,12 +4,80 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 
 @Injectable()
 export class GroupsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storage: SupabaseStorageService,
+  ) {}
+
+  /**
+   * Authorize an avatar mutation. Creator + every member manager + ADMIN
+   * are allowed; everyone else hits 403. Keeping this in one place so the
+   * upload / delete endpoints can't drift apart on access rules.
+   */
+  private async assertCanEditGroup(
+    groupId: string,
+    userId: string,
+    role: string,
+  ) {
+    const group = await this.prisma.group.findFirst({
+      where: { id: groupId },
+      select: { id: true, createdBy: true },
+    });
+    if (!group) throw new NotFoundException('Група не знайдена');
+    if (role === 'ADMIN' || group.createdBy === userId) return;
+    const membership = await this.prisma.groupManager.findFirst({
+      where: { groupId, managerId: userId },
+      select: { id: true },
+    });
+    if (!membership) {
+      throw new ForbiddenException('Лише учасники групи можуть редагувати її.');
+    }
+  }
+
+  async uploadAvatar(
+    groupId: string,
+    userId: string,
+    role: string,
+    file: Express.Multer.File,
+  ) {
+    await this.assertCanEditGroup(groupId, userId, role);
+    const current = await this.prisma.group.findUnique({
+      where: { id: groupId },
+      select: { avatarPublicId: true },
+    });
+    if (current?.avatarPublicId) {
+      await this.storage.deleteFile(current.avatarPublicId);
+    }
+    const { url, storagePath } = await this.storage.uploadWithUrl(
+      file,
+      'group-avatars',
+    );
+    return this.prisma.group.update({
+      where: { id: groupId },
+      data: { avatar: url, avatarPublicId: storagePath },
+    });
+  }
+
+  async deleteAvatar(groupId: string, userId: string, role: string) {
+    await this.assertCanEditGroup(groupId, userId, role);
+    const current = await this.prisma.group.findUnique({
+      where: { id: groupId },
+      select: { avatarPublicId: true },
+    });
+    if (current?.avatarPublicId) {
+      await this.storage.deleteFile(current.avatarPublicId);
+    }
+    return this.prisma.group.update({
+      where: { id: groupId },
+      data: { avatar: null, avatarPublicId: null },
+    });
+  }
 
   async create(
     companyId: string,
