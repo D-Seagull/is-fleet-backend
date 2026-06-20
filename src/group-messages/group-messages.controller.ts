@@ -8,9 +8,11 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { GroupMessagesService } from './group-messages.service';
+import { GetChatMessagesDto } from '../common/dto/get-chat-messages.dto';
 import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
 import { ReactionsGateway } from '../reactions/reactions.gateway';
@@ -38,9 +40,17 @@ export class GroupMessagesController {
     return this.service.getUnreadSummary(userId);
   }
 
+  // Defaults to the latest 50 messages. Pass `before` (ISO date) to page
+  // backward into older history; pass `take` (1..100) to override page size.
   @Get(':groupId')
-  getMessages(@Param('groupId') groupId: string) {
-    return this.service.getMessages(groupId);
+  getMessages(
+    @Param('groupId') groupId: string,
+    @Query() query: GetChatMessagesDto,
+  ) {
+    return this.service.getMessages(groupId, {
+      take: query.take,
+      before: query.before ? new Date(query.before) : undefined,
+    });
   }
 
   @Post(':groupId/read')

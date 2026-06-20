@@ -10,9 +10,19 @@ export class GroupMessagesService {
     private reactions: ReactionsService,
   ) {}
 
-  async getMessages(groupId: string) {
-    const messages = await this.prisma.groupMessage.findMany({
-      where: { groupId },
+  // Pagination: fetches the latest `take` messages older than `before`
+  // (or the latest overall if no cursor). Result is returned in ASC order
+  // so clients can append it to existing history without reversing.
+  async getMessages(
+    groupId: string,
+    opts: { take?: number; before?: Date } = {},
+  ) {
+    const take = opts.take ?? 50;
+    const rows = await this.prisma.groupMessage.findMany({
+      where: {
+        groupId,
+        ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
+      },
       include: {
         sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         replyTo: {
@@ -33,8 +43,11 @@ export class GroupMessagesService {
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take,
     });
+    // Latest N fetched DESC; flip to ASC so the chat renders oldest-first.
+    const messages = rows.reverse();
     const reactionsByMsg = await this.reactions.getForMessages(
       'GROUP',
       messages.map((m) => m.id),

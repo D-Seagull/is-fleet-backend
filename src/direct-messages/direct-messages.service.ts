@@ -10,14 +10,23 @@ export class DirectMessagesService {
     private reactions: ReactionsService,
   ) {}
 
-  async getMessages(userId1: string, userId2: string) {
+  // Pagination: fetches the latest `take` messages older than `before`
+  // (or the latest overall if no cursor). Result is returned in ASC order
+  // so clients can append it to existing history without reversing.
+  async getMessages(
+    userId1: string,
+    userId2: string,
+    opts: { take?: number; before?: Date } = {},
+  ) {
     const t0 = Date.now();
-    const messages = await this.prisma.directMessage.findMany({
+    const take = opts.take ?? 50;
+    const rows = await this.prisma.directMessage.findMany({
       where: {
         OR: [
           { senderId: userId1, receiverId: userId2 },
           { senderId: userId2, receiverId: userId1 },
         ],
+        ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
       },
       include: {
         sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
@@ -39,8 +48,11 @@ export class DirectMessagesService {
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take,
     });
+    // Latest N fetched DESC; flip to ASC so the chat renders oldest-first.
+    const messages = rows.reverse();
     const tMessages = Date.now() - t0;
     const t1 = Date.now();
     const reactionsByMsg = await this.reactions.getForMessages(
