@@ -131,10 +131,15 @@ export class TripsService {
   // Privacy: requester sees only sessions they participated in (or all if
   // they're a manager). Drivers retained across a manager swap see both
   // their old and new chats as one continuous stream.
+  //
+  // Pagination: fetches the latest `take` messages older than `before`
+  // (or the latest overall if no cursor). Result is returned in ASC order
+  // so clients can append it to existing history without reversing.
   async getMessages(
     tripId: string,
     companyId: string,
     requester: { id: string; role: string },
+    opts: { take?: number; before?: Date } = {},
   ) {
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, companyId },
@@ -144,8 +149,12 @@ export class TripsService {
     const sessionIds = await this.sessions.getVisibleSessionIds(tripId, requester);
     if (sessionIds.length === 0) return [];
 
-    const messages = await this.prisma.message.findMany({
-      where: { sessionId: { in: sessionIds } },
+    const take = opts.take ?? 50;
+    const rows = await this.prisma.message.findMany({
+      where: {
+        sessionId: { in: sessionIds },
+        ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
+      },
       include: {
         sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         replyTo: {
@@ -157,8 +166,11 @@ export class TripsService {
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take,
     });
+    // Latest N fetched DESC; flip to ASC so the chat renders oldest-first.
+    const messages = rows.reverse();
     const reactionsByMsg = await this.reactions.getForMessages(
       'TRIP',
       messages.map((m) => m.id),

@@ -5,11 +5,13 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   UseGuards,
   Delete,
 } from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
+import { GetTripMessagesDto } from './dto/get-trip-messages.dto';
 import {
   AssignManagerDto,
   AssignTripDto,
@@ -83,16 +85,28 @@ export class TripsController {
     return this.tripsService.findOne(id, companyId);
   }
 
-  // load message history for a trip
+  // load message history for a trip.
+  // Defaults to the latest 50 messages. Pass `before` (ISO date) to page
+  // backward into older history; pass `take` (1..100) to override the page
+  // size.
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/messages')
   getMessages(
     @Param('id') id: string,
+    @Query() query: GetTripMessagesDto,
     @GetUser('companyId') companyId: string,
     @GetUser('id') userId: string,
     @GetUser('role') role: string,
   ) {
-    return this.tripsService.getMessages(id, companyId, { id: userId, role });
+    return this.tripsService.getMessages(
+      id,
+      companyId,
+      { id: userId, role },
+      {
+        take: query.take,
+        before: query.before ? new Date(query.before) : undefined,
+      },
+    );
   }
 
   // update trip info (notes + stops)
