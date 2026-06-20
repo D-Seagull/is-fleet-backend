@@ -181,92 +181,76 @@ export class GroupMessagesService {
 
   /**
    * Unread summary across ALL groups where the user is a manager (or
-   * creator). Returns total + per-group items with name, count and latest
-   * unread message snippet (Telegram-style).
-   *
-   * 4 fixed-cost queries instead of 1 + N findMany-per-group:
-   *   1. groups the user belongs to
-   *   2. groupBy { groupId, _count } over unread messages (sender != me,
-   *      no read row for me) — gives counts in one round-trip
-   *   3. raw SQL with ROW_NUMBER() to grab the id of the latest unread
-   *      message per group in a single query
-   *   4. findMany on those ids with the sender column populated
+   * creator). One SQL round-trip — CTEs compute the user's groups, unread
+   * messages in those groups, per-group counts, latest unread per group,
+   * and json_build_object hydrates the snippet inline.
    */
   async getUnreadSummary(userId: string) {
-    const groups = await this.prisma.group.findMany({
-      where: {
-        OR: [
-          { createdBy: userId },
-          { managers: { some: { managerId: userId } } },
-        ],
-      },
-      select: { id: true, name: true },
-    });
+    type Row = {
+      groupId: string;
+      name: string;
+      unread_count: number;
+      latest_message: {
+        content: string;
+        senderName: string;
+        senderId: string;
+        createdAt: string;
+      };
+    };
 
-    if (groups.length === 0) return { total: 0, items: [] };
+    const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      WITH user_groups AS (
+        SELECT g.id, g.name
+        FROM "Group" g
+        WHERE g."createdBy" = ${userId}
+           OR g.id IN (
+             SELECT "groupId" FROM "GroupManager" WHERE "managerId" = ${userId}
+           )
+      ),
+      unread AS (
+        SELECT gm.id, gm."groupId", gm."senderId", gm.content, gm."createdAt"
+        FROM "GroupMessage" gm
+        WHERE gm."groupId" IN (SELECT id FROM user_groups)
+          AND gm."senderId" != ${userId}
+          AND NOT EXISTS (
+            SELECT 1 FROM "GroupMessageRead" gmr
+            WHERE gmr."messageId" = gm.id AND gmr."userId" = ${userId}
+          )
+      ),
+      counts AS (
+        SELECT "groupId", COUNT(*)::int AS unread_count
+        FROM unread GROUP BY "groupId"
+      ),
+      ranked AS (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY "groupId" ORDER BY "createdAt" DESC
+        ) AS rn
+        FROM unread
+      ),
+      latest AS (SELECT * FROM ranked WHERE rn = 1)
+      SELECT
+        ug.id AS "groupId",
+        ug.name,
+        c.unread_count,
+        json_build_object(
+          'content', l.content,
+          'senderName', TRIM(CONCAT_WS(' ', s."firstName", s."lastName")),
+          'senderId', l."senderId",
+          'createdAt', l."createdAt"
+        ) AS latest_message
+      FROM user_groups ug
+      JOIN counts c ON c."groupId" = ug.id
+      JOIN latest l ON l."groupId" = ug.id
+      JOIN "User" s ON s.id = l."senderId"
+      ORDER BY l."createdAt" DESC
+    `);
 
-    const groupIds = groups.map((g) => g.id);
-
-    const counts = await this.prisma.groupMessage.groupBy({
-      by: ['groupId'],
-      where: {
-        groupId: { in: groupIds },
-        senderId: { not: userId },
-        reads: { none: { userId } },
-      },
-      _count: { _all: true },
-    });
-
-    if (counts.length === 0) return { total: 0, items: [] };
-
-    const unreadGroupIds = counts.map((c) => c.groupId);
-
-    const latestIds = await this.prisma.$queryRaw<Array<{ id: string }>>(
-      Prisma.sql`
-        WITH ranked AS (
-          SELECT gm.id, gm."groupId",
-                 ROW_NUMBER() OVER (
-                   PARTITION BY gm."groupId" ORDER BY gm."createdAt" DESC
-                 ) AS rn
-          FROM "GroupMessage" gm
-          WHERE gm."groupId" IN (${Prisma.join(unreadGroupIds)})
-            AND gm."senderId" != ${userId}
-            AND NOT EXISTS (
-              SELECT 1 FROM "GroupMessageRead" gmr
-              WHERE gmr."messageId" = gm.id AND gmr."userId" = ${userId}
-            )
-        )
-        SELECT id FROM ranked WHERE rn = 1
-      `,
-    );
-
-    const latestMessages = await this.prisma.groupMessage.findMany({
-      where: { id: { in: latestIds.map((r) => r.id) } },
-      include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-      },
-    });
-    const latestByGroup = new Map(latestMessages.map((m) => [m.groupId, m]));
-    const nameByGroup = new Map(groups.map((g) => [g.id, g.name]));
-    const countByGroup = new Map(counts.map((c) => [c.groupId, c._count._all]));
-
-    const items = unreadGroupIds
-      .filter((gid) => latestByGroup.has(gid))
-      .map((gid) => {
-        const latest = latestByGroup.get(gid)!;
-        return {
-          groupId: gid,
-          name: nameByGroup.get(gid) ?? '',
-          unreadCount: countByGroup.get(gid) ?? 0,
-          latestMessage: {
-            content: latest.content,
-            senderName: fullName(latest.sender),
-            senderId: latest.senderId,
-            createdAt: latest.createdAt,
-          },
-        };
-      });
-
+    const items = rows.map((r) => ({
+      groupId: r.groupId,
+      name: r.name,
+      unreadCount: r.unread_count,
+      latestMessage: r.latest_message,
+    }));
     const total = items.reduce((sum, i) => sum + i.unreadCount, 0);
     return { total, items };
   }

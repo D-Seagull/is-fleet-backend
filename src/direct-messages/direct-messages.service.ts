@@ -108,73 +108,112 @@ export class DirectMessagesService {
     });
   }
 
-  // 3 fixed-cost queries instead of (1 huge findMany + N count() calls):
-  //  1. raw SQL with ROW_NUMBER() to get the id of the latest message per peer
-  //  2. one findMany to load those rows with sender + receiver populated
-  //  3. one groupBy to fetch all unread counts (peer → me) at once
+  // One SQL round-trip. CTEs compute the latest message id per peer, the
+  // unread counts per peer, and json_build_object hydrates user + last
+  // message in place — Postgres returns the final shape directly so JS
+  // does no extra work.
   async getConversations(userId: string) {
     const t0 = Date.now();
 
-    const latestIds = await this.prisma.$queryRaw<Array<{ id: string }>>(
-      Prisma.sql`
-        WITH peers AS (
-          SELECT
-            id,
-            CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END AS peer_id,
-            ROW_NUMBER() OVER (
-              PARTITION BY CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END
-              ORDER BY "createdAt" DESC
-            ) AS rn
-          FROM "DirectMessage"
-          WHERE "senderId" = ${userId} OR "receiverId" = ${userId}
-        )
-        SELECT id FROM peers WHERE rn = 1
-      `,
-    );
+    type Row = {
+      user: {
+        id: string;
+        firstName: string;
+        lastName: string | null;
+        avatar: string | null;
+        status: string | null;
+        statusUntil: string | null;
+        role: string;
+      };
+      last_message: {
+        id: string;
+        senderId: string;
+        receiverId: string;
+        content: string;
+        isRead: boolean;
+        createdAt: string;
+        deletedAt: string | null;
+        editedAt: string | null;
+        replyToId: string | null;
+        replyToDocumentId: string | null;
+        sender: Row['user'];
+        receiver: Row['user'];
+      };
+      unread_count: number;
+    };
 
-    if (latestIds.length === 0) {
-      this.logger.log(`getConversations (${userId}) → empty in ${Date.now() - t0}ms`);
-      return [];
-    }
-
-    const ids = latestIds.map((r) => r.id);
-    const [messages, unreadGrouped] = await Promise.all([
-      this.prisma.directMessage.findMany({
-        where: { id: { in: ids } },
-        include: {
-          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-          receiver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        },
-      }),
-      this.prisma.directMessage.groupBy({
-        by: ['senderId'],
-        where: { receiverId: userId, isRead: false },
-        _count: { _all: true },
-      }),
-    ]);
-
-    const unreadByPeer = new Map(
-      unreadGrouped.map((u) => [u.senderId, u._count._all]),
-    );
-
-    const result = messages
-      .map((m) => {
-        const peerId = m.senderId === userId ? m.receiverId : m.senderId;
-        return {
-          user: m.senderId === userId ? m.receiver : m.sender,
-          lastMessage: m,
-          unreadCount: unreadByPeer.get(peerId) ?? 0,
-        };
-      })
-      .sort(
-        (a, b) =>
-          b.lastMessage.createdAt.getTime() - a.lastMessage.createdAt.getTime(),
-      );
+    const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      WITH peers AS (
+        SELECT
+          id,
+          CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END AS peer_id,
+          ROW_NUMBER() OVER (
+            PARTITION BY CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END
+            ORDER BY "createdAt" DESC
+          ) AS rn
+        FROM "DirectMessage"
+        WHERE "senderId" = ${userId} OR "receiverId" = ${userId}
+      ),
+      latest AS (
+        SELECT id, peer_id FROM peers WHERE rn = 1
+      ),
+      unread AS (
+        SELECT "senderId" AS peer_id, COUNT(*)::int AS unread_count
+        FROM "DirectMessage"
+        WHERE "receiverId" = ${userId} AND "isRead" = false
+        GROUP BY "senderId"
+      )
+      SELECT
+        json_build_object(
+          'id', peer.id,
+          'firstName', peer."firstName",
+          'lastName', peer."lastName",
+          'avatar', peer.avatar,
+          'status', peer.status,
+          'statusUntil', peer."statusUntil",
+          'role', peer.role
+        ) AS user,
+        json_build_object(
+          'id', m.id,
+          'senderId', m."senderId",
+          'receiverId', m."receiverId",
+          'content', m.content,
+          'isRead', m."isRead",
+          'createdAt', m."createdAt",
+          'deletedAt', m."deletedAt",
+          'editedAt', m."editedAt",
+          'replyToId', m."replyToId",
+          'replyToDocumentId', m."replyToDocumentId",
+          'sender', json_build_object(
+            'id', s.id, 'firstName', s."firstName", 'lastName', s."lastName",
+            'avatar', s.avatar, 'status', s.status, 'statusUntil', s."statusUntil",
+            'role', s.role
+          ),
+          'receiver', json_build_object(
+            'id', r.id, 'firstName', r."firstName", 'lastName', r."lastName",
+            'avatar', r.avatar, 'status', r.status, 'statusUntil', r."statusUntil",
+            'role', r.role
+          )
+        ) AS last_message,
+        COALESCE(u.unread_count, 0) AS unread_count
+      FROM latest l
+      JOIN "DirectMessage" m ON m.id = l.id
+      JOIN "User" peer ON peer.id = l.peer_id
+      JOIN "User" s ON s.id = m."senderId"
+      JOIN "User" r ON r.id = m."receiverId"
+      LEFT JOIN unread u ON u.peer_id = l.peer_id
+      ORDER BY m."createdAt" DESC
+    `);
 
     this.logger.log(
-      `getConversations (${userId}) → ${result.length} convs in ${Date.now() - t0}ms`,
+      `getConversations (${userId}) → ${rows.length} convs in ${Date.now() - t0}ms (1 SQL)`,
     );
-    return result;
+
+    return rows.map((r) => ({
+      user: r.user,
+      lastMessage: r.last_message,
+      unreadCount: r.unread_count,
+    }));
   }
   async markAsRead(userId: string, senderId: string) {
     // Mark text messages as read.

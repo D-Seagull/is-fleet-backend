@@ -14,14 +14,6 @@ import { Inject, forwardRef } from '@nestjs/common';
 import { MessagesGateway } from './messages.gateway';
 import { fullName } from '../common/utils/full-name';
 
-const ACTIVE_TRIP_STATUSES = [
-  'ASSIGNED',
-  'ACCEPTED',
-  'ON_WAY',
-  'ON_SITE',
-  'LOADED',
-] as const;
-
 @Injectable()
 export class MessagesService {
   private readonly logger = new Logger(MessagesService.name);
@@ -206,16 +198,12 @@ export class MessagesService {
     return { tripId: msg.tripId };
   }
 
-  // Unread summary for the manager — grouped by truck, split into
-  // active-trip vs past-trip buckets.
-  //
-  // 4-5 fixed-cost queries instead of one huge findMany over every unread
-  // message in the company with sender + trip + truck joined:
-  //  1. (managers only) collect the sessionIds requester participated in
-  //  2. groupBy { tripId, _count } over unread messages in scope
-  //  3. findMany trips → (truckId, status, plate)
-  //  4. raw SQL ROW_NUMBER() → id of latest unread message per truck
-  //  5. findMany on those ids with sender included
+  // Unread summary for the manager — one SQL round-trip. CTEs:
+  //   unread      → in-scope unread messages flagged active/past
+  //   trip_counts → per-trip count + truckId + is_active flag
+  //   truck_totals→ per-truck aggregates + jsonb_object_agg for tripUnread
+  //   ranked/latest → latest unread message per truck (window function)
+  // json_build_object hydrates the snippet inline so JS just renames keys.
   async getUnreadSummary(
     companyId: string,
     requesterId: string,
@@ -224,142 +212,104 @@ export class MessagesService {
     const isAdminTier =
       requesterRole === 'ADMIN' || requesterRole === 'TEAMLEAD';
 
-    let visibleSessionIds: string[] | null = null;
-    if (!isAdminTier) {
-      const sessions = await this.prisma.tripChatSession.findMany({
-        where: {
-          OR: [
-            { driverId: requesterId },
-            { managerId: requesterId },
-          ],
-        },
-        select: { id: true },
-      });
-      if (sessions.length === 0) return { total: 0, items: [] };
-      visibleSessionIds = sessions.map((s) => s.id);
-    }
+    // Manager-tier (non-admin) sees only sessions they participated in.
+    const sessionFilter = isAdminTier
+      ? Prisma.empty
+      : Prisma.sql`AND m."sessionId" IN (
+          SELECT id FROM "TripChatSession"
+          WHERE "driverId" = ${requesterId} OR "managerId" = ${requesterId}
+        )`;
 
-    const counts = await this.prisma.message.groupBy({
-      by: ['tripId'],
-      where: {
-        trip: { companyId },
-        isRead: false,
-        senderId: { not: requesterId },
-        ...(visibleSessionIds ? { sessionId: { in: visibleSessionIds } } : {}),
-      },
-      _count: { _all: true },
-    });
-    if (counts.length === 0) return { total: 0, items: [] };
-
-    const tripIds = counts.map((c) => c.tripId);
-
-    const trips = await this.prisma.trip.findMany({
-      where: { id: { in: tripIds } },
-      select: {
-        id: true,
-        status: true,
-        truckId: true,
-        truck: { select: { plate: true } },
-      },
-    });
-    const tripById = new Map(trips.map((t) => [t.id, t]));
-
-    type TruckEntry = {
+    type Row = {
+      truckId: string;
       plate: string;
-      activeTripUnread: number;
-      pastTripsUnread: number;
-      tripUnread: Record<string, number>;
+      total_unread: number;
+      active_trip_unread: number;
+      past_trips_unread: number;
+      trip_unread: Record<string, number>;
+      latest_message: {
+        content: string;
+        senderName: string;
+        tripId: string;
+        isActiveTrip: boolean;
+        createdAt: string;
+      } | null;
     };
-    const truckMap = new Map<string, TruckEntry>();
-    for (const c of counts) {
-      const trip = tripById.get(c.tripId);
-      if (!trip) continue;
-      const isActive = (ACTIVE_TRIP_STATUSES as readonly string[]).includes(
-        trip.status,
-      );
-      let entry = truckMap.get(trip.truckId);
-      if (!entry) {
-        entry = {
-          plate: trip.truck.plate,
-          activeTripUnread: 0,
-          pastTripsUnread: 0,
-          tripUnread: {},
-        };
-        truckMap.set(trip.truckId, entry);
+
+    const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      WITH unread AS (
+        SELECT m.id, m."tripId", m."senderId", m.content, m."createdAt",
+               t."truckId",
+               (t.status IN ('ASSIGNED','ACCEPTED','ON_WAY','ON_SITE','LOADED'))
+                 AS is_active
+        FROM "Message" m
+        JOIN "Trip" t ON t.id = m."tripId"
+        WHERE m."isRead" = false
+          AND m."senderId" != ${requesterId}
+          AND t."companyId" = ${companyId}
+          ${sessionFilter}
+      ),
+      trip_counts AS (
+        SELECT "tripId", "truckId", is_active, COUNT(*)::int AS cnt
+        FROM unread
+        GROUP BY "tripId", "truckId", is_active
+      ),
+      truck_totals AS (
+        SELECT "truckId",
+               SUM(cnt)::int AS total_unread,
+               SUM(CASE WHEN is_active THEN cnt ELSE 0 END)::int AS active_trip_unread,
+               SUM(CASE WHEN is_active THEN 0 ELSE cnt END)::int AS past_trips_unread,
+               jsonb_object_agg("tripId"::text, cnt) AS trip_unread
+        FROM trip_counts
+        GROUP BY "truckId"
+      ),
+      ranked AS (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY "truckId" ORDER BY "createdAt" DESC
+        ) AS rn
+        FROM unread
+      ),
+      latest AS (SELECT * FROM ranked WHERE rn = 1)
+      SELECT
+        tt."truckId",
+        tr.plate,
+        tt.total_unread,
+        tt.active_trip_unread,
+        tt.past_trips_unread,
+        tt.trip_unread,
+        CASE WHEN l.id IS NULL THEN NULL ELSE
+          json_build_object(
+            'content', l.content,
+            'senderName', TRIM(CONCAT_WS(' ', s."firstName", s."lastName")),
+            'tripId', l."tripId",
+            'isActiveTrip', l.is_active,
+            'createdAt', l."createdAt"
+          )
+        END AS latest_message
+      FROM truck_totals tt
+      JOIN "Truck" tr ON tr.id = tt."truckId"
+      LEFT JOIN latest l ON l."truckId" = tt."truckId"
+      LEFT JOIN "User" s ON s.id = l."senderId"
+      ORDER BY tt.total_unread DESC
+    `);
+
+    // Apply the "Driver" fallback for empty senderName (matches the old
+    // fullName(...) || 'Driver' behaviour).
+    const items = rows.map((r) => {
+      let latestMessage = r.latest_message;
+      if (latestMessage && !latestMessage.senderName) {
+        latestMessage = { ...latestMessage, senderName: 'Driver' };
       }
-      const cnt = c._count._all;
-      if (isActive) entry.activeTripUnread += cnt;
-      else entry.pastTripsUnread += cnt;
-      entry.tripUnread[c.tripId] = cnt;
-    }
-
-    const truckIds = [...truckMap.keys()];
-    if (truckIds.length === 0) return { total: 0, items: [] };
-
-    const sessionClause = visibleSessionIds
-      ? Prisma.sql`AND m."sessionId" IN (${Prisma.join(visibleSessionIds)})`
-      : Prisma.empty;
-
-    const latestIds = await this.prisma.$queryRaw<Array<{ id: string }>>(
-      Prisma.sql`
-        WITH ranked AS (
-          SELECT m.id,
-                 ROW_NUMBER() OVER (
-                   PARTITION BY t."truckId" ORDER BY m."createdAt" DESC
-                 ) AS rn
-          FROM "Message" m
-          JOIN "Trip" t ON t.id = m."tripId"
-          WHERE m."isRead" = false
-            AND m."senderId" != ${requesterId}
-            AND t."companyId" = ${companyId}
-            AND t."truckId" IN (${Prisma.join(truckIds)})
-            ${sessionClause}
-        )
-        SELECT id FROM ranked WHERE rn = 1
-      `,
-    );
-
-    const latestMessages = await this.prisma.message.findMany({
-      where: { id: { in: latestIds.map((r) => r.id) } },
-      select: {
-        id: true,
-        content: true,
-        createdAt: true,
-        tripId: true,
-        sender: { select: { firstName: true, lastName: true, avatar: true } },
-      },
+      return {
+        truckId: r.truckId,
+        plate: r.plate,
+        totalUnread: r.total_unread,
+        activeTripUnread: r.active_trip_unread,
+        pastTripsUnread: r.past_trips_unread,
+        tripUnread: r.trip_unread,
+        latestMessage,
+      };
     });
-    const latestByTruck = new Map<string, (typeof latestMessages)[number]>();
-    for (const m of latestMessages) {
-      const trip = tripById.get(m.tripId);
-      if (trip) latestByTruck.set(trip.truckId, m);
-    }
-
-    const items = [...truckMap.entries()]
-      .map(([truckId, data]) => {
-        const latest = latestByTruck.get(truckId);
-        const latestMessage = latest
-          ? {
-              content: latest.content,
-              senderName: fullName(latest.sender) || 'Driver',
-              tripId: latest.tripId,
-              isActiveTrip: (ACTIVE_TRIP_STATUSES as readonly string[]).includes(
-                tripById.get(latest.tripId)!.status,
-              ),
-              createdAt: latest.createdAt.toISOString(),
-            }
-          : null;
-        return {
-          truckId,
-          plate: data.plate,
-          totalUnread: data.activeTripUnread + data.pastTripsUnread,
-          activeTripUnread: data.activeTripUnread,
-          pastTripsUnread: data.pastTripsUnread,
-          tripUnread: data.tripUnread,
-          latestMessage,
-        };
-      })
-      .sort((a, b) => b.totalUnread - a.totalUnread);
 
     return {
       total: items.reduce((s, i) => s + i.totalUnread, 0),
@@ -367,119 +317,90 @@ export class MessagesService {
     };
   }
 
-  // Unread summary for the driver — only their own trips, only messages
-  // from others (managers / admin). Filters to sessions they participated
-  // in (covers the manager-handover case).
-  //
-  // 4 fixed-cost queries instead of one huge findMany with includes:
-  //  1. sessions where the driver participated
-  //  2. groupBy { tripId, _count } for unread counts
-  //  3. trip metadata (status, title)
-  //  4. raw SQL ROW_NUMBER() → latest unread id per trip + a findMany to
-  //     hydrate sender info
+  // Unread summary for the driver — one SQL round-trip. CTEs:
+  //   unread      → in-scope unread messages (driver's trips, sessions
+  //                 they participated in) flagged active/past
+  //   trip_counts → per-trip aggregates
+  //   ranked/latest → latest unread message per trip (window function)
+  // json_build_object hydrates the snippet inline.
   async getDriverUnreadSummary(driverId: string) {
-    const empty = {
-      total: 0,
-      activeTripUnread: 0,
-      pastTripsUnread: 0,
-      tripUnread: {} as Record<string, number>,
-      items: [] as Array<{
-        tripId: string;
-        unread: number;
-        isActiveTrip: boolean;
-        tripTitle: string;
-        latestMessage:
-          | { content: string; senderName: string; createdAt: string }
-          | null;
-      }>,
+    type Row = {
+      tripId: string;
+      unread: number;
+      is_active: boolean;
+      trip_title: string;
+      latest_message: {
+        content: string;
+        senderName: string;
+        createdAt: string;
+      } | null;
     };
 
-    const sessions = await this.prisma.tripChatSession.findMany({
-      where: { driverId },
-      select: { id: true },
-    });
-    if (sessions.length === 0) return empty;
-    const sessionIds = sessions.map((s) => s.id);
-
-    const counts = await this.prisma.message.groupBy({
-      by: ['tripId'],
-      where: {
-        trip: { driverId },
-        isRead: false,
-        senderId: { not: driverId },
-        sessionId: { in: sessionIds },
-      },
-      _count: { _all: true },
-    });
-    if (counts.length === 0) return empty;
-    const tripIds = counts.map((c) => c.tripId);
-
-    const trips = await this.prisma.trip.findMany({
-      where: { id: { in: tripIds } },
-      select: { id: true, status: true, title: true },
-    });
-    const tripById = new Map(trips.map((t) => [t.id, t]));
-
-    const latestIds = await this.prisma.$queryRaw<Array<{ id: string }>>(
-      Prisma.sql`
-        WITH ranked AS (
-          SELECT m.id,
-                 ROW_NUMBER() OVER (
-                   PARTITION BY m."tripId" ORDER BY m."createdAt" DESC
-                 ) AS rn
-          FROM "Message" m
-          WHERE m."isRead" = false
-            AND m."senderId" != ${driverId}
-            AND m."tripId" IN (${Prisma.join(tripIds)})
-            AND m."sessionId" IN (${Prisma.join(sessionIds)})
-        )
-        SELECT id FROM ranked WHERE rn = 1
-      `,
-    );
-
-    const latestMessages = await this.prisma.message.findMany({
-      where: { id: { in: latestIds.map((r) => r.id) } },
-      select: {
-        id: true,
-        content: true,
-        createdAt: true,
-        tripId: true,
-        sender: { select: { firstName: true, lastName: true, avatar: true } },
-      },
-    });
-    const latestByTrip = new Map(latestMessages.map((m) => [m.tripId, m]));
+    const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      WITH unread AS (
+        SELECT m.id, m."tripId", m."senderId", m.content, m."createdAt",
+               t.title AS trip_title,
+               (t.status IN ('ASSIGNED','ACCEPTED','ON_WAY','ON_SITE','LOADED'))
+                 AS is_active
+        FROM "Message" m
+        JOIN "Trip" t ON t.id = m."tripId"
+        WHERE m."isRead" = false
+          AND m."senderId" != ${driverId}
+          AND t."driverId" = ${driverId}
+          AND m."sessionId" IN (
+            SELECT id FROM "TripChatSession" WHERE "driverId" = ${driverId}
+          )
+      ),
+      trip_counts AS (
+        SELECT "tripId", trip_title, is_active, COUNT(*)::int AS unread
+        FROM unread
+        GROUP BY "tripId", trip_title, is_active
+      ),
+      ranked AS (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY "tripId" ORDER BY "createdAt" DESC
+        ) AS rn
+        FROM unread
+      ),
+      latest AS (SELECT * FROM ranked WHERE rn = 1)
+      SELECT
+        tc."tripId",
+        tc.unread,
+        tc.is_active,
+        tc.trip_title,
+        CASE WHEN l.id IS NULL THEN NULL ELSE
+          json_build_object(
+            'content', l.content,
+            'senderName', TRIM(CONCAT_WS(' ', s."firstName", s."lastName")),
+            'createdAt', l."createdAt"
+          )
+        END AS latest_message
+      FROM trip_counts tc
+      LEFT JOIN latest l ON l."tripId" = tc."tripId"
+      LEFT JOIN "User" s ON s.id = l."senderId"
+      ORDER BY l."createdAt" DESC NULLS LAST
+    `);
 
     let activeTripUnread = 0;
     let pastTripsUnread = 0;
     const tripUnread: Record<string, number> = {};
 
-    const items = counts
-      .map((c) => {
-        const trip = tripById.get(c.tripId);
-        if (!trip) return null;
-        const isActive = (ACTIVE_TRIP_STATUSES as readonly string[]).includes(
-          trip.status,
-        );
-        const cnt = c._count._all;
-        if (isActive) activeTripUnread += cnt;
-        else pastTripsUnread += cnt;
-        tripUnread[c.tripId] = cnt;
-        const latest = latestByTrip.get(c.tripId);
-        return {
-          tripId: c.tripId,
-          unread: cnt,
-          isActiveTrip: isActive,
-          tripTitle: trip.title,
-          latestMessage: latest
-            ? {
-                content: latest.content,
-                senderName: fullName(latest.sender) || 'Manager',
-                createdAt: latest.createdAt.toISOString(),
-              }
-            : null,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
+    const items = rows.map((r) => {
+      if (r.is_active) activeTripUnread += r.unread;
+      else pastTripsUnread += r.unread;
+      tripUnread[r.tripId] = r.unread;
+      let latestMessage = r.latest_message;
+      if (latestMessage && !latestMessage.senderName) {
+        latestMessage = { ...latestMessage, senderName: 'Manager' };
+      }
+      return {
+        tripId: r.tripId,
+        unread: r.unread,
+        isActiveTrip: r.is_active,
+        tripTitle: r.trip_title,
+        latestMessage,
+      };
+    });
 
     return {
       total: activeTripUnread + pastTripsUnread,
