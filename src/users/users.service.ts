@@ -325,14 +325,14 @@ export class UsersService {
       lastName?: string | null;
       phone?: string;
       language?: 'UK' | 'EN' | 'PL' | 'LT' | 'UZ' | 'KZ' | 'HI' | 'RU';
-      status?: 'ONLINE' | 'BUSY' | 'SLEEP';
+      status?: 'ONLINE' | 'BUSY' | 'AWAY' | 'SLEEP' | 'VACATION';
       statusUntil?: string | null;
     },
   ) {
     const phone = dto.phone !== undefined ? requireValidPhone(dto.phone) : undefined;
 
     const statusPatch: {
-      status?: 'ONLINE' | 'BUSY' | 'SLEEP';
+      status?: 'ONLINE' | 'BUSY' | 'AWAY' | 'SLEEP' | 'VACATION';
       statusUntil?: Date | null;
     } = {};
     if (dto.status !== undefined) {
@@ -354,7 +354,7 @@ export class UsersService {
     }
 
     try {
-      return await this.prisma.user.update({
+      const updated = await this.prisma.user.update({
         where: { id: userId },
         data: {
           ...(dto.firstName !== undefined ? { firstName: dto.firstName.trim() } : {}),
@@ -380,6 +380,21 @@ export class UsersService {
           companyId: true,
         },
       });
+
+      // Broadcast status change so other sessions don't need a full reload
+      // to pick up the new presence dot. Sent only when status or its
+      // expiry actually moved — silent on plain profile edits.
+      if (dto.status !== undefined || dto.statusUntil !== undefined) {
+        this.gateway.server
+          .to(`company-${updated.companyId}`)
+          .emit('userStatusChanged', {
+            userId: updated.id,
+            status: updated.status,
+            statusUntil: updated.statusUntil,
+          });
+      }
+
+      return updated;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&

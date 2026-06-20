@@ -45,7 +45,7 @@ export class PushService {
       .map((u) => u.id);
     if (deliverIds.length === 0) {
       this.logger.log(
-        `Push "${payload.title}" suppressed for all ${userIds.length} recipient(s) (BUSY/SLEEP)`,
+        `Push "${payload.title}" suppressed for all ${userIds.length} recipient(s) (BUSY/SLEEP/VACATION)`,
       );
       return;
     }

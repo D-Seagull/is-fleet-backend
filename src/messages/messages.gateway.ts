@@ -34,7 +34,7 @@ export class MessagesGateway {
     private prisma: PrismaService,
   ) {}
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     try {
       // Support both:
       //  - mobile app: query.userId (full JWT token, despite the field name)
@@ -62,7 +62,37 @@ export class MessagesGateway {
       // Company-level room so managers receive newMessage events from any
       // trip without having to explicitly join a trip room first.
       if (companyId) {
-        void client.join(`company-${companyId}`);
+        await client.join(`company-${companyId}`);
+
+        // Tell this client who in their company is currently online so
+        // they don't have to wait for the next presence event to render
+        // the right dots.
+        const sockets = await this.server
+          .in(`company-${companyId}`)
+          .fetchSockets();
+        const onlineUserIds = Array.from(
+          new Set(
+            sockets
+              .map((s) => (s.data as { userId?: string }).userId)
+              .filter((id): id is string => typeof id === 'string'),
+          ),
+        );
+        client.emit('presenceSnapshot', { userIds: onlineUserIds });
+
+        // If this is the user's first socket in the company room, tell
+        // everyone else they came online. (Skip the broadcast on the
+        // 2nd+ socket — it's redundant and would flash the dot.)
+        const mySockets = sockets.filter(
+          (s) =>
+            (s.data as { userId?: string }).userId === userId &&
+            s.id !== client.id,
+        );
+        if (mySockets.length === 0) {
+          this.server.to(`company-${companyId}`).emit('userPresenceChanged', {
+            userId,
+            online: true,
+          });
+        }
       }
       console.log(`[ws] ${client.id} → room:${userId} company:${companyId ?? 'n/a'}`);
     } catch {
@@ -70,8 +100,50 @@ export class MessagesGateway {
     }
   }
 
-  handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
+  async handleDisconnect(client: Socket) {
+    const userId = (client.data as { userId?: string }).userId;
+    const companyId = (client.data as { companyId?: string }).companyId;
+    console.log(`Client disconnected: ${client.id} user:${userId ?? 'n/a'}`);
+    if (!userId || !companyId) return;
+
+    // Socket.io removes the socket from rooms BEFORE handleDisconnect
+    // fires, so a fetch now reflects the post-disconnect state.
+    const remaining = await this.server
+      .in(`company-${companyId}`)
+      .fetchSockets();
+    const mineLeft = remaining.some(
+      (s) => (s.data as { userId?: string }).userId === userId,
+    );
+    if (!mineLeft) {
+      this.server.to(`company-${companyId}`).emit('userPresenceChanged', {
+        userId,
+        online: false,
+      });
+    }
+  }
+
+  /**
+   * Client opt-in for a fresh presence snapshot. We already send one
+   * automatically on connect, but the client's listener may not have
+   * been registered yet — usePresenceSync re-asks once it is ready so
+   * the very-first frame after login already has the dot in the right
+   * colour.
+   */
+  @SubscribeMessage('requestPresence')
+  async handleRequestPresence(@ConnectedSocket() client: Socket) {
+    const companyId = (client.data as { companyId?: string }).companyId;
+    if (!companyId) return;
+    const sockets = await this.server
+      .in(`company-${companyId}`)
+      .fetchSockets();
+    const onlineUserIds = Array.from(
+      new Set(
+        sockets
+          .map((s) => (s.data as { userId?: string }).userId)
+          .filter((id): id is string => typeof id === 'string'),
+      ),
+    );
+    client.emit('presenceSnapshot', { userIds: onlineUserIds });
   }
 
   @SubscribeMessage('joinTrip')

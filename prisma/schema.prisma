@@ -125,7 +125,9 @@ model PushToken {
 enum UserStatus {
   ONLINE
   BUSY
+  AWAY
   SLEEP
+  VACATION
 }
 
 enum Role {

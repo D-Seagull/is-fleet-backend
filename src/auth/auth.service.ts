@@ -14,6 +14,7 @@ import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
 import { SmsService } from 'src/sms/sms.service';
 import { normalizePhone } from 'src/common/utils/phone';
+import { MessagesGateway } from 'src/messages/messages.gateway';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
@@ -27,7 +28,35 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private sms: SmsService,
+    private gateway: MessagesGateway,
   ) {}
+
+  /**
+   * Reset presence to ONLINE every time someone signs in. Sessions are
+   * short-lived for managers (close tab → offline socket), so carrying
+   * a stale BUSY / SLEEP / VACATION across login boundaries leaves
+   * teammates seeing the wrong colour until the user remembers to
+   * flip it back manually. Drivers tend to keep the app open across
+   * shifts so this is fine for them too — they can re-flip after.
+   *
+   * Broadcasts `userStatusChanged` to the company room so already-
+   * connected sessions (e.g. the driver app holding a cached BUSY for
+   * a manager) repaint without waiting for the next refresh.
+   */
+  private async markSessionStart(userId: string) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { status: 'ONLINE', statusUntil: null },
+      select: { id: true, status: true, statusUntil: true, companyId: true },
+    });
+    this.gateway.server
+      .to(`company-${updated.companyId}`)
+      .emit('userStatusChanged', {
+        userId: updated.id,
+        status: updated.status,
+        statusUntil: updated.statusUntil,
+      });
+  }
   async adminLogin(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -40,6 +69,7 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.password!);
     if (!valid) throw new UnauthorizedException('Невірний email або пароль');
 
+    await this.markSessionStart(user.id);
     return this.signToken(
       user.id,
       user.role,
@@ -73,6 +103,7 @@ export class AuthService {
         },
       });
 
+      await this.markSessionStart(user.id);
       return this.signToken(
         user.id,
         user.role,
@@ -120,6 +151,7 @@ export class AuthService {
       });
     }
 
+    await this.markSessionStart(user.id);
     return this.signToken(
       user.id,
       user.role,
@@ -137,6 +169,7 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.password!);
     if (!valid) throw new UnauthorizedException('Login or password is wrong');
+    await this.markSessionStart(user.id);
     return this.signToken(
       user.id,
       user.role,
@@ -349,6 +382,7 @@ export class AuthService {
       data: { usedAt: new Date() },
     });
 
+    await this.markSessionStart(otp.user.id);
     return this.signToken(
       otp.user.id,
       otp.user.role,
