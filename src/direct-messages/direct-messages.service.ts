@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReactionsService } from '../reactions/reactions.service';
 
@@ -107,42 +108,73 @@ export class DirectMessagesService {
     });
   }
 
+  // 3 fixed-cost queries instead of (1 huge findMany + N count() calls):
+  //  1. raw SQL with ROW_NUMBER() to get the id of the latest message per peer
+  //  2. one findMany to load those rows with sender + receiver populated
+  //  3. one groupBy to fetch all unread counts (peer → me) at once
   async getConversations(userId: string) {
-    const messages = await this.prisma.directMessage.findMany({
-      where: {
-        OR: [{ senderId: userId }, { receiverId: userId }],
-      },
-      include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        receiver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const t0 = Date.now();
 
-    const conversations = new Map();
-    messages.forEach((msg) => {
-      const otherId = msg.senderId === userId ? msg.receiverId : msg.senderId;
-      if (!conversations.has(otherId)) {
-        conversations.set(otherId, {
-          user: msg.senderId === userId ? msg.receiver : msg.sender,
-          lastMessage: msg,
-          unreadCount: 0,
-        });
-      }
-    });
+    const latestIds = await this.prisma.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        WITH peers AS (
+          SELECT
+            id,
+            CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END AS peer_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END
+              ORDER BY "createdAt" DESC
+            ) AS rn
+          FROM "DirectMessage"
+          WHERE "senderId" = ${userId} OR "receiverId" = ${userId}
+        )
+        SELECT id FROM peers WHERE rn = 1
+      `,
+    );
 
-    // Рахуємо непрочитані для кожної розмови
-    for (const [otherId, conv] of conversations) {
-      conv.unreadCount = await this.prisma.directMessage.count({
-        where: {
-          senderId: otherId,
-          receiverId: userId,
-          isRead: false,
-        },
-      });
+    if (latestIds.length === 0) {
+      this.logger.log(`getConversations (${userId}) → empty in ${Date.now() - t0}ms`);
+      return [];
     }
 
-    return Array.from(conversations.values());
+    const ids = latestIds.map((r) => r.id);
+    const [messages, unreadGrouped] = await Promise.all([
+      this.prisma.directMessage.findMany({
+        where: { id: { in: ids } },
+        include: {
+          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          receiver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        },
+      }),
+      this.prisma.directMessage.groupBy({
+        by: ['senderId'],
+        where: { receiverId: userId, isRead: false },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const unreadByPeer = new Map(
+      unreadGrouped.map((u) => [u.senderId, u._count._all]),
+    );
+
+    const result = messages
+      .map((m) => {
+        const peerId = m.senderId === userId ? m.receiverId : m.senderId;
+        return {
+          user: m.senderId === userId ? m.receiver : m.sender,
+          lastMessage: m,
+          unreadCount: unreadByPeer.get(peerId) ?? 0,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.lastMessage.createdAt.getTime() - a.lastMessage.createdAt.getTime(),
+      );
+
+    this.logger.log(
+      `getConversations (${userId}) → ${result.length} convs in ${Date.now() - t0}ms`,
+    );
+    return result;
   }
   async markAsRead(userId: string, senderId: string) {
     // Mark text messages as read.
