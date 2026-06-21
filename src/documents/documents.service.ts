@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { MessagesGateway } from '../messages/messages.gateway';
@@ -150,38 +151,61 @@ export class DocumentsService {
   }
 
   async findByTrip(tripId: string) {
-    const docs = await this.prisma.tripDocument.findMany({
-      where: { tripId },
-      include: {
-        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        replyTo: {
-          select: {
-            id: true,
-            content: true,
-            deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+    // Docs query + reactions subquery in parallel — same wall-time gain
+    // as the message endpoints. Reactions subquery filters by tripId so
+    // it returns only the relevant rows.
+    const [docs, reactionRows] = await Promise.all([
+      this.prisma.tripDocument.findMany({
+        where: { tripId },
+        include: {
+          uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          replyTo: {
+            select: {
+              id: true,
+              content: true,
+              deletedAt: true,
+              sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
+          },
+          replyToDocument: {
+            select: {
+              id: true,
+              fileName: true,
+              fileType: true,
+              deletedAt: true,
+              uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
           },
         },
-        replyToDocument: {
-          select: {
-            id: true,
-            fileName: true,
-            fileType: true,
-            deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    const reactionsByDoc = await this.reactions.getForMessages(
-      'TRIP_DOC',
-      docs.map((d) => d.id),
-    );
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.$queryRaw<
+        Array<{ id: string; targetId: string; userId: string; emoji: string }>
+      >(Prisma.sql`
+        SELECT id, "targetId", "userId", emoji
+        FROM "MessageReaction"
+        WHERE "targetType" = 'TRIP_DOC'
+          AND "targetId" IN (SELECT id FROM "TripDocument" WHERE "tripId" = ${tripId})
+      `),
+    ]);
+
+    const reactionsByDoc = new Map<
+      string,
+      Array<{ id: string; userId: string; emoji: string }>
+    >();
+    for (const r of reactionRows) {
+      let arr = reactionsByDoc.get(r.targetId);
+      if (!arr) {
+        arr = [];
+        reactionsByDoc.set(r.targetId, arr);
+      }
+      arr.push({ id: r.id, userId: r.userId, emoji: r.emoji });
+    }
+
     return Promise.all(
       docs.map(async (d) => ({
         ...(await this.withSignedUrl(d)),
-        reactions: reactionsByDoc[d.id] ?? [],
+        reactions: reactionsByDoc.get(d.id) ?? [],
       })),
     );
   }

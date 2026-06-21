@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
@@ -150,34 +151,68 @@ export class TripsService {
     if (sessionIds.length === 0) return [];
 
     const take = opts.take ?? 50;
-    const rows = await this.prisma.message.findMany({
-      where: {
-        sessionId: { in: sessionIds },
-        ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
-      },
-      include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        replyTo: {
-          select: {
-            id: true,
-            content: true,
-            deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+    const beforeClause = opts.before
+      ? Prisma.sql`AND "createdAt" < ${opts.before}`
+      : Prisma.empty;
+
+    // Run the messages query and the reactions subquery in parallel so total
+    // wall time is max(t1, t2) instead of t1 + t2. The reactions subquery
+    // narrows to the same page-window as the main query via an IN clause,
+    // so it returns exactly the rows we need to attach.
+    const [rows, reactionRows] = await Promise.all([
+      this.prisma.message.findMany({
+        where: {
+          sessionId: { in: sessionIds },
+          ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
+        },
+        include: {
+          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          replyTo: {
+            select: {
+              id: true,
+              content: true,
+              deletedAt: true,
+              sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-    });
+        orderBy: { createdAt: 'desc' },
+        take,
+      }),
+      this.prisma.$queryRaw<
+        Array<{ id: string; targetId: string; userId: string; emoji: string }>
+      >(Prisma.sql`
+        SELECT id, "targetId", "userId", emoji
+        FROM "MessageReaction"
+        WHERE "targetType" = 'TRIP'
+          AND "targetId" IN (
+            SELECT id FROM "Message"
+            WHERE "sessionId" IN (${Prisma.join(sessionIds)})
+              ${beforeClause}
+            ORDER BY "createdAt" DESC
+            LIMIT ${take}
+          )
+      `),
+    ]);
+
+    const reactionsByMsg = new Map<
+      string,
+      Array<{ id: string; userId: string; emoji: string }>
+    >();
+    for (const r of reactionRows) {
+      let arr = reactionsByMsg.get(r.targetId);
+      if (!arr) {
+        arr = [];
+        reactionsByMsg.set(r.targetId, arr);
+      }
+      arr.push({ id: r.id, userId: r.userId, emoji: r.emoji });
+    }
+
     // Latest N fetched DESC; flip to ASC so the chat renders oldest-first.
     const messages = rows.reverse();
-    const reactionsByMsg = await this.reactions.getForMessages(
-      'TRIP',
-      messages.map((m) => m.id),
-    );
     return messages.map((m) => ({
       ...m,
-      reactions: reactionsByMsg[m.id] ?? [],
+      reactions: reactionsByMsg.get(m.id) ?? [],
     }));
   }
 

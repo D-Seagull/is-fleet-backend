@@ -19,43 +19,75 @@ export class GroupMessagesService {
     opts: { take?: number; before?: Date } = {},
   ) {
     const take = opts.take ?? 50;
-    const rows = await this.prisma.groupMessage.findMany({
-      where: {
-        groupId,
-        ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
-      },
-      include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        replyTo: {
-          select: {
-            id: true,
-            content: true,
-            deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+    const beforeClause = opts.before
+      ? Prisma.sql`AND "createdAt" < ${opts.before}`
+      : Prisma.empty;
+
+    // Messages + reactions in parallel — wall time = max(t1, t2) instead
+    // of t1 + t2. Reactions subquery narrows to the same page-window.
+    const [rows, reactionRows] = await Promise.all([
+      this.prisma.groupMessage.findMany({
+        where: {
+          groupId,
+          ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
+        },
+        include: {
+          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          replyTo: {
+            select: {
+              id: true,
+              content: true,
+              deletedAt: true,
+              sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
+          },
+          replyToDocument: {
+            select: {
+              id: true,
+              fileName: true,
+              fileType: true,
+              deletedAt: true,
+              uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
           },
         },
-        replyToDocument: {
-          select: {
-            id: true,
-            fileName: true,
-            fileType: true,
-            deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-    });
+        orderBy: { createdAt: 'desc' },
+        take,
+      }),
+      this.prisma.$queryRaw<
+        Array<{ id: string; targetId: string; userId: string; emoji: string }>
+      >(Prisma.sql`
+        SELECT id, "targetId", "userId", emoji
+        FROM "MessageReaction"
+        WHERE "targetType" = 'GROUP'
+          AND "targetId" IN (
+            SELECT id FROM "GroupMessage"
+            WHERE "groupId" = ${groupId}
+              ${beforeClause}
+            ORDER BY "createdAt" DESC
+            LIMIT ${take}
+          )
+      `),
+    ]);
+
+    const reactionsByMsg = new Map<
+      string,
+      Array<{ id: string; userId: string; emoji: string }>
+    >();
+    for (const r of reactionRows) {
+      let arr = reactionsByMsg.get(r.targetId);
+      if (!arr) {
+        arr = [];
+        reactionsByMsg.set(r.targetId, arr);
+      }
+      arr.push({ id: r.id, userId: r.userId, emoji: r.emoji });
+    }
+
     // Latest N fetched DESC; flip to ASC so the chat renders oldest-first.
     const messages = rows.reverse();
-    const reactionsByMsg = await this.reactions.getForMessages(
-      'GROUP',
-      messages.map((m) => m.id),
-    );
     return messages.map((m) => ({
       ...m,
-      reactions: reactionsByMsg[m.id] ?? [],
+      reactions: reactionsByMsg.get(m.id) ?? [],
     }));
   }
 

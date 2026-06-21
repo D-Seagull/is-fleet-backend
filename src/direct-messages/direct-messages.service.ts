@@ -21,52 +21,82 @@ export class DirectMessagesService {
   ) {
     const t0 = Date.now();
     const take = opts.take ?? 50;
-    const rows = await this.prisma.directMessage.findMany({
-      where: {
-        OR: [
-          { senderId: userId1, receiverId: userId2 },
-          { senderId: userId2, receiverId: userId1 },
-        ],
-        ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
-      },
-      include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        replyTo: {
-          select: {
-            id: true,
-            content: true,
-            deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+    const beforeClause = opts.before
+      ? Prisma.sql`AND "createdAt" < ${opts.before}`
+      : Prisma.empty;
+
+    // Messages + reactions in parallel — same wall-time gain as the trip
+    // chat. Reactions subquery narrows to the same page-window.
+    const [rows, reactionRows] = await Promise.all([
+      this.prisma.directMessage.findMany({
+        where: {
+          OR: [
+            { senderId: userId1, receiverId: userId2 },
+            { senderId: userId2, receiverId: userId1 },
+          ],
+          ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
+        },
+        include: {
+          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          replyTo: {
+            select: {
+              id: true,
+              content: true,
+              deletedAt: true,
+              sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
+          },
+          replyToDocument: {
+            select: {
+              id: true,
+              fileName: true,
+              fileType: true,
+              deletedAt: true,
+              uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
           },
         },
-        replyToDocument: {
-          select: {
-            id: true,
-            fileName: true,
-            fileType: true,
-            deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-    });
+        orderBy: { createdAt: 'desc' },
+        take,
+      }),
+      this.prisma.$queryRaw<
+        Array<{ id: string; targetId: string; userId: string; emoji: string }>
+      >(Prisma.sql`
+        SELECT id, "targetId", "userId", emoji
+        FROM "MessageReaction"
+        WHERE "targetType" = 'DM'
+          AND "targetId" IN (
+            SELECT id FROM "DirectMessage"
+            WHERE ("senderId" = ${userId1} AND "receiverId" = ${userId2})
+               OR ("senderId" = ${userId2} AND "receiverId" = ${userId1})
+              ${beforeClause}
+            ORDER BY "createdAt" DESC
+            LIMIT ${take}
+          )
+      `),
+    ]);
+
+    const reactionsByMsg = new Map<
+      string,
+      Array<{ id: string; userId: string; emoji: string }>
+    >();
+    for (const r of reactionRows) {
+      let arr = reactionsByMsg.get(r.targetId);
+      if (!arr) {
+        arr = [];
+        reactionsByMsg.set(r.targetId, arr);
+      }
+      arr.push({ id: r.id, userId: r.userId, emoji: r.emoji });
+    }
+
     // Latest N fetched DESC; flip to ASC so the chat renders oldest-first.
     const messages = rows.reverse();
-    const tMessages = Date.now() - t0;
-    const t1 = Date.now();
-    const reactionsByMsg = await this.reactions.getForMessages(
-      'DM',
-      messages.map((m) => m.id),
-    );
-    const tReactions = Date.now() - t1;
     this.logger.log(
-      `getMessages DM (${userId1} ↔ ${userId2}) → messages=${tMessages}ms reactions=${tReactions}ms count=${messages.length}`,
+      `getMessages DM (${userId1} ↔ ${userId2}) → ${Date.now() - t0}ms count=${messages.length} (parallel)`,
     );
     return messages.map((m) => ({
       ...m,
-      reactions: reactionsByMsg[m.id] ?? [],
+      reactions: reactionsByMsg.get(m.id) ?? [],
     }));
   }
 

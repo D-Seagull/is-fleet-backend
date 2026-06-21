@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
@@ -91,39 +92,65 @@ export class DirectMessageDocumentsService {
   }
 
   async findByConversation(meId: string, otherUserId: string) {
-    const docs = await this.prisma.directMessageDocument.findMany({
-      where: {
-        OR: [
-          { uploadedBy: meId, otherUserId: otherUserId },
-          { uploadedBy: otherUserId, otherUserId: meId },
-        ],
-      },
-      include: {
-        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        replyTo: {
-          select: {
-            id: true,
-            content: true,
-            deletedAt: true,
-            sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+    // Docs + reactions in parallel. Reactions subquery filters to the same
+    // conversation via the same OR clause.
+    const [docs, reactionRows] = await Promise.all([
+      this.prisma.directMessageDocument.findMany({
+        where: {
+          OR: [
+            { uploadedBy: meId, otherUserId: otherUserId },
+            { uploadedBy: otherUserId, otherUserId: meId },
+          ],
+        },
+        include: {
+          uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          replyTo: {
+            select: {
+              id: true,
+              content: true,
+              deletedAt: true,
+              sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
+          },
+          replyToDocument: {
+            select: {
+              id: true,
+              fileName: true,
+              fileType: true,
+              deletedAt: true,
+              uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            },
           },
         },
-        replyToDocument: {
-          select: {
-            id: true,
-            fileName: true,
-            fileType: true,
-            deletedAt: true,
-            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    const reactionsByDoc = await this.reactions.getForMessages(
-      'DM_DOC',
-      docs.map((d) => d.id),
-    );
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.$queryRaw<
+        Array<{ id: string; targetId: string; userId: string; emoji: string }>
+      >(Prisma.sql`
+        SELECT id, "targetId", "userId", emoji
+        FROM "MessageReaction"
+        WHERE "targetType" = 'DM_DOC'
+          AND "targetId" IN (
+            SELECT id FROM "DirectMessageDocument"
+            WHERE ("uploadedBy" = ${meId} AND "otherUserId" = ${otherUserId})
+               OR ("uploadedBy" = ${otherUserId} AND "otherUserId" = ${meId})
+          )
+      `),
+    ]);
+
+    const reactionsByDoc = new Map<
+      string,
+      Array<{ id: string; userId: string; emoji: string }>
+    >();
+    for (const r of reactionRows) {
+      let arr = reactionsByDoc.get(r.targetId);
+      if (!arr) {
+        arr = [];
+        reactionsByDoc.set(r.targetId, arr);
+      }
+      arr.push({ id: r.id, userId: r.userId, emoji: r.emoji });
+    }
+
     return Promise.all(
       docs.map(async (d) => ({
         ...d,
@@ -132,7 +159,7 @@ export class DirectMessageDocumentsService {
         signedUrl: d.deletedAt
           ? ''
           : await this.storage.getSignedUrl(d.fileUrl, 3600),
-        reactions: reactionsByDoc[d.id] ?? [],
+        reactions: reactionsByDoc.get(d.id) ?? [],
       })),
     );
   }
