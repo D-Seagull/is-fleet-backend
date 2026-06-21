@@ -24,6 +24,7 @@ import { GroupMessagesModule } from './group-messages/group-messages.module';
 import { GroupMessageDocumentsModule } from './group-message-documents/group-message-documents.module';
 import { ReactionsModule } from './reactions/reactions.module';
 import { ChatModule } from './chat/chat.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -53,7 +54,7 @@ import { ChatModule } from './chat/chat.module';
     ReactionsModule,
     ChatModule,
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [TranslationService, DirectMessagesService],
 })
 export class AppModule {}
