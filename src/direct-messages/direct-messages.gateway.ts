@@ -275,15 +275,20 @@ export class DirectMessagesGateway
     senderId: string,
     receiverId: string,
   ) {
-    const payload = { id: messageId };
+    // Include both ends of the conversation so the client can scope its
+    // cache patch to a single ["messages", peerId] key instead of iterating
+    // every open DM cache.
+    const payload = { id: messageId, senderId, receiverId };
     this.server.to(`user:${senderId}`).emit('dm_message_deleted', payload);
     this.server.to(`user:${receiverId}`).emit('dm_message_deleted', payload);
   }
 
   emitGroupMessageDeleted(groupId: string, messageId: string) {
+    // Include groupId so the client can scope its cache patch to a single
+    // ["group-messages", groupId] key.
     this.server
       .to(`group:${groupId}`)
-      .emit('group_message_deleted', { id: messageId });
+      .emit('group_message_deleted', { id: messageId, groupId });
   }
 
   emitDmMessageEdited(senderId: string, receiverId: string, message: unknown) {
