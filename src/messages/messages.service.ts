@@ -71,6 +71,10 @@ export class MessagesService {
         session: {
           select: { driverId: true, managerId: true },
         },
+        // Gateway uses trip.truckId to route the lightweight
+        // tripUnreadChanged signal to the truck-watchers room (Phase 2
+        // fan-out reduction) without an extra DB round-trip.
+        trip: { select: { truckId: true } },
         replyTo: {
           select: {
             id: true,

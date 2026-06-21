@@ -59,10 +59,29 @@ export class MessagesGateway {
       // the app); mobile flips it back to false in onBackground.
       client.data.active = true;
       void client.join(userId);
-      // Company-level room so managers receive newMessage events from any
-      // trip without having to explicitly join a trip room first.
+      // Company-level room — kept for presence broadcasts (userPresence-
+      // Changed / presenceSnapshot). Unread-related signals now go to
+      // role-scoped rooms below (Phase 2 fan-out).
       if (companyId) {
         await client.join(`company-${companyId}`);
+
+        // Role-scoped rooms for tripUnreadChanged routing. ADMIN/TEAMLEAD
+        // see all chats; MANAGER only sees signals for trucks they're
+        // assigned to; DRIVER receives signals through their personal
+        // userId room (handled in the emit logic). Truck reassignment
+        // mid-session won't move the manager between rooms — they need
+        // to reconnect for that, which is an acceptable tradeoff.
+        if (role === 'ADMIN' || role === 'TEAMLEAD') {
+          await client.join(`company-admin-${companyId}`);
+        } else if (role === 'MANAGER') {
+          const trucks = await this.prisma.truck.findMany({
+            where: { managerId: userId },
+            select: { id: true },
+          });
+          await Promise.all(
+            trucks.map((t) => client.join(`truck-watchers-${t.id}`)),
+          );
+        }
 
         // Tell this client who in their company is currently online so
         // they don't have to wait for the next presence event to render
@@ -177,18 +196,41 @@ export class MessagesGateway {
       // the only sockets that actually need the full message body to
       // render it in the chat.
       this.server.to(dto.tripId).emit('newMessage', payload);
-      // Fan out a lightweight signal to the company room so sidebar
-      // unread badges (trucks-list, sidebar, etc.) can invalidate without
-      // ever receiving the full payload. Previously we re-emitted the
-      // full `newMessage` here — for a 50-user company that meant the
-      // message body was streamed ~50× per send. The new payload is
-      // ~50 bytes; the listener (use-unread / use-driver-unread) just
-      // invalidates the relevant query and refetches the summary.
+
+      // Phase 2 fan-out: send the lightweight tripUnreadChanged signal
+      // ONLY to the stakeholders who actually need their unread badges
+      // invalidated. Drivers / managers of other trips no longer see
+      // signals about chats they're not involved with.
       const companyId = client.data.companyId as string | undefined;
+      const truckId = (message as { trip?: { truckId: string } }).trip?.truckId;
+      const driverId = (message as { session?: { driverId: string | null } })
+        .session?.driverId;
+      const managerId = (message as { session?: { managerId: string | null } })
+        .session?.managerId;
+      const signal = { tripId: dto.tripId };
+
       if (companyId) {
+        // ADMIN / TEAMLEAD of the company.
         this.server
-          .to(`company-${companyId}`)
-          .emit('tripUnreadChanged', { tripId: dto.tripId });
+          .to(`company-admin-${companyId}`)
+          .emit('tripUnreadChanged', signal);
+      }
+      if (truckId) {
+        // Managers assigned to this truck (not necessarily the current
+        // session manager — they joined this room on connect via their
+        // assignedTrucks list).
+        this.server
+          .to(`truck-watchers-${truckId}`)
+          .emit('tripUnreadChanged', signal);
+      }
+      // Direct participants — covers the case where they're NOT in the
+      // trip room (sidebar / different page) so their badge still
+      // refreshes. Skip the sender (no unread for self).
+      if (driverId && driverId !== senderId) {
+        this.server.to(driverId).emit('tripUnreadChanged', signal);
+      }
+      if (managerId && managerId !== senderId) {
+        this.server.to(managerId).emit('tripUnreadChanged', signal);
       }
       console.log('[ws] newMessage emitted to room', dto.tripId, 'id=', message.id);
       return payload;
