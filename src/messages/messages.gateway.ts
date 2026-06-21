@@ -173,13 +173,22 @@ export class MessagesGateway {
       // Echo the client-side tempId so the sender's UI can locate its
       // optimistic placeholder bubble and replace it with the real row.
       const payload = { ...message, tempId: dto.tempId ?? null };
-      // Emit to the trip room (driver + manager in that trip).
+      // Emit to the trip room (driver + manager in that trip) — these are
+      // the only sockets that actually need the full message body to
+      // render it in the chat.
       this.server.to(dto.tripId).emit('newMessage', payload);
-      // Also emit to the company room so managers on the trucks-list page
-      // receive instant unread-summary invalidation without joining the trip.
+      // Fan out a lightweight signal to the company room so sidebar
+      // unread badges (trucks-list, sidebar, etc.) can invalidate without
+      // ever receiving the full payload. Previously we re-emitted the
+      // full `newMessage` here — for a 50-user company that meant the
+      // message body was streamed ~50× per send. The new payload is
+      // ~50 bytes; the listener (use-unread / use-driver-unread) just
+      // invalidates the relevant query and refetches the summary.
       const companyId = client.data.companyId as string | undefined;
       if (companyId) {
-        this.server.to(`company-${companyId}`).emit('newMessage', payload);
+        this.server
+          .to(`company-${companyId}`)
+          .emit('tripUnreadChanged', { tripId: dto.tripId });
       }
       console.log('[ws] newMessage emitted to room', dto.tripId, 'id=', message.id);
       return payload;
