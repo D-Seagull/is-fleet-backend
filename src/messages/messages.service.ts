@@ -43,21 +43,12 @@ export class MessagesService {
       );
     }
 
-    let translatedContent: string | null = null;
-
-    if (dto.translate) {
-      // Визначаємо мову отримувача
-      const receiver =
-        trip.driverId === senderId ? trip.manager : trip.driver;
-      const receiverLanguage = receiver?.language || 'EN';
-
-      // Перекладаємо
-      const targetCode = this.translation.getLanguageCode(receiverLanguage);
-      translatedContent = await this.translation.translateText(
-        dto.content,
-        targetCode,
-      );
-    }
+    // Translation is intentionally stubbed for now — the feature isn't wired
+    // up end-to-end yet and the Google Translate API call was blocking the
+    // send-path with ~200-800ms of round-trip per message. When translation
+    // comes back, do it AFTER persist + emit (so the sender isn't blocked)
+    // and broadcast a separate `messageTranslated` patch event.
+    const translatedContent: string | null = null;
 
     const session = await this.sessions.getActiveSessionOrThrow(dto.tripId);
 
