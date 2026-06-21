@@ -1,18 +1,24 @@
 import {
-  ExceptionFilter,
-  Catch,
   ArgumentsHost,
+  Catch,
+  ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AllExceptionsFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost) {
     // WebSocket & RPC contexts have no HTTP response object — skip HTTP error handling
     if (host.getType() !== 'http') {
-      console.error('[exception-filter] non-HTTP exception:', exception instanceof Error ? exception.message : exception);
+      this.logger.error(
+        `[non-HTTP] ${exception instanceof Error ? exception.message : String(exception)}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
       return;
     }
 
@@ -40,6 +46,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
           status = HttpStatus.INTERNAL_SERVER_ERROR;
           message = 'Database error';
       }
+    }
+
+    // Log everything we're not handing back as a 4xx — these are the
+    // bugs / infra failures we actually need visibility into. HttpExceptions
+    // are expected (validation, forbidden, not found, …) and only deserve
+    // a debug-level note.
+    if (status >= 500) {
+      this.logger.error(
+        `${request.method} ${request.url} → ${status}: ${
+          exception instanceof Error ? exception.message : String(exception)
+        }`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    } else if (exception instanceof HttpException) {
+      this.logger.debug(`${request.method} ${request.url} → ${status}`);
     }
 
     response.status(status).json({
