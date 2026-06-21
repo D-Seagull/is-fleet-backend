@@ -13,13 +13,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { JoinTripDto } from './dto/join-trip.dto';
 import { JwtService } from '@nestjs/jwt';
+import { corsOrigin } from 'src/common/cors-origin';
 
 @WebSocketGateway({
   cors: {
-    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
-      // Allow all origins in dev; in production restrict via FRONTEND_URL
-      cb(null, true);
-    },
+    origin: corsOrigin,
     credentials: true,
   },
 })

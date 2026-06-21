@@ -12,8 +12,9 @@ import { JwtService } from '@nestjs/jwt';
 import { DirectMessagesService } from './direct-messages.service';
 import { GroupMessagesService } from 'src/group-messages/group-messages.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { corsOrigin } from 'src/common/cors-origin';
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class DirectMessagesGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {

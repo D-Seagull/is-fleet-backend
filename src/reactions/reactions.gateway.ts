@@ -1,8 +1,9 @@
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server } from 'socket.io';
 import type { ReactionRow, ReactionTarget } from './reactions.service';
+import { corsOrigin } from 'src/common/cors-origin';
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class ReactionsGateway {
   @WebSocketServer()
   server: Server;
