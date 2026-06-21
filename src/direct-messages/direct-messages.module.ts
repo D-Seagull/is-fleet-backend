@@ -22,6 +22,6 @@ import { ReactionsModule } from 'src/reactions/reactions.module';
   ],
   controllers: [DirectMessagesController],
   providers: [DirectMessagesGateway, DirectMessagesService],
-  exports: [DirectMessagesGateway],
+  exports: [DirectMessagesGateway, DirectMessagesService],
 })
 export class DirectMessagesModule {}

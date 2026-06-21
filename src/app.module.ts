@@ -23,6 +23,7 @@ import { DirectMessageDocumentsModule } from './direct-message-documents/direct-
 import { GroupMessagesModule } from './group-messages/group-messages.module';
 import { GroupMessageDocumentsModule } from './group-message-documents/group-message-documents.module';
 import { ReactionsModule } from './reactions/reactions.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { ReactionsModule } from './reactions/reactions.module';
     GroupMessagesModule,
     GroupMessageDocumentsModule,
     ReactionsModule,
+    ChatModule,
   ],
   controllers: [],
   providers: [TranslationService, DirectMessagesService],
