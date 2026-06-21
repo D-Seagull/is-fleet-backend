@@ -246,27 +246,19 @@ export class DirectMessagesService {
     }));
   }
   async markAsRead(userId: string, senderId: string) {
-    // Mark text messages as read.
-    const messages = await this.prisma.directMessage.updateMany({
-      where: {
-        senderId,
-        receiverId: userId,
-        isRead: false,
-      },
-      data: { isRead: true },
-    });
-    // Mark documents in this conversation as read too (uploaded by senderId
-    // for me as otherUser, OR sent to senderId from me — only inbound ones
-    // need to be flipped, but we update both sides for simplicity and
-    // idempotency since "false → true" is a no-op on already-read rows).
-    await this.prisma.directMessageDocument.updateMany({
-      where: {
-        uploadedBy: senderId,
-        otherUserId: userId,
-        isRead: false,
-      },
-      data: { isRead: true },
-    });
+    // Mark text messages AND documents in this conversation as read in
+    // parallel. The two updates are independent so wall time is max(t1, t2)
+    // instead of t1 + t2 — saves one round-trip on every DM open.
+    const [messages] = await Promise.all([
+      this.prisma.directMessage.updateMany({
+        where: { senderId, receiverId: userId, isRead: false },
+        data: { isRead: true },
+      }),
+      this.prisma.directMessageDocument.updateMany({
+        where: { uploadedBy: senderId, otherUserId: userId, isRead: false },
+        data: { isRead: true },
+      }),
+    ]);
     return messages;
   }
   async softDelete(messageId: string, userId: string) {

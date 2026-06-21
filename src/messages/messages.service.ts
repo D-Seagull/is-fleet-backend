@@ -406,6 +406,11 @@ export class MessagesService {
   // by* `readerId` as read. Returns the IDs that were just flipped, so the
   // gateway can emit a precise event to the senders rather than refetching
   // the whole history.
+  //
+  // Was: findMany + updateMany per resource (4 round-trips total).
+  // Now: UPDATE ... RETURNING id (the IDs come back from the same query),
+  // and both resources flipped in parallel — 2 round-trips wall time
+  // instead of 4.
   async markTripRead(
     tripId: string,
     readerId: string,
@@ -415,41 +420,38 @@ export class MessagesService {
       id: readerId,
       role: readerRole,
     });
-    const [unreadMessages, unreadDocs] = await Promise.all([
-      sessionIds.length > 0
-        ? this.prisma.message.findMany({
-            where: {
-              sessionId: { in: sessionIds },
-              isRead: false,
-              senderId: { not: readerId },
-            },
-            select: { id: true },
-          })
-        : Promise.resolve([] as { id: string }[]),
-      this.prisma.tripDocument.findMany({
-        where: { tripId, isRead: false, uploadedBy: { not: readerId } },
-        select: { id: true },
-      }),
+
+    const messagesPromise: Promise<Array<{ id: string }>> =
+      sessionIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+            UPDATE "Message"
+            SET "isRead" = true
+            WHERE "sessionId" IN (${Prisma.join(sessionIds)})
+              AND "isRead" = false
+              AND "senderId" != ${readerId}
+            RETURNING id
+          `);
+
+    const documentsPromise = this.prisma.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        UPDATE "TripDocument"
+        SET "isRead" = true
+        WHERE "tripId" = ${tripId}
+          AND "isRead" = false
+          AND "uploadedBy" != ${readerId}
+        RETURNING id
+      `,
+    );
+
+    const [updatedMessages, updatedDocs] = await Promise.all([
+      messagesPromise,
+      documentsPromise,
     ]);
 
-    const messageIds = unreadMessages.map((m) => m.id);
-    const documentIds = unreadDocs.map((d) => d.id);
-
-    await Promise.all([
-      messageIds.length > 0
-        ? this.prisma.message.updateMany({
-            where: { id: { in: messageIds } },
-            data: { isRead: true },
-          })
-        : Promise.resolve(),
-      documentIds.length > 0
-        ? this.prisma.tripDocument.updateMany({
-            where: { id: { in: documentIds } },
-            data: { isRead: true },
-          })
-        : Promise.resolve(),
-    ]);
-
-    return { messageIds, documentIds };
+    return {
+      messageIds: updatedMessages.map((r) => r.id),
+      documentIds: updatedDocs.map((r) => r.id),
+    };
   }
 }
