@@ -25,37 +25,57 @@ export class TripChatSessionsService {
   }
 
   /**
-   * Returns IDs of all sessions on this trip that the requester is allowed
-   * to see:
-   *  - ADMIN / TEAMLEAD → every session
-   *  - DRIVER / MANAGER → only sessions where they were a participant
+   * Returns IDs of sessions visible in the LIVE chat view for this trip.
+   * Strict: only current participants can open the live chat — replaced
+   * managers/drivers and team leads lose access here. To browse a chat
+   * they no longer participate in, they use the archive endpoints
+   * (findArchived / findMessagesBySession), which have looser rules.
    *
-   * This naturally implements the privacy requirement:
-   *  - Old manager keeps their pre-handover history (and not the new one).
-   *  - New manager sees only their post-handover chat.
-   *  - Driver, if unchanged, sees both as one continuous stream.
+   *  - ADMIN → every session in the trip.
+   *  - Current driver of the trip → sessions where they were the driver.
+   *  - Current manager of the trip → sessions where they were the manager.
+   *  - Anyone else (including TEAMLEAD) → nothing.
    */
   async getVisibleSessionIds(
     tripId: string,
     requester: { id: string; role: string },
   ): Promise<string[]> {
-    const isManager =
-      requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
+    if (requester.role === 'ADMIN') {
+      const sessions = await this.prisma.tripChatSession.findMany({
+        where: { tripId },
+        select: { id: true },
+      });
+      return sessions.map((s) => s.id);
+    }
+
+    const trip = await this.prisma.trip.findUnique({
+      where: { id: tripId },
+      select: { driverId: true, managerId: true },
+    });
+    if (!trip) return [];
+
+    const orClauses: Prisma.TripChatSessionWhereInput[] = [];
+    if (trip.driverId === requester.id) {
+      orClauses.push({ driverId: requester.id });
+    }
+    if (trip.managerId === requester.id) {
+      orClauses.push({ managerId: requester.id });
+    }
+    if (orClauses.length === 0) return [];
+
     const sessions = await this.prisma.tripChatSession.findMany({
-      where: {
-        tripId,
-        ...(isManager
-          ? {}
-          : {
-              OR: [
-                { driverId: requester.id },
-                { managerId: requester.id },
-              ],
-            }),
-      },
+      where: { tripId, OR: orClauses },
       select: { id: true },
     });
     return sessions.map((s) => s.id);
+  }
+
+  private async getTeamManagerIds(teamleadId: string): Promise<string[]> {
+    const members = await this.prisma.user.findMany({
+      where: { teamleadId, role: 'MANAGER' },
+      select: { id: true },
+    });
+    return members.map((m) => m.id);
   }
 
   async getActiveSessionOrThrow(tripId: string, tx: Prisma.TransactionClient = this.prisma) {
@@ -180,25 +200,36 @@ export class TripChatSessionsService {
     });
   }
 
-  /** List archived (closed) sessions visible to the requester. */
+  /**
+   * List archived (closed) sessions visible to the requester. Same rule
+   * as getVisibleSessionIds — see that method's docstring — plus the
+   * archived-only filter.
+   */
   async findArchived(
     tripId: string,
     requester: { id: string; role: string },
   ) {
-    const isManager = requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
+    let extraWhere: Prisma.TripChatSessionWhereInput = {};
+
+    if (requester.role !== 'ADMIN') {
+      const orClauses: Prisma.TripChatSessionWhereInput[] = [
+        { driverId: requester.id },
+        { managerId: requester.id },
+      ];
+      if (requester.role === 'TEAMLEAD') {
+        const teamManagerIds = await this.getTeamManagerIds(requester.id);
+        if (teamManagerIds.length > 0) {
+          orClauses.push({ managerId: { in: teamManagerIds } });
+        }
+      }
+      extraWhere = { OR: orClauses };
+    }
 
     return this.prisma.tripChatSession.findMany({
       where: {
         tripId,
         endedAt: { not: null },
-        ...(isManager
-          ? {}
-          : {
-              OR: [
-                { driverId: requester.id },
-                { managerId: requester.id },
-              ],
-            }),
+        ...extraWhere,
       },
       include: {
         driver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
@@ -208,7 +239,10 @@ export class TripChatSessionsService {
     });
   }
 
-  /** Read messages of a specific session, with access control. */
+  /**
+   * Read messages of a specific session, with access control. Same rule
+   * as getVisibleSessionIds — see that method's docstring.
+   */
   async findMessagesBySession(
     sessionId: string,
     requester: { id: string; role: string },
@@ -218,11 +252,28 @@ export class TripChatSessionsService {
     });
     if (!session) throw new NotFoundException('Session not found');
 
-    const isManager = requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
     const isParticipant =
-      session.driverId === requester.id || session.managerId === requester.id;
+      session.driverId === requester.id ||
+      session.managerId === requester.id;
 
-    if (!isManager && !isParticipant) {
+    let isTeamManaged = false;
+    if (
+      !isParticipant &&
+      requester.role === 'TEAMLEAD' &&
+      session.managerId
+    ) {
+      const sessionManager = await this.prisma.user.findUnique({
+        where: { id: session.managerId },
+        select: { teamleadId: true },
+      });
+      isTeamManaged = sessionManager?.teamleadId === requester.id;
+    }
+
+    if (
+      requester.role !== 'ADMIN' &&
+      !isParticipant &&
+      !isTeamManaged
+    ) {
       throw new ForbiddenException('No access to this chat session');
     }
 

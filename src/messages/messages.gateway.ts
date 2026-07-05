@@ -64,21 +64,13 @@ export class MessagesGateway {
         await client.join(`company-${companyId}`);
 
         // Role-scoped rooms for tripUnreadChanged routing. ADMIN/TEAMLEAD
-        // see all chats; MANAGER only sees signals for trucks they're
-        // assigned to; DRIVER receives signals through their personal
-        // userId room (handled in the emit logic). Truck reassignment
-        // mid-session won't move the manager between rooms — they need
-        // to reconnect for that, which is an acceptable tradeoff.
+        // see all chats via the company-admin room. MANAGER and DRIVER
+        // get signals through their personal userId room (emitted from
+        // session.driverId / session.managerId at send-time), so they
+        // stop receiving updates the moment they're replaced on a trip
+        // without needing to reconnect.
         if (role === 'ADMIN' || role === 'TEAMLEAD') {
           await client.join(`company-admin-${companyId}`);
-        } else if (role === 'MANAGER') {
-          const trucks = await this.prisma.truck.findMany({
-            where: { managerId: userId },
-            select: { id: true },
-          });
-          await Promise.all(
-            trucks.map((t) => client.join(`truck-watchers-${t.id}`)),
-          );
         }
 
         // Tell this client who in their company is currently online so
@@ -200,7 +192,6 @@ export class MessagesGateway {
       // invalidated. Drivers / managers of other trips no longer see
       // signals about chats they're not involved with.
       const companyId = client.data.companyId as string | undefined;
-      const truckId = (message as { trip?: { truckId: string } }).trip?.truckId;
       const driverId = (message as { session?: { driverId: string | null } })
         .session?.driverId;
       const managerId = (message as { session?: { managerId: string | null } })
@@ -213,17 +204,9 @@ export class MessagesGateway {
           .to(`company-admin-${companyId}`)
           .emit('tripUnreadChanged', signal);
       }
-      if (truckId) {
-        // Managers assigned to this truck (not necessarily the current
-        // session manager — they joined this room on connect via their
-        // assignedTrucks list).
-        this.server
-          .to(`truck-watchers-${truckId}`)
-          .emit('tripUnreadChanged', signal);
-      }
-      // Direct participants — covers the case where they're NOT in the
-      // trip room (sidebar / different page) so their badge still
-      // refreshes. Skip the sender (no unread for self).
+      // Direct session participants — reached via their personal userId
+      // room. This is what makes the sidebar badge refresh when the user
+      // is on a different page. Skip the sender (no unread for self).
       if (driverId && driverId !== senderId) {
         this.server.to(driverId).emit('tripUnreadChanged', signal);
       }

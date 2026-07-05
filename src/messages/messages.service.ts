@@ -204,16 +204,20 @@ export class MessagesService {
     requesterId: string,
     requesterRole: string,
   ) {
-    const isAdminTier =
-      requesterRole === 'ADMIN' || requesterRole === 'TEAMLEAD';
-
-    // Manager-tier (non-admin) sees only sessions they participated in.
-    const sessionFilter = isAdminTier
-      ? Prisma.empty
-      : Prisma.sql`AND m."sessionId" IN (
-          SELECT id FROM "TripChatSession"
-          WHERE "driverId" = ${requesterId} OR "managerId" = ${requesterId}
-        )`;
+    // Unread badges are for the LIVE chat only — mirrors
+    // TripChatSessionsService.getVisibleSessionIds:
+    //  - ADMIN: no filter (sees the whole company).
+    //  - Anyone else: unread only from trips where they are the CURRENT
+    //    participant. Replaced managers/drivers and team leads get no
+    //    badges here — those chats are reachable via the archive.
+    const sessionFilter =
+      requesterRole === 'ADMIN'
+        ? Prisma.empty
+        : Prisma.sql`AND (t."driverId" = ${requesterId} OR t."managerId" = ${requesterId})
+            AND m."sessionId" IN (
+              SELECT id FROM "TripChatSession"
+              WHERE "driverId" = ${requesterId} OR "managerId" = ${requesterId}
+            )`;
 
     type Row = {
       truckId: string;

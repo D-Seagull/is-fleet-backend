@@ -31,7 +31,11 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
-  @Roles('ADMIN', 'TEAMLEAD')
+  // Only a TEAMLEAD can create a manager — the new manager is auto-attached
+  // to the creator as their team lead. ADMIN cannot create managers here
+  // (they would produce a dangling teamleadId). To move a manager between
+  // teams later, use PATCH /users/:id { teamleadId }.
+  @Roles('TEAMLEAD')
   @Post('manager')
   createManager(
     @GetUser('companyId') companyId: string,

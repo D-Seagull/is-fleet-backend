@@ -53,7 +53,9 @@ export class UsersService {
 
     const phone = requireValidPhone(dto.phone);
 
-    // Створюємо юзера без пароля — він встановить його при реєстрації
+    // Route guard restricts this endpoint to TEAMLEAD only, so creatorId
+    // is always a TEAMLEAD — pin the new manager to them as their team
+    // lead. This is what scopes chat-archive visibility for the team.
     try {
       const user = await this.prisma.user.create({
         data: {
