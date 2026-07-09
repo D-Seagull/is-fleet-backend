@@ -66,6 +66,21 @@ export class MailService {
       `,
     });
   }
+
+  async sendPasswordReset(to: string, resetLink: string) {
+    await this.transporter.sendMail({
+      from: `"IS Fleet" <${this.config.get('MAIL_USER')}>`,
+      to,
+      subject: 'Скидання паролю IS Fleet',
+      html: `
+        <h2>Скидання паролю</h2>
+        <p>Ви отримали цей лист, тому що надійшов запит на скидання паролю для вашого акаунта IS Fleet.</p>
+        <p>Перейдіть по посиланню, щоб задати новий пароль. Посилання дійсне протягом 1 години:</p>
+        <p><a href="${resetLink}">${resetLink}</a></p>
+        <p>Якщо ви не запитували скидання — просто проігноруйте цей лист.</p>
+      `,
+    });
+  }
 }
 
 // @Injectable()

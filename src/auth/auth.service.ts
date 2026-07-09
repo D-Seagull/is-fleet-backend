@@ -9,16 +9,20 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { RegisterDto } from './dto/register.dto';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
 import { SmsService } from 'src/sms/sms.service';
 import { normalizePhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
+import { MailService } from 'src/mail/mail.service';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
 const OTP_MAX_ATTEMPTS = 5;
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 @Injectable()
 export class AuthService {
@@ -29,6 +33,8 @@ export class AuthService {
     private jwt: JwtService,
     private sms: SmsService,
     private gateway: MessagesGateway,
+    private mail: MailService,
+    private config: ConfigService,
   ) {}
 
   /**
@@ -390,5 +396,70 @@ export class AuthService {
       otp.user.firstName,
       otp.user.lastName,
     );
+  }
+
+  // ─── Password reset (email users only — managers/admins/teamleads) ──────────
+
+  /**
+   * Always responds with `{ ok: true }` — the API surface must not tell an
+   * attacker whether a given email is registered. If a matching user with a
+   * password on file exists, we invalidate any outstanding tokens, mint a new
+   * one, and email the reset link. Delivery is fire-and-forget so a slow Gmail
+   * SMTP handshake (common on Render free tier) never blocks the response.
+   */
+  async requestPasswordReset(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !user.password) return { ok: true };
+
+    await this.prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+
+    await this.prisma.passwordResetToken.create({
+      data: { token, userId: user.id, expiresAt },
+    });
+
+    const frontendUrl =
+      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+    this.mail
+      .sendPasswordReset(email, resetLink)
+      .catch((err) =>
+        this.logger.error(
+          `sendPasswordReset failed for ${email}: ${err.message}`,
+        ),
+      );
+
+    return { ok: true };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { token },
+    });
+
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new BadRequestException('Посилання недійсне або застаріле');
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.userId },
+        data: { password: hash },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    return { ok: true };
   }
 }

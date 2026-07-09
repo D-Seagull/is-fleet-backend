@@ -6,11 +6,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthController } from './auth.controller';
 import { SmsModule } from 'src/sms/sms.module';
 import { MessagesModule } from 'src/messages/messages.module';
+import { MailModule } from 'src/mail/mail.module';
 
 @Module({
   imports: [
     SmsModule,
     MessagesModule,
+    MailModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
