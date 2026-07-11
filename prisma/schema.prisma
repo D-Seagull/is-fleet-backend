@@ -106,6 +106,8 @@ model User {
   sessionsAsManager    TripChatSession[] @relation("SessionManager")
   pushTokens         PushToken[]
   passwordResetTokens PasswordResetToken[]
+  hiddenConversations HiddenConversation[] @relation("HiddenConversations")
+  hiddenGroups        HiddenGroup[]        @relation("HiddenGroups")
   groupMessageReads  GroupMessageRead[] @relation("GroupMessageReads")
   messageReactions   MessageReaction[]  @relation("MessageReactions")
 }
@@ -133,6 +135,36 @@ model PasswordResetToken {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+/// Per-user "delete for me" for a DM conversation. Filter in getConversations
+/// hides the peer whose last message is at or before hiddenAt; a newer message
+/// resurrects the conversation naturally (matches Telegram delete-chat UX).
+model HiddenConversation {
+  id       String   @id @default(uuid())
+  userId   String
+  peerId   String
+  hiddenAt DateTime @default(now())
+
+  user User @relation("HiddenConversations", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, peerId])
+  @@index([userId])
+}
+
+/// Per-user "hide for me" for a Group in the chat sidebar. The group and its
+/// membership stay intact so other members are unaffected; the row disappears
+/// only from this user's list and resurrects when a new message arrives.
+model HiddenGroup {
+  id       String   @id @default(uuid())
+  userId   String
+  groupId  String
+  hiddenAt DateTime @default(now())
+
+  user User @relation("HiddenGroups", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
   @@index([userId])
 }
 
@@ -536,6 +568,10 @@ model Group {
   companyId       String
   createdBy       String
   createdAt       DateTime  @default(now())
+  /// Soft-delete marker. When set, the group is invisible to every member
+  /// but its rows (messages, docs, members) stay put so foreign keys don't
+  /// break. Only the creator can flip this.
+  deletedAt       DateTime?
   messages GroupMessage[]
   documents GroupMessageDocument[]
   company            Company             @relation(fields: [companyId], references: [id])

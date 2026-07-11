@@ -64,6 +64,14 @@ export class DirectMessagesController {
     return this.service.markAsRead(currentUserId, senderId);
   }
 
+  @Post(':userId/hide')
+  hideConversation(
+    @GetUser('id') currentUserId: string,
+    @Param('userId') peerId: string,
+  ) {
+    return this.service.hideConversation(currentUserId, peerId);
+  }
+
   @Delete('messages/:messageId')
   async delete(
     @Param('messageId') messageId: string,

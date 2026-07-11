@@ -2,17 +2,22 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
+import { DirectMessagesGateway } from 'src/direct-messages/direct-messages.gateway';
 
 @Injectable()
 export class GroupsService {
   constructor(
     private prisma: PrismaService,
     private storage: SupabaseStorageService,
+    @Inject(forwardRef(() => DirectMessagesGateway))
+    private gateway: DirectMessagesGateway,
   ) {}
 
   /**
@@ -129,15 +134,41 @@ export class GroupsService {
     });
   }
 
-  async remove(id: string, userId: string, role: string) {
-    const group = await this.prisma.group.findFirst({ where: { id } });
+  async remove(id: string, userId: string, _role: string) {
+    const group = await this.prisma.group.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        managers: { select: { managerId: true } },
+      },
+    });
     if (!group) throw new NotFoundException('Група не знайдена');
 
-    if (role === 'MANAGER' && group.createdBy !== userId) {
-      throw new ForbiddenException('Можна видаляти тільки свої групи');
+    // Creator-only. Even ADMIN/TEAMLEAD can't delete someone else's group
+    // from the chat sidebar — this action is meant to be the owner's call.
+    if (group.createdBy !== userId) {
+      throw new ForbiddenException('Видаляти може тільки той, хто створив групу');
     }
 
-    await this.prisma.group.delete({ where: { id } });
+    // Soft-delete: mark the row and leave every FK-linked record intact
+    // (GroupMessage, GroupManager, GroupTruck, MessageReaction…). Prisma
+    // group.delete() blows up on the FK constraint from GroupManager
+    // otherwise, and cascading everything just to hide a row is overkill.
+    await this.prisma.group.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    // Fan-out so every member's sidebar refreshes in real time — group:{id}
+    // reaches online members currently viewing chat, user:{memberId} covers
+    // members who joined only their personal room (e.g. on a different
+    // page). The client listener drops the row from the manager-groups
+    // cache.
+    const payload = { id };
+    this.gateway.server.to(`group:${id}`).emit('group_deleted', payload);
+    for (const m of group.managers) {
+      this.gateway.server.to(`user:${m.managerId}`).emit('group_deleted', payload);
+    }
+
     return { message: `Група ${group.name} видалена` };
   }
 
@@ -261,8 +292,8 @@ export class GroupsService {
     userId?: string,
   ) {
     const where: Record<string, unknown> = companyId
-      ? { companyId, type: 'MANAGERS' }
-      : { type: 'MANAGERS' };
+      ? { companyId, type: 'MANAGERS', deletedAt: null }
+      : { type: 'MANAGERS', deletedAt: null };
 
     if (role === 'MANAGER' && userId) {
       where.managers = { some: { managerId: userId } };
@@ -279,5 +310,27 @@ export class GroupsService {
         },
       },
     });
+  }
+
+  /**
+   * Personal "delete for me" for a group in the chat sidebar. Idempotent —
+   * upsert refreshes hiddenAt when called twice. The group and its
+   * membership are left intact; other members are unaffected.
+   */
+  async hideForUser(groupId: string, userId: string) {
+    // Guard: only members can hide (prevents drive-by hides for random ids).
+    const isMember = await this.prisma.groupManager.findFirst({
+      where: { groupId, managerId: userId },
+      select: { id: true },
+    });
+    if (!isMember) {
+      throw new NotFoundException('Група не знайдена');
+    }
+    await this.prisma.hiddenGroup.upsert({
+      where: { userId_groupId: { userId, groupId } },
+      update: { hiddenAt: new Date() },
+      create: { userId, groupId },
+    });
+    return { ok: true };
   }
 }

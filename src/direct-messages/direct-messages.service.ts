@@ -192,6 +192,11 @@ export class DirectMessagesService {
         FROM "DirectMessage"
         WHERE "receiverId" = ${userId} AND "isRead" = false
         GROUP BY "senderId"
+      ),
+      hidden AS (
+        SELECT "peerId", "hiddenAt"
+        FROM "HiddenConversation"
+        WHERE "userId" = ${userId}
       )
       SELECT
         json_build_object(
@@ -232,6 +237,8 @@ export class DirectMessagesService {
       JOIN "User" s ON s.id = m."senderId"
       JOIN "User" r ON r.id = m."receiverId"
       LEFT JOIN unread u ON u.peer_id = l.peer_id
+      LEFT JOIN hidden h ON h."peerId" = l.peer_id
+      WHERE h."hiddenAt" IS NULL OR m."createdAt" > h."hiddenAt"
       ORDER BY m."createdAt" DESC
     `);
 
@@ -341,5 +348,20 @@ export class DirectMessagesService {
         isRead: false,
       },
     });
+  }
+
+  /**
+   * "Delete for me" — hide this DM conversation from the caller's Recent list.
+   * Uses upsert so calling twice just refreshes the cutoff (idempotent). If
+   * the peer sends a new message after this, the row automatically returns to
+   * Recent via the getConversations SQL filter.
+   */
+  async hideConversation(userId: string, peerId: string) {
+    await this.prisma.hiddenConversation.upsert({
+      where: { userId_peerId: { userId, peerId } },
+      update: { hiddenAt: new Date() },
+      create: { userId, peerId },
+    });
+    return { ok: true };
   }
 }
