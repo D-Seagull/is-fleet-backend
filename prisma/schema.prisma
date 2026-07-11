@@ -570,6 +570,9 @@ model GroupMessage {
   groupId           String
   senderId          String
   content           String
+  /// System-authored notices ("added X", "removed X"). The frontend renders
+  /// these as small, centred, muted text — no bubble, no avatar, no reply.
+  isSystem          Boolean   @default(false)
   createdAt         DateTime  @default(now())
   deletedAt         DateTime?
   editedAt          DateTime?

@@ -282,6 +282,41 @@ export class GroupsService {
       data: { groupId, managerId },
     });
 
+    // Post a lightweight system-style message so the bell + unread badges
+    // pick up the event through the existing unread-summary path. Sent as
+    // the group creator to satisfy the sender FK; text is intentionally
+    // terse. Broadcast is via the standard new_group_message channel so
+    // useGroupUnreadSocketSync invalidates without any new plumbing.
+    const displayName =
+      [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+      user.email ||
+      'user';
+    const welcomeMsg = await this.prisma.groupMessage.create({
+      data: {
+        groupId,
+        senderId: group.createdBy,
+        content: `added ${displayName}`,
+        isSystem: true,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            role: true,
+          },
+        },
+      },
+    });
+    this.gateway.server
+      .to(`group:${groupId}`)
+      .emit('new_group_message', welcomeMsg);
+    this.gateway.server
+      .to(`user:${managerId}`)
+      .emit('new_group_message', welcomeMsg);
+
     // Push a full group row to the new member's personal room so their
     // sidebar picks it up in realtime — otherwise they see nothing until
     // they refresh. Mirrors the group_deleted broadcast on the way out.
@@ -319,9 +354,45 @@ export class GroupsService {
     if (!groupManager)
       throw new NotFoundException('Менеджер не знайдений в групі');
 
+    // Load the group + the user being kicked so we can post a matching
+    // system message ("removed X") before we drop the membership row.
+    const [group, user] = await Promise.all([
+      this.prisma.group.findFirst({ where: { id: groupId } }),
+      this.prisma.user.findFirst({ where: { id: managerId } }),
+    ]);
+
     await this.prisma.groupManager.delete({
       where: { id: groupManager.id },
     });
+
+    if (group && user) {
+      const displayName =
+        [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+        user.email ||
+        'user';
+      const noticeMsg = await this.prisma.groupMessage.create({
+        data: {
+          groupId,
+          senderId: group.createdBy,
+          content: `removed ${displayName}`,
+          isSystem: true,
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              role: true,
+            },
+          },
+        },
+      });
+      this.gateway.server
+        .to(`group:${groupId}`)
+        .emit('new_group_message', noticeMsg);
+    }
     return { message: 'Менеджер видалений з групи' };
   }
 
