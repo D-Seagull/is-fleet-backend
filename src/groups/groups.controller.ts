@@ -77,15 +77,6 @@ export class GroupsController {
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
-  @Post(':id/hide')
-  hideForUser(
-    @Param('id') id: string,
-    @GetUser('id') userId: string,
-  ) {
-    return this.groupsService.hideForUser(id, userId);
-  }
-
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete(':id')
   remove(
     @Param('id') id: string,

@@ -247,9 +247,38 @@ export class GroupsService {
     });
     if (existing) return existing;
 
-    return this.prisma.groupManager.create({
+    const created = await this.prisma.groupManager.create({
       data: { groupId, managerId },
     });
+
+    // Push a full group row to the new member's personal room so their
+    // sidebar picks it up in realtime — otherwise they see nothing until
+    // they refresh. Mirrors the group_deleted broadcast on the way out.
+    const fullGroup = await this.prisma.group.findFirst({
+      where: { id: groupId, deletedAt: null },
+      include: {
+        creator: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        managers: {
+          include: {
+            manager: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, email: true, role: true } },
+          },
+        },
+      },
+    });
+    if (fullGroup) {
+      this.gateway.server.to(`user:${managerId}`).emit('group_added', fullGroup);
+      // Also refresh the existing members so their member counts / avatars
+      // update without a reload.
+      for (const m of fullGroup.managers) {
+        if (m.manager.id !== managerId) {
+          this.gateway.server
+            .to(`user:${m.manager.id}`)
+            .emit('group_member_added', { groupId, manager: m.manager });
+        }
+      }
+    }
+
+    return created;
   }
 
   async removeManager(groupId: string, managerId: string) {
@@ -312,25 +341,4 @@ export class GroupsService {
     });
   }
 
-  /**
-   * Personal "delete for me" for a group in the chat sidebar. Idempotent —
-   * upsert refreshes hiddenAt when called twice. The group and its
-   * membership are left intact; other members are unaffected.
-   */
-  async hideForUser(groupId: string, userId: string) {
-    // Guard: only members can hide (prevents drive-by hides for random ids).
-    const isMember = await this.prisma.groupManager.findFirst({
-      where: { groupId, managerId: userId },
-      select: { id: true },
-    });
-    if (!isMember) {
-      throw new NotFoundException('Група не знайдена');
-    }
-    await this.prisma.hiddenGroup.upsert({
-      where: { userId_groupId: { userId, groupId } },
-      update: { hiddenAt: new Date() },
-      create: { userId, groupId },
-    });
-    return { ok: true };
-  }
 }

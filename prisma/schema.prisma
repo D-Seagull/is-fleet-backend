@@ -107,7 +107,6 @@ model User {
   pushTokens         PushToken[]
   passwordResetTokens PasswordResetToken[]
   hiddenConversations HiddenConversation[] @relation("HiddenConversations")
-  hiddenGroups        HiddenGroup[]        @relation("HiddenGroups")
   groupMessageReads  GroupMessageRead[] @relation("GroupMessageReads")
   messageReactions   MessageReaction[]  @relation("MessageReactions")
 }
@@ -150,21 +149,6 @@ model HiddenConversation {
   user User @relation("HiddenConversations", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, peerId])
-  @@index([userId])
-}
-
-/// Per-user "hide for me" for a Group in the chat sidebar. The group and its
-/// membership stay intact so other members are unaffected; the row disappears
-/// only from this user's list and resurrects when a new message arrives.
-model HiddenGroup {
-  id       String   @id @default(uuid())
-  userId   String
-  groupId  String
-  hiddenAt DateTime @default(now())
-
-  user User @relation("HiddenGroups", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, groupId])
   @@index([userId])
 }
 
