@@ -63,10 +63,12 @@ export class GroupsService {
       file,
       'group-avatars',
     );
-    return this.prisma.group.update({
+    const updated = await this.prisma.group.update({
       where: { id: groupId },
       data: { avatar: url, avatarPublicId: storagePath },
     });
+    await this.broadcastGroupUpdate(groupId);
+    return updated;
   }
 
   async deleteAvatar(groupId: string, userId: string, role: string) {
@@ -78,10 +80,37 @@ export class GroupsService {
     if (current?.avatarPublicId) {
       await this.storage.deleteFile(current.avatarPublicId);
     }
-    return this.prisma.group.update({
+    const updated = await this.prisma.group.update({
       where: { id: groupId },
       data: { avatar: null, avatarPublicId: null },
     });
+    await this.broadcastGroupUpdate(groupId);
+    return updated;
+  }
+
+  /**
+   * Push the freshly-loaded group row to every member so their sidebar row
+   * (name / avatar / member count) refreshes without a reload. Used by
+   * update / uploadAvatar / deleteAvatar — all mutations that change what
+   * the sidebar renders.
+   */
+  private async broadcastGroupUpdate(groupId: string) {
+    const full = await this.prisma.group.findFirst({
+      where: { id: groupId, deletedAt: null },
+      include: {
+        creator: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        managers: {
+          include: {
+            manager: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, email: true, role: true } },
+          },
+        },
+      },
+    });
+    if (!full) return;
+    this.gateway.server.to(`group:${groupId}`).emit('group_updated', full);
+    for (const m of full.managers) {
+      this.gateway.server.to(`user:${m.manager.id}`).emit('group_updated', full);
+    }
   }
 
   async create(
@@ -128,10 +157,12 @@ export class GroupsService {
       throw new ForbiddenException('Можна редагувати тільки свої групи');
     }
 
-    return this.prisma.group.update({
+    const updated = await this.prisma.group.update({
       where: { id },
       data: { name: dto.name },
     });
+    await this.broadcastGroupUpdate(id);
+    return updated;
   }
 
   async remove(id: string, userId: string, _role: string) {
