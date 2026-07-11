@@ -14,14 +14,32 @@ import { ReactionsService } from '../reactions/reactions.service';
 import { fullName } from '../common/utils/full-name';
 
 const tripInclude = {
-  driver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true } },
+  driver: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      avatar: true,
+      status: true,
+      statusUntil: true,
+      phone: true,
+    },
+  },
   truck: { select: { id: true, plate: true } },
-  manager: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+  manager: {
+    select: { id: true, firstName: true, lastName: true, avatar: true },
+  },
   stops: { orderBy: { order: 'asc' as const } },
   documents: true,
 };
 
-const ACTIVE_STATUSES = ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'] as const;
+const ACTIVE_STATUSES = [
+  'ASSIGNED',
+  'ACCEPTED',
+  'ON_WAY',
+  'ON_SITE',
+  'LOADED',
+] as const;
 
 @Injectable()
 export class TripsService {
@@ -147,7 +165,10 @@ export class TripsService {
     });
     if (!trip) throw new NotFoundException('Рейс не знайдений');
 
-    const sessionIds = await this.sessions.getVisibleSessionIds(tripId, requester);
+    const sessionIds = await this.sessions.getVisibleSessionIds(
+      tripId,
+      requester,
+    );
     if (sessionIds.length === 0) return [];
 
     const take = opts.take ?? 50;
@@ -166,13 +187,30 @@ export class TripsService {
           ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
         },
         include: {
-          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              status: true,
+              statusUntil: true,
+              role: true,
+            },
+          },
           replyTo: {
             select: {
               id: true,
               content: true,
               deletedAt: true,
-              sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+              sender: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  avatar: true,
+                },
+              },
             },
           },
         },
@@ -416,7 +454,11 @@ export class TripsService {
     return { message: `Trip ${trip.title} deleted!` };
   }
 
-  async broadcastToMyTrucks(userId: string, companyId: string, content: string) {
+  async broadcastToMyTrucks(
+    userId: string,
+    companyId: string,
+    content: string,
+  ) {
     const trips = await this.prisma.trip.findMany({
       where: {
         companyId,
@@ -436,7 +478,19 @@ export class TripsService {
             senderId: userId,
             content,
           },
-          include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } } },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+                status: true,
+                statusUntil: true,
+                role: true,
+              },
+            },
+          },
         });
         this.gateway.server.to(trip.id).emit('newMessage', message);
 
