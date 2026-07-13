@@ -1,12 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { AdminInterceptor } from './common/interceptors/admin.interceptor';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { corsOrigin } from './common/cors-origin';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin: corsOrigin,
@@ -34,6 +35,9 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document);
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
-  console.log(`Сервер летить на ${port}`);
+  logger.log(`Сервер летить на ${port}`);
 }
-bootstrap().catch(console.error);
+bootstrap().catch((err) => {
+  new Logger('Bootstrap').error('Bootstrap failed', err);
+  process.exit(1);
+});

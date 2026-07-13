@@ -178,7 +178,6 @@ export class AnnouncementsService {
     let recipients: { id: string }[] = [];
 
     if (announcement.groupId && announcement.group) {
-      console.log('group type:', announcement.group.type);
       if (announcement.group.type === 'TRUCKS') {
         recipients = announcement.group.trucks
           .filter((t) => t.truck.currentDriverId)
@@ -193,19 +192,13 @@ export class AnnouncementsService {
       if (announcement.target === 'ALL_DRIVERS') where.role = 'DRIVER';
       if (announcement.target === 'ALL_MANAGERS') where.role = 'MANAGER';
 
-      console.log('target:', announcement.target);
-      console.log('where:', where);
-
       recipients = await this.prisma.user.findMany({
         where,
         select: { id: true },
       });
     }
 
-    console.log('recipients:', recipients);
-
     for (const recipient of recipients) {
-      console.log('emitting to:', recipient.id);
       this.messagesGateway.server.to(recipient.id).emit('announcementUpdated', {
         id: updated.id,
         title: updated.title,

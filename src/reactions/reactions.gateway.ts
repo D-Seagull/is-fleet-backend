@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server } from 'socket.io';
 import type { ReactionRow, ReactionTarget } from './reactions.service';
@@ -7,6 +8,8 @@ import { corsOrigin } from 'src/common/cors-origin';
 export class ReactionsGateway {
   @WebSocketServer()
   server: Server;
+
+  private readonly logger = new Logger(ReactionsGateway.name);
 
   /**
    * Broadcast a reaction change to the relevant rooms. Caller picks the
@@ -23,8 +26,8 @@ export class ReactionsGateway {
     for (const room of rooms) {
       const clients = this.server.sockets.adapter.rooms.get(room);
       const size = clients?.size ?? 0;
-      console.log(
-        `[reactions] emit ${targetType} ${targetId} → room=${room} clients=${size} reactions=${reactions.length}`,
+      this.logger.debug(
+        `emit ${targetType} ${targetId} → room=${room} clients=${size} reactions=${reactions.length}`,
       );
       this.server.to(room).emit('reaction_changed', payload);
     }

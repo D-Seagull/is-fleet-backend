@@ -6,7 +6,7 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Inject, forwardRef } from '@nestjs/common';
+import { Inject, Logger, forwardRef } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -24,6 +24,8 @@ import { corsOrigin } from 'src/common/cors-origin';
 export class MessagesGateway {
   @WebSocketServer()
   server: Server;
+
+  private readonly logger = new Logger(MessagesGateway.name);
 
   constructor(
     @Inject(forwardRef(() => MessagesService))
@@ -103,16 +105,20 @@ export class MessagesGateway {
           });
         }
       }
-      console.log(`[ws] ${client.id} → room:${userId} company:${companyId ?? 'n/a'}`);
+      this.logger.log(
+        `${client.id} → room:${userId} company:${companyId ?? 'n/a'}`,
+      );
     } catch {
-      console.log(`[ws] ${client.id} connected without valid token`);
+      this.logger.warn(`${client.id} connected without valid token`);
     }
   }
 
   async handleDisconnect(client: Socket) {
     const userId = (client.data as { userId?: string }).userId;
     const companyId = (client.data as { companyId?: string }).companyId;
-    console.log(`Client disconnected: ${client.id} user:${userId ?? 'n/a'}`);
+    this.logger.log(
+      `Client disconnected: ${client.id} user:${userId ?? 'n/a'}`,
+    );
     if (!userId || !companyId) return;
 
     // Socket.io removes the socket from rooms BEFORE handleDisconnect
@@ -161,7 +167,7 @@ export class MessagesGateway {
     @MessageBody() body: JoinTripDto,
   ) {
     await client.join(body.tripId);
-    console.log(`[ws] ${client.id} joined room:${body.tripId}`);
+    this.logger.log(`${client.id} joined room:${body.tripId}`);
   }
 
   @SubscribeMessage('sendMessage')
@@ -171,9 +177,13 @@ export class MessagesGateway {
   ) {
     // Always use the authenticated userId from the JWT — never trust client-sent senderId
     const senderId = client.data.userId as string | undefined;
-    console.log('[ws] sendMessage from', client.id, 'senderId=', senderId, 'dto=', dto);
+    this.logger.debug(
+      `sendMessage from ${client.id} senderId=${senderId} tripId=${dto.tripId}`,
+    );
     if (!senderId) {
-      console.warn('[ws] sendMessage REJECTED — no senderId on socket', client.id);
+      this.logger.warn(
+        `sendMessage REJECTED — no senderId on socket ${client.id}`,
+      );
       return;
     }
 
@@ -213,10 +223,12 @@ export class MessagesGateway {
       if (managerId && managerId !== senderId) {
         this.server.to(managerId).emit('tripUnreadChanged', signal);
       }
-      console.log('[ws] newMessage emitted to room', dto.tripId, 'id=', message.id);
+      this.logger.debug(
+        `newMessage emitted to room ${dto.tripId} id=${message.id}`,
+      );
       return payload;
     } catch (e) {
-      console.error('[ws] sendMessage FAILED', e);
+      this.logger.error('sendMessage FAILED', e as Error);
       throw e;
     }
   }

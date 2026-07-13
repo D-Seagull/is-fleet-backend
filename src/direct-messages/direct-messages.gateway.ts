@@ -8,6 +8,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DirectMessagesService } from './direct-messages.service';
 import { GroupMessagesService } from 'src/group-messages/group-messages.service';
@@ -20,6 +21,8 @@ export class DirectMessagesGateway
 {
   @WebSocketServer()
   server: Server;
+
+  private readonly logger = new Logger(DirectMessagesGateway.name);
 
   constructor(
     private service: DirectMessagesService,
@@ -44,16 +47,18 @@ export class DirectMessagesGateway
       if (!client.data.userId) client.data.userId = payload.sub;
       // Sync join — `void` so we don't block event delivery while waiting.
       void client.join(`user:${payload.sub}`);
-      console.log(`[dm-gateway] user ${payload.sub} joined user:${payload.sub}`);
+      this.logger.log(`user ${payload.sub} joined user:${payload.sub}`);
     } catch (e) {
       // Soft fail: log but do NOT disconnect — the socket may still be valid
       // for trip-chat (MessagesGateway). Disconnecting here kills trip chat too.
-      console.log(`[dm-gateway] auth failed for ${client.id}: ${(e as Error).message}`);
+      this.logger.warn(
+        `auth failed for ${client.id}: ${(e as Error).message}`,
+      );
     }
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`❌ User ${client.data.userId} disconnected`);
+    this.logger.log(`user ${client.data.userId} disconnected`);
   }
 
   @SubscribeMessage('send_direct_message')
@@ -69,8 +74,8 @@ export class DirectMessagesGateway
   ) {
     const senderId = client.data.userId as string | undefined;
     if (!senderId) {
-      console.warn(
-        `[dm-gateway] send_direct_message rejected — no senderId on socket ${client.id}. Client likely connected without a valid JWT.`,
+      this.logger.warn(
+        `send_direct_message rejected — no senderId on socket ${client.id}. Client likely connected without a valid JWT.`,
       );
       return { error: 'unauthenticated' };
     }
@@ -114,9 +119,10 @@ export class DirectMessagesGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { senderId: string },
   ) {
-    console.log('mark_as_read received:', data);
+    this.logger.debug(
+      `mark_as_read received: senderId=${data.senderId} by user:${client.data.userId}`,
+    );
     await this.service.markAsRead(client.data.userId as string, data.senderId);
-    console.log('marked as read, notifying:', data.senderId);
 
     this.server
       .to(`user:${data.senderId}`)
@@ -126,8 +132,6 @@ export class DirectMessagesGateway
     this.server
       .to(`user:${client.data.userId}`)
       .emit('messages_read', { readBy: client.data.userId });
-
-    console.log('messages_read emitted to:', `user:${data.senderId}`);
   }
   // ─── Group messages ───────────────────────────────────────────────────────
   @SubscribeMessage('join_group')
@@ -157,13 +161,13 @@ export class DirectMessagesGateway
       replyToDocumentId?: string | null;
     },
   ) {
-    console.log(
-      `💬 send_group_message from ${client.data.userId} to group ${data.groupId}`,
+    this.logger.debug(
+      `send_group_message from ${client.data.userId} to group ${data.groupId}`,
     );
     const senderId = client.data.userId as string | undefined;
     if (!senderId) {
-      console.warn(
-        `[dm-gateway] send_group_message rejected — no senderId on socket ${client.id}.`,
+      this.logger.warn(
+        `send_group_message rejected — no senderId on socket ${client.id}.`,
       );
       return { error: 'unauthenticated' };
     }
