@@ -34,6 +34,7 @@
     "@nestjs/platform-socket.io": "^11.1.14",
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/swagger": "^11.2.6",
+    "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.14",
     "@prisma/client": "^5.22.0",
     "@supabase/supabase-js": "^2.104.1",
