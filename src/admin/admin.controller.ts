@@ -12,6 +12,7 @@ import { CreateCompanyDto } from './dto/create-company.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('admin')
@@ -29,8 +30,23 @@ export class AdminController {
 
   @Roles('ADMIN')
   @Get('companies')
-  findAllCompanies() {
-    return this.adminService.findAllCompanies();
+  findAllCompanies(@GetUser('id') adminId: string) {
+    return this.adminService.findAllCompanies(adminId);
+  }
+
+  @Roles('ADMIN')
+  @Get('stats')
+  getStats(@GetUser('id') adminId: string) {
+    return this.adminService.getStats(adminId);
+  }
+
+  @Roles('ADMIN')
+  @Get('companies/:id')
+  findCompanyById(
+    @Param('id') id: string,
+    @GetUser('id') adminId: string,
+  ) {
+    return this.adminService.findCompanyById(id, adminId);
   }
 
   @Roles('ADMIN')
