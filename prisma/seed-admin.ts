@@ -52,7 +52,8 @@ async function main() {
     }
 
     const nameInput =
-      process.env.ADMIN_NAME || (await ask(rl, 'Admin name (first [last])', 'Admin'));
+      process.env.ADMIN_NAME ||
+      (await ask(rl, 'Admin name (first [last])', 'Admin'));
     const nameParts = nameInput.trim().split(/\s+/).filter(Boolean);
     const firstName = nameParts[0] || 'Admin';
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
@@ -83,7 +84,14 @@ async function main() {
         isActive: true,
         companyId: company.id,
       },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true, companyId: true },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        companyId: true,
+      },
     });
 
     console.log('\n✔ Admin ready');

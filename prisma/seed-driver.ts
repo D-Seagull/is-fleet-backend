@@ -42,7 +42,9 @@ async function pickCompany(name: string | null) {
     return c;
   }
   // Fall back to the first / only company. Useful for one-company test setups.
-  const first = await prisma.company.findFirst({ orderBy: { createdAt: 'asc' } });
+  const first = await prisma.company.findFirst({
+    orderBy: { createdAt: 'asc' },
+  });
   if (!first) {
     throw new Error(
       'No company exists yet. Run `npm run seed:admin` first, or pass COMPANY_NAME.',
