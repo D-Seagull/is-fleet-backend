@@ -327,6 +327,7 @@ export class UsersService {
       lastName?: string | null;
       phone?: string;
       language?: 'UK' | 'EN' | 'PL' | 'LT' | 'UZ' | 'KZ' | 'HI' | 'RU';
+      uiLocale?: 'UK' | 'EN' | 'PL' | 'LT' | 'DE' | 'RU';
       status?: 'ONLINE' | 'BUSY' | 'AWAY' | 'SLEEP' | 'VACATION';
       statusUntil?: string | null;
     },
@@ -365,6 +366,7 @@ export class UsersService {
             : {}),
           ...(phone !== undefined ? { phone } : {}),
           ...(dto.language !== undefined ? { language: dto.language } : {}),
+          ...(dto.uiLocale !== undefined ? { uiLocale: dto.uiLocale } : {}),
           ...statusPatch,
         },
         select: {
@@ -376,6 +378,7 @@ export class UsersService {
           avatar: true,
           role: true,
           language: true,
+          uiLocale: true,
           timezone: true,
           status: true,
           statusUntil: true,

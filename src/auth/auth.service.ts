@@ -82,6 +82,7 @@ export class AuthService {
       user.companyId,
       user.firstName,
       user.lastName,
+      user.uiLocale,
     );
   }
 
@@ -116,6 +117,7 @@ export class AuthService {
         user.companyId,
         user.firstName,
         user.lastName,
+        user.uiLocale,
       );
     }
 
@@ -164,6 +166,7 @@ export class AuthService {
       user.companyId,
       user.firstName,
       user.lastName,
+      user.uiLocale,
     );
   }
 
@@ -182,6 +185,7 @@ export class AuthService {
       user.companyId,
       user.firstName,
       user.lastName,
+      user.uiLocale,
     );
   }
   private signToken(
@@ -190,6 +194,7 @@ export class AuthService {
     companyId: string,
     firstName: string,
     lastName: string | null,
+    uiLocale: 'UK' | 'EN' | 'PL' | 'LT' | 'DE' | 'RU',
   ) {
     const payload = { sub: userId, role, companyId };
     return {
@@ -200,6 +205,7 @@ export class AuthService {
         companyId,
         firstName,
         lastName,
+        uiLocale,
       },
     };
   }
@@ -215,6 +221,7 @@ export class AuthService {
         companyId: true,
         email: true,
         language: true,
+        uiLocale: true,
         timezone: true,
         avatar: true, status: true, statusUntil: true,
         // For driver routing: which truck am I on, who is my manager.
@@ -395,6 +402,7 @@ export class AuthService {
       otp.user.companyId,
       otp.user.firstName,
       otp.user.lastName,
+      otp.user.uiLocale,
     );
   }
 

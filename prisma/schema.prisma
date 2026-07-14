@@ -54,6 +54,11 @@ model User {
   avatarPublicId String?
   role               Role
   language           Language            @default(EN)
+  /// UI locale for the web / driver-app rendering. Independent of
+  /// `language`, which drives the chat-message auto-translation for this
+  /// user. Kept in a smaller enum so the picker only ever shows locales we
+  /// actually translate the UI into.
+  uiLocale           UILocale            @default(UK)
   timezone           String?             // IANA tz, e.g. "Europe/Warsaw"
   /// Self-set presence status. Combined with socket presence on read:
   /// no active socket -> displayed as OFFLINE regardless. ONLINE while a
@@ -175,6 +180,18 @@ enum Language {
   UZ
   KZ
   HI
+  RU
+}
+
+/// Locales the UI is actually translated into. Kept separate from
+/// `Language` (which is the chat auto-translation preference) so this
+/// list can grow independently as translations are added.
+enum UILocale {
+  UK
+  EN
+  PL
+  LT
+  DE
   RU
 }
 

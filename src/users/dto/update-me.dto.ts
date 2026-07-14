@@ -6,7 +6,7 @@ import {
   Matches,
   MinLength,
 } from 'class-validator';
-import { Language, UserStatus } from '@prisma/client';
+import { Language, UILocale, UserStatus } from '@prisma/client';
 
 /**
  * Self-update DTO — what a user is allowed to change on their own row via
@@ -33,6 +33,11 @@ export class UpdateMeDto {
   @IsOptional()
   @IsEnum(Language)
   language?: Language;
+
+  /** UI locale preference — which messages/*.json the app renders. */
+  @IsOptional()
+  @IsEnum(UILocale)
+  uiLocale?: UILocale;
 
   @IsOptional()
   @IsEnum(UserStatus)
