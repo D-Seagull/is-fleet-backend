@@ -629,8 +629,11 @@ export class UsersService {
     if (score < 1 || score > 5) {
       throw new BadRequestException('Score must be between 1 and 5');
     }
+    // A driver's "manager" on the truck screen is whoever is assigned to
+    // their truck — that can be a MANAGER or a TEAMLEAD acting as dispatcher.
+    // Accept both so the truck's manager is always rateable.
     const manager = await this.prisma.user.findFirst({
-      where: { id: managerId, role: 'MANAGER', companyId },
+      where: { id: managerId, role: { in: ['MANAGER', 'TEAMLEAD'] }, companyId },
       select: { id: true },
     });
     if (!manager) throw new NotFoundException('Manager not found');
