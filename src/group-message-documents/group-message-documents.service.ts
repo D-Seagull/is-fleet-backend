@@ -35,9 +35,19 @@ export class GroupMessageDocumentsService {
     if (!group) throw new NotFoundException('Групу не знайдено');
 
     // Тільки учасник групи (або її творець) може завантажувати документи.
-    const isMember =
+    // For the company-wide DRIVERS group membership is implicit — anyone in
+    // the same company (i.e. its drivers) counts, since there are no
+    // GroupManager/GroupTruck rows tying them to it.
+    let isMember =
       group.createdBy === uploadedBy ||
       group.managers.some((m) => m.managerId === uploadedBy);
+    if (!isMember && group.type === 'DRIVERS') {
+      const uploader = await this.prisma.user.findUnique({
+        where: { id: uploadedBy },
+        select: { companyId: true },
+      });
+      isMember = !!uploader && uploader.companyId === group.companyId;
+    }
     if (!isMember) {
       throw new ForbiddenException('Ви не є учасником цієї групи');
     }

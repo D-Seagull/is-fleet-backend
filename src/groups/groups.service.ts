@@ -443,4 +443,64 @@ export class GroupsService {
     });
   }
 
+  // ─── Company-wide drivers group ────────────────────────────────────────────
+
+  /**
+   * The single default group that holds every driver in a company. Membership
+   * is implicit (all DRIVER users of the company) — there's no GroupDriver
+   * table; we key off `type = DRIVERS` + companyId. Lazily created the first
+   * time a driver opens the Groups tab.
+   *
+   * A Group needs a non-null `createdBy`, so we attach the earliest
+   * teamlead / manager as the nominal owner (drivers don't own it, and it's
+   * never surfaced as an editable group anywhere).
+   */
+  async getOrCreateCompanyDriversGroup(companyId: string) {
+    const existing = await this.prisma.group.findFirst({
+      where: { companyId, type: 'DRIVERS', deletedAt: null },
+    });
+    if (existing) return existing;
+
+    const owner = await this.prisma.user.findFirst({
+      where: { companyId, role: { in: ['TEAMLEAD', 'MANAGER', 'ADMIN'] } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!owner) {
+      throw new NotFoundException(
+        'Немає менеджера/тімліда, щоб створити групу водіїв',
+      );
+    }
+
+    return this.prisma.group.create({
+      data: {
+        name: 'All Drivers',
+        type: 'DRIVERS',
+        companyId,
+        createdBy: owner.id,
+      },
+    });
+  }
+
+  /**
+   * Driver-facing group list. Today that's just the one company-wide drivers
+   * group, returned as an array so the client list can grow later without a
+   * shape change. `memberCount` counts active drivers in the company.
+   */
+  async findDriverGroups(companyId: string) {
+    const group = await this.getOrCreateCompanyDriversGroup(companyId);
+    const memberCount = await this.prisma.user.count({
+      where: { companyId, role: 'DRIVER', isActive: true },
+    });
+    return [
+      {
+        id: group.id,
+        name: group.name,
+        avatar: group.avatar,
+        type: group.type,
+        memberCount,
+      },
+    ];
+  }
+
 }

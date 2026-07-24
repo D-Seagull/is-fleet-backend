@@ -33,7 +33,7 @@ export class GroupMessageDocumentsController {
     private prisma: PrismaService,
   ) {}
 
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('upload-many')
   @UseInterceptors(FilesInterceptor('files', 10, { storage: memoryStorage() }))
   uploadMany(
@@ -54,31 +54,31 @@ export class GroupMessageDocumentsController {
     );
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('group/:groupId')
   findByGroup(@Param('groupId') groupId: string) {
     return this.service.findByGroup(groupId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/view')
   view(@Param('id') id: string) {
     return this.service.view(id);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/download')
   download(@Param('id') id: string) {
     return this.service.download(id);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
   remove(@Param('id') id: string, @GetUser('id') userId: string) {
     return this.service.remove(id, userId);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post(':docId/react')
   async react(
     @Param('docId') docId: string,

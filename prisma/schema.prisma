@@ -558,6 +558,7 @@ model OtpCode {
 enum GroupType {
   TRUCKS
   MANAGERS
+  DRIVERS
 }
 
 model Group {
