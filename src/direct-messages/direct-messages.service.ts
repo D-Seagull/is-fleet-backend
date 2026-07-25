@@ -154,6 +154,10 @@ export class DirectMessagesService {
         status: string | null;
         statusUntil: string | null;
         role: string;
+        phone: string | null;
+        // Plate of the truck this peer is currently assigned to (drivers only;
+        // null otherwise) — lets the chat list search by truck.
+        truckPlate: string | null;
       };
       last_message: {
         id: string;
@@ -206,7 +210,9 @@ export class DirectMessagesService {
           'avatar', peer.avatar,
           'status', peer.status,
           'statusUntil', peer."statusUntil",
-          'role', peer.role
+          'role', peer.role,
+          'phone', peer.phone,
+          'truckPlate', pt.plate
         ) AS user,
         json_build_object(
           'id', m.id,
@@ -234,6 +240,7 @@ export class DirectMessagesService {
       FROM latest l
       JOIN "DirectMessage" m ON m.id = l.id
       JOIN "User" peer ON peer.id = l.peer_id
+      LEFT JOIN "Truck" pt ON pt."currentDriverId" = peer.id
       JOIN "User" s ON s.id = m."senderId"
       JOIN "User" r ON r.id = m."receiverId"
       LEFT JOIN unread u ON u.peer_id = l.peer_id
