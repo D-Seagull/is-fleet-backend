@@ -191,8 +191,9 @@ export class GroupMessagesService {
   }
 
   /**
-   * Mark every message in the group that the user hasn't read yet as read.
-   * Uses createMany + skipDuplicates so re-marking is a no-op.
+   * Mark every message AND document in the group that the user hasn't read
+   * yet as read. Messages use per-user GroupMessageRead rows; documents use
+   * a single isRead flag (so the first member to open clears it for all).
    */
   async markAsRead(userId: string, groupId: string) {
     const unread = await this.prisma.groupMessage.findMany({
@@ -203,12 +204,21 @@ export class GroupMessagesService {
       },
       select: { id: true },
     });
-    if (unread.length === 0) return { count: 0 };
-    await this.prisma.groupMessageRead.createMany({
-      data: unread.map((m) => ({ messageId: m.id, userId })),
-      skipDuplicates: true,
-    });
-    return { count: unread.length };
+
+    const [, docs] = await Promise.all([
+      unread.length > 0
+        ? this.prisma.groupMessageRead.createMany({
+            data: unread.map((m) => ({ messageId: m.id, userId })),
+            skipDuplicates: true,
+          })
+        : Promise.resolve(null),
+      this.prisma.groupMessageDocument.updateMany({
+        where: { groupId, uploadedBy: { not: userId }, isRead: false },
+        data: { isRead: true },
+      }),
+    ]);
+
+    return { count: unread.length + docs.count };
   }
 
   /**

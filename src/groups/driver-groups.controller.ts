@@ -17,7 +17,10 @@ export class DriverGroupsController {
   constructor(private groups: GroupsService) {}
 
   @Get()
-  findMine(@GetUser('companyId') companyId: string) {
-    return this.groups.findDriverGroups(companyId);
+  findMine(
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+  ) {
+    return this.groups.findDriverGroups(companyId, userId);
   }
 }

@@ -197,6 +197,14 @@ export class DirectMessagesService {
         WHERE "receiverId" = ${userId} AND "isRead" = false
         GROUP BY "senderId"
       ),
+      doc_unread AS (
+        SELECT "uploadedBy" AS peer_id, COUNT(*)::int AS cnt
+        FROM "DirectMessageDocument"
+        WHERE "otherUserId" = ${userId}
+          AND "isRead" = false
+          AND "deletedAt" IS NULL
+        GROUP BY "uploadedBy"
+      ),
       hidden AS (
         SELECT "peerId", "hiddenAt"
         FROM "HiddenConversation"
@@ -236,7 +244,7 @@ export class DirectMessagesService {
             'role', r.role
           )
         ) AS last_message,
-        COALESCE(u.unread_count, 0) AS unread_count
+        COALESCE(u.unread_count, 0) + COALESCE(du.cnt, 0) AS unread_count
       FROM latest l
       JOIN "DirectMessage" m ON m.id = l.id
       JOIN "User" peer ON peer.id = l.peer_id
@@ -244,6 +252,7 @@ export class DirectMessagesService {
       JOIN "User" s ON s.id = m."senderId"
       JOIN "User" r ON r.id = m."receiverId"
       LEFT JOIN unread u ON u.peer_id = l.peer_id
+      LEFT JOIN doc_unread du ON du.peer_id = l.peer_id
       LEFT JOIN hidden h ON h."peerId" = l.peer_id
       WHERE h."hiddenAt" IS NULL OR m."createdAt" > h."hiddenAt"
       ORDER BY m."createdAt" DESC

@@ -487,11 +487,31 @@ export class GroupsService {
    * group, returned as an array so the client list can grow later without a
    * shape change. `memberCount` counts active drivers in the company.
    */
-  async findDriverGroups(companyId: string) {
+  async findDriverGroups(companyId: string, userId: string) {
     const group = await this.getOrCreateCompanyDriversGroup(companyId);
-    const memberCount = await this.prisma.user.count({
-      where: { companyId, role: 'DRIVER', isActive: true },
-    });
+    const [memberCount, msgUnread, docUnread] = await Promise.all([
+      this.prisma.user.count({
+        where: { companyId, role: 'DRIVER', isActive: true },
+      }),
+      // Same filter markAsRead uses, so opening the group clears this.
+      this.prisma.groupMessage.count({
+        where: {
+          groupId: group.id,
+          senderId: { not: userId },
+          reads: { none: { userId } },
+        },
+      }),
+      // Document attachments count toward unread too. GroupMessageDocument
+      // has a single isRead flag (cleared when a member opens the group).
+      this.prisma.groupMessageDocument.count({
+        where: {
+          groupId: group.id,
+          uploadedBy: { not: userId },
+          isRead: false,
+          deletedAt: null,
+        },
+      }),
+    ]);
     return [
       {
         id: group.id,
@@ -499,6 +519,7 @@ export class GroupsService {
         avatar: group.avatar,
         type: group.type,
         memberCount,
+        unreadCount: msgUnread + docUnread,
       },
     ];
   }
