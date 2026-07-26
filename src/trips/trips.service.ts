@@ -213,6 +213,17 @@ export class TripsService {
               },
             },
           },
+          replyToDocument: {
+            select: {
+              id: true,
+              fileName: true,
+              fileType: true,
+              deletedAt: true,
+              uploader: {
+                select: { id: true, firstName: true, lastName: true, avatar: true },
+              },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take,
