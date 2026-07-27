@@ -215,7 +215,17 @@ export class DocumentsService {
       where: { trip: { truckId } },
       include: {
         uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        trip: { select: { id: true, title: true, orderNumber: true } },
+        // createdAt + stop addresses let the driver Documents screen search
+        // by trip date and by postcode (postcode lives inside the address).
+        trip: {
+          select: {
+            id: true,
+            title: true,
+            orderNumber: true,
+            createdAt: true,
+            stops: { select: { address: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
