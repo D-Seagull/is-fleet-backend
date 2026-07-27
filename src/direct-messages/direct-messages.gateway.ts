@@ -185,11 +185,15 @@ export class DirectMessagesGateway
     const group = await this.prisma.group.findUnique({
       where: { id: data.groupId },
       select: {
+        type: true,
         createdBy: true,
         managers: { select: { managerId: true } },
       },
     });
-    if (group) {
+    // The company-wide DRIVERS group's `createdBy` is a nominal manager owner
+    // (drivers are members implicitly) — don't ping managers for driver
+    // chatter. Drivers get their group unread via the driver-groups fetch.
+    if (group && group.type !== 'DRIVERS') {
       const memberIds = new Set<string>([
         group.createdBy,
         ...group.managers.map((m) => m.managerId),

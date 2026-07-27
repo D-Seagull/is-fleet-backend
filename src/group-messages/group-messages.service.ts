@@ -244,10 +244,13 @@ export class GroupMessagesService {
       WITH user_groups AS (
         SELECT g.id, g.name
         FROM "Group" g
-        WHERE g."createdBy" = ${userId}
+        WHERE (g."createdBy" = ${userId}
            OR g.id IN (
              SELECT "groupId" FROM "GroupManager" WHERE "managerId" = ${userId}
-           )
+           ))
+          -- The company-wide DRIVERS group lists a manager as its nominal
+          -- creator, but manager bells must not light up for driver chatter.
+          AND g.type <> 'DRIVERS'
       ),
       unread AS (
         SELECT gm.id, gm."groupId", gm."senderId", gm.content, gm."createdAt"
