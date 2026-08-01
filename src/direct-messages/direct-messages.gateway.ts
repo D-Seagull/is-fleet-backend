@@ -48,6 +48,43 @@ export class DirectMessagesGateway
       // Sync join — `void` so we don't block event delivery while waiting.
       void client.join(`user:${payload.sub}`);
       this.logger.log(`user ${payload.sub} joined user:${payload.sub}`);
+
+      // Join every group room the user belongs to, so `new_group_message`
+      // reaches them app-wide (powers the global notification sound) — not
+      // only while the group chat is open.
+      const role = payload.role as string | undefined;
+      const companyId = payload.companyId as string | undefined;
+      void (async () => {
+        try {
+          let ids: string[] = [];
+          if (role === 'DRIVER' && companyId) {
+            const g = await this.prisma.group.findFirst({
+              where: { companyId, type: 'DRIVERS', deletedAt: null },
+              select: { id: true },
+            });
+            if (g) ids = [g.id];
+          } else if (companyId) {
+            const gs = await this.prisma.group.findMany({
+              where: {
+                companyId,
+                type: 'MANAGERS',
+                deletedAt: null,
+                OR: [
+                  { createdBy: payload.sub },
+                  { managers: { some: { managerId: payload.sub } } },
+                ],
+              },
+              select: { id: true },
+            });
+            ids = gs.map((g) => g.id);
+          }
+          for (const id of ids) await client.join(`group:${id}`);
+        } catch (err) {
+          this.logger.warn(
+            `group room auto-join failed for ${payload.sub}: ${(err as Error).message}`,
+          );
+        }
+      })();
     } catch (e) {
       // Soft fail: log but do NOT disconnect — the socket may still be valid
       // for trip-chat (MessagesGateway). Disconnecting here kills trip chat too.
