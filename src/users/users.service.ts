@@ -18,6 +18,7 @@ import { normalizePhone as toCanonicalPhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
 import { fullName } from 'src/common/utils/full-name';
+import { t } from 'src/i18n/i18n';
 
 /** Same as shared util but throws 400 — used by create flows. */
 function requireValidPhone(input: string): string {
@@ -297,15 +298,20 @@ export class UsersService {
       this.gateway.server.to(id).emit('truckChanged', payload);
 
       if (dto.truckId && assignedTruckPlate) {
-        await this.push.sendToUsers([id], {
-          title: 'Призначення вантажівки',
-          body: `Вас призначено на ${assignedTruckPlate}`,
-          data: {
-            type: 'TRUCK_REASSIGNED',
-            truckId: dto.truckId,
-            plate: assignedTruckPlate,
+        await this.push.sendLocalizedToUsers(
+          [id],
+          (lang) => ({
+            title: t(lang, 'push.truckAssignment'),
+            body: t(lang, 'push.assignedToTruck', { plate: assignedTruckPlate }),
+          }),
+          {
+            data: {
+              type: 'TRUCK_REASSIGNED',
+              truckId: dto.truckId,
+              plate: assignedTruckPlate,
+            },
           },
-        });
+        );
       }
     }
 

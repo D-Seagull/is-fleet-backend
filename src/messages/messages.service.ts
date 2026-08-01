@@ -13,6 +13,7 @@ import { PushService } from '../push/push.service';
 import { Inject, forwardRef } from '@nestjs/common';
 import { MessagesGateway } from './messages.gateway';
 import { fullName } from '../common/utils/full-name';
+import { t } from '../i18n/i18n';
 
 @Injectable()
 export class MessagesService {
@@ -104,15 +105,21 @@ export class MessagesService {
       void (async () => {
         const online = await this.gateway.isUserOnline(recipientId);
         if (online) return;
-        await this.push.sendToUsers([recipientId], {
-          title: fullName(message.sender) || 'Нове повідомлення',
-          body: dto.content.slice(0, 200),
-          data: {
-            type: 'MESSAGE',
-            tripId: dto.tripId,
-            messageId: message.id,
+        const senderName = fullName(message.sender);
+        await this.push.sendLocalizedToUsers(
+          [recipientId],
+          (lang) => ({
+            title: senderName || t(lang, 'push.newMessage'),
+            body: dto.content.slice(0, 200),
+          }),
+          {
+            data: {
+              type: 'MESSAGE',
+              tripId: dto.tripId,
+              messageId: message.id,
+            },
           },
-        });
+        );
       })();
     }
 

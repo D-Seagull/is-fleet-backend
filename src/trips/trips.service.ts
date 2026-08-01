@@ -12,6 +12,7 @@ import { TripChatSessionsService } from '../messages/trip-chat-sessions.service'
 import { PushService } from '../push/push.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { fullName } from '../common/utils/full-name';
+import { t } from '../i18n/i18n';
 
 const tripInclude = {
   driver: {
@@ -82,15 +83,20 @@ export class TripsService {
     // mobile app turns "OK" on NEW_TRIP into a status → ACCEPTED transition.
     const loadingStop = trip.stops.find((s) => s.type === 'LOADING');
     const address = loadingStop?.address?.trim();
-    await this.push.sendToUsers([trip.driverId], {
-      title: 'Нове завантаження',
-      body: address ? address : trip.title,
-      data: {
-        type: 'NEW_TRIP',
-        tripId: trip.id,
-        truckId: trip.truckId,
+    await this.push.sendLocalizedToUsers(
+      [trip.driverId],
+      (lang) => ({
+        title: t(lang, 'push.newLoading'),
+        body: address ? address : trip.title,
+      }),
+      {
+        data: {
+          type: 'NEW_TRIP',
+          tripId: trip.id,
+          truckId: trip.truckId,
+        },
       },
-    });
+    );
 
     return trip;
   }
@@ -403,27 +409,39 @@ export class TripsService {
           where: { id: managerId },
           select: { firstName: true, lastName: true, avatar: true },
         }),
-        this.push.sendToUsers([managerId], {
-          title: 'Призначено рейс',
-          body: updated.title,
-          data: {
-            type: 'MANAGER_ASSIGNED_TRIP',
-            tripId: id,
-            truckId: updated.truckId,
+        this.push.sendLocalizedToUsers(
+          [managerId],
+          (lang) => ({
+            title: t(lang, 'push.tripAssigned'),
+            body: updated.title,
+          }),
+          {
+            data: {
+              type: 'MANAGER_ASSIGNED_TRIP',
+              tripId: id,
+              truckId: updated.truckId,
+            },
           },
-        }),
+        ),
       ]);
 
       if (trip.driverId) {
-        await this.push.sendToUsers([trip.driverId], {
-          title: 'Менеджер змінений',
-          body: `Ваш новий менеджер: ${fullName(newManager) || 'без імені'}`,
-          data: {
-            type: 'MANAGER_CHANGED',
-            tripId: id,
-            managerId,
+        await this.push.sendLocalizedToUsers(
+          [trip.driverId],
+          (lang) => ({
+            title: t(lang, 'push.managerChanged'),
+            body: t(lang, 'push.newManager', {
+              name: fullName(newManager) || t(lang, 'push.noName'),
+            }),
+          }),
+          {
+            data: {
+              type: 'MANAGER_CHANGED',
+              tripId: id,
+              managerId,
+            },
           },
-        });
+        );
       }
     }
 
@@ -511,15 +529,21 @@ export class TripsService {
           void (async () => {
             const online = await this.gateway.isUserOnline(trip.driverId);
             if (online) return;
-            await this.push.sendToUsers([trip.driverId], {
-              title: fullName(message.sender) || 'Нове повідомлення',
-              body: content.slice(0, 200),
-              data: {
-                type: 'MESSAGE',
-                tripId: trip.id,
-                messageId: message.id,
+            const senderName = fullName(message.sender);
+            await this.push.sendLocalizedToUsers(
+              [trip.driverId],
+              (lang) => ({
+                title: senderName || t(lang, 'push.newMessage'),
+                body: content.slice(0, 200),
+              }),
+              {
+                data: {
+                  type: 'MESSAGE',
+                  tripId: trip.id,
+                  messageId: message.id,
+                },
               },
-            });
+            );
           })();
         }
         return message;

@@ -24,62 +24,93 @@ export class PushService {
   constructor(private prisma: PrismaService) {}
 
   async sendToUsers(userIds: string[], payload: PushPayload): Promise<void> {
+    await this.sendLocalizedToUsers(
+      userIds,
+      () => ({ title: payload.title, body: payload.body }),
+      {
+        data: payload.data,
+        categoryId: payload.categoryId,
+        sound: payload.sound,
+      },
+    );
+  }
+
+  /**
+   * Like {@link sendToUsers}, but builds the title/body separately for each
+   * recipient from their `User.language`, so every device gets the banner in
+   * its own language. `build(lang)` receives the recipient's language code
+   * (UK/EN/PL/LT/RU…) and returns the localized text — use `t(lang, …)`.
+   */
+  async sendLocalizedToUsers(
+    userIds: string[],
+    build: (lang: string) => { title: string; body: string },
+    extra: {
+      data?: Record<string, unknown>;
+      categoryId?: string;
+      sound?: 'default' | null;
+    } = {},
+  ): Promise<void> {
     if (userIds.length === 0) return;
 
     // Skip recipients whose status is BUSY/SLEEP (with a still-valid
     // statusUntil, or no timer at all). This is the do-not-disturb gate
     // — the message itself still lands via socket; we only silence the
     // banner. ONLINE recipients and recipients whose timer already
-    // expired stay in the list.
+    // expired stay in the list. `language` drives per-recipient text.
     const recipients = await this.prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: { id: true, status: true, statusUntil: true },
+      select: { id: true, status: true, statusUntil: true, language: true },
     });
     const now = Date.now();
-    const deliverIds = recipients
-      .filter((u) => {
-        if (u.status === 'ONLINE') return true;
-        // BUSY/SLEEP: deliver only if the timer already expired.
-        return !!u.statusUntil && u.statusUntil.getTime() <= now;
-      })
-      .map((u) => u.id);
+    const deliver = recipients.filter((u) => {
+      if (u.status === 'ONLINE') return true;
+      // BUSY/SLEEP: deliver only if the timer already expired.
+      return !!u.statusUntil && u.statusUntil.getTime() <= now;
+    });
+    const langById = new Map<string, string>(
+      deliver.map((u) => [u.id, u.language]),
+    );
+    const deliverIds = deliver.map((u) => u.id);
+    // A representative label (source language) just for the server logs.
+    const label = build('uk').title;
     if (deliverIds.length === 0) {
       this.logger.log(
-        `Push "${payload.title}" suppressed for all ${userIds.length} recipient(s) (BUSY/SLEEP/VACATION)`,
+        `Push "${label}" suppressed for all ${userIds.length} recipient(s) (BUSY/SLEEP/VACATION)`,
       );
       return;
     }
 
     const tokens = await this.prisma.pushToken.findMany({
       where: { userId: { in: deliverIds } },
-      select: { token: true },
+      select: { token: true, userId: true },
     });
     this.logger.log(
-      `Push "${payload.title}" → users=[${userIds.join(',')}] tokens=${tokens.length}`,
+      `Push "${label}" → users=[${userIds.join(',')}] tokens=${tokens.length}`,
     );
     if (tokens.length === 0) {
       this.logger.warn(
-        `No push tokens for users=[${userIds.join(',')}] — recipient(s) won't receive "${payload.title}". Check that the mobile app registered a token after login.`,
+        `No push tokens for users=[${userIds.join(',')}] — recipient(s) won't receive "${label}". Check that the mobile app registered a token after login.`,
       );
       return;
     }
 
     const messages: ExpoPushMessage[] = [];
     const validTokens: string[] = [];
-    for (const { token } of tokens) {
+    for (const { token, userId } of tokens) {
       if (!Expo.isExpoPushToken(token)) {
         this.logger.warn(`Drop invalid token format: ${token}`);
         await this.prisma.pushToken.deleteMany({ where: { token } });
         continue;
       }
+      const { title, body } = build(langById.get(userId) ?? 'uk');
       validTokens.push(token);
       messages.push({
         to: token,
-        sound: payload.sound === null ? undefined : 'default',
-        title: payload.title,
-        body: payload.body,
-        data: payload.data,
-        categoryId: payload.categoryId,
+        sound: extra.sound === null ? undefined : 'default',
+        title,
+        body,
+        data: extra.data,
+        categoryId: extra.categoryId,
       });
     }
 
@@ -95,7 +126,7 @@ export class PushService {
     }
     const okCount = tickets.filter((t) => t.status === 'ok').length;
     this.logger.log(
-      `Push "${payload.title}" → ${okCount}/${tickets.length} accepted by Expo`,
+      `Push "${label}" → ${okCount}/${tickets.length} accepted by Expo`,
     );
 
     // Prune tokens that Expo rejected outright (e.g. uninstalled app).

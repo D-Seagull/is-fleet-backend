@@ -7,6 +7,7 @@ import { TripChatSessionsService } from '../messages/trip-chat-sessions.service'
 import { MessagesGateway } from '../messages/messages.gateway';
 import { PushService } from '../push/push.service';
 import { fullName } from '../common/utils/full-name';
+import { t } from '../i18n/i18n';
 
 const ACTIVE_TRIP_STATUSES = [
   'ASSIGNED',
@@ -141,15 +142,20 @@ export class TrucksService {
       // categoryId — when the system banner shows it's a plain notice;
       // the foreground modal lives entirely on the client.
       if (driverChanged && dto.currentDriverId) {
-        await this.push.sendToUsers([dto.currentDriverId], {
-          title: 'Призначення вантажівки',
-          body: `Вас призначено на ${updated.plate}`,
-          data: {
-            type: 'TRUCK_REASSIGNED',
-            truckId: id,
-            plate: updated.plate,
+        await this.push.sendLocalizedToUsers(
+          [dto.currentDriverId],
+          (lang) => ({
+            title: t(lang, 'push.truckAssignment'),
+            body: t(lang, 'push.assignedToTruck', { plate: updated.plate }),
+          }),
+          {
+            data: {
+              type: 'TRUCK_REASSIGNED',
+              truckId: id,
+              plate: updated.plate,
+            },
           },
-        });
+        );
       }
     }
 
@@ -192,27 +198,39 @@ export class TrucksService {
           where: { id: newManagerId },
           select: { firstName: true, lastName: true, avatar: true },
         }),
-        this.push.sendToUsers([newManagerId], {
-          title: 'Призначення вантажівки',
-          body: `Вам призначено вантажівку ${updated.plate}`,
-          data: {
-            type: 'MANAGER_ASSIGNED_TRUCK',
-            truckId: id,
-            plate: updated.plate,
+        this.push.sendLocalizedToUsers(
+          [newManagerId],
+          (lang) => ({
+            title: t(lang, 'push.truckAssignment'),
+            body: t(lang, 'push.assignedTruck', { plate: updated.plate }),
+          }),
+          {
+            data: {
+              type: 'MANAGER_ASSIGNED_TRUCK',
+              truckId: id,
+              plate: updated.plate,
+            },
           },
-        }),
+        ),
       ]);
 
       if (oldTruck.currentDriverId) {
-        await this.push.sendToUsers([oldTruck.currentDriverId], {
-          title: 'Менеджер змінений',
-          body: `Ваш новий менеджер: ${fullName(newManager) || 'без імені'}`,
-          data: {
-            type: 'MANAGER_CHANGED',
-            truckId: id,
-            managerId: newManagerId,
+        await this.push.sendLocalizedToUsers(
+          [oldTruck.currentDriverId],
+          (lang) => ({
+            title: t(lang, 'push.managerChanged'),
+            body: t(lang, 'push.newManager', {
+              name: fullName(newManager) || t(lang, 'push.noName'),
+            }),
+          }),
+          {
+            data: {
+              type: 'MANAGER_CHANGED',
+              truckId: id,
+              managerId: newManagerId,
+            },
           },
-        });
+        );
       }
 
       const activeTrips = await this.prisma.trip.findMany({
