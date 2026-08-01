@@ -36,7 +36,7 @@ export class ReactionsService {
     emoji: string,
   ): Promise<ReactionRow[]> {
     if (!ALLOWED_EMOJI.includes(emoji as AllowedEmoji)) {
-      throw new BadRequestException(`Unsupported emoji: ${emoji}`);
+      throw new BadRequestException('errors.unsupportedEmoji');
     }
     const t0 = Date.now();
 

@@ -18,7 +18,7 @@ export class CreateDriverDto {
 
   @IsString()
   @Matches(/^\+?[\d\s\-()]{8,20}$/, {
-    message: 'Phone must be in international format, e.g. +380501234567',
+    message: 'errors.phoneFormat',
   })
   phone: string;
 

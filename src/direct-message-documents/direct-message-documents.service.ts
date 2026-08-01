@@ -31,7 +31,7 @@ export class DirectMessageDocumentsService {
     const otherUser = await this.prisma.user.findUnique({
       where: { id: otherUserId },
     });
-    if (!otherUser) throw new NotFoundException('Користувача не знайдено');
+    if (!otherUser) throw new NotFoundException('errors.userNotFound');
 
     const created = await Promise.all(
       files.map(async (file) => {
@@ -168,7 +168,7 @@ export class DirectMessageDocumentsService {
     const doc = await this.prisma.directMessageDocument.findUnique({
       where: { id },
     });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600);
     return { url };
   }
@@ -177,7 +177,7 @@ export class DirectMessageDocumentsService {
     const doc = await this.prisma.directMessageDocument.findUnique({
       where: { id },
     });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
     const url = await this.storage.getSignedUrl(
       doc.fileUrl,
       3600,
@@ -190,11 +190,11 @@ export class DirectMessageDocumentsService {
     const doc = await this.prisma.directMessageDocument.findUnique({
       where: { id },
     });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
 
     // Тільки той, хто завантажив, може видалити (як домовились).
     if (doc.uploadedBy !== userId) {
-      throw new ForbiddenException('Ви не можете видалити цей документ');
+      throw new ForbiddenException('errors.cannotDeleteDocument');
     }
     if (doc.deletedAt) {
       // Already deleted — idempotent.

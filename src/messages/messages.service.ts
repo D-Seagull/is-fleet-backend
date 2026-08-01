@@ -37,10 +37,10 @@ export class MessagesService {
         manager: { select: { id: true, language: true } },
       },
     });
-    if (!trip) throw new NotFoundException('Рейс не знайдений');
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
     if (senderId !== trip.driverId && senderId !== trip.managerId) {
       throw new ForbiddenException(
-        'Тільки поточний водій або менеджер можуть писати в цей чат',
+        'errors.onlyDriverOrManagerChat',
       );
     }
 
@@ -131,24 +131,24 @@ export class MessagesService {
   async editMessage(messageId: string, userId: string, content: string) {
     const trimmed = content.trim();
     if (!trimmed) {
-      throw new ForbiddenException('Повідомлення не може бути порожнім');
+      throw new ForbiddenException('errors.messageNotEmpty');
     }
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
     });
-    if (!msg) throw new NotFoundException('Повідомлення не знайдене');
+    if (!msg) throw new NotFoundException('errors.messageNotFound');
     if (msg.senderId !== userId) {
-      throw new ForbiddenException('Ви можете редагувати лише свої повідомлення');
+      throw new ForbiddenException('errors.editOwnMessages');
     }
     if (msg.deletedAt) {
-      throw new ForbiddenException('Не можна редагувати видалене повідомлення');
+      throw new ForbiddenException('errors.cannotEditDeleted');
     }
     if (msg.isSystem) {
-      throw new ForbiddenException('Системні повідомлення не редагуються');
+      throw new ForbiddenException('errors.systemMessagesNotEditable');
     }
     const ageMs = Date.now() - msg.createdAt.getTime();
     if (ageMs > 15 * 60 * 1000) {
-      throw new ForbiddenException('Час на редагування минув (15 хв)');
+      throw new ForbiddenException('errors.editWindowPassed');
     }
     return this.prisma.message.update({
       where: { id: messageId },
@@ -185,11 +185,11 @@ export class MessagesService {
     userRole: string,
   ): Promise<{ tripId: string }> {
     const msg = await this.prisma.message.findUnique({ where: { id } });
-    if (!msg) throw new NotFoundException('Повідомлення не знайдене');
+    if (!msg) throw new NotFoundException('errors.messageNotFound');
 
     const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(userRole);
     if (!isManager && msg.senderId !== userId) {
-      throw new ForbiddenException('Ви не можете видалити це повідомлення');
+      throw new ForbiddenException('errors.cannotDeleteMessage');
     }
 
     // Soft delete — keep the row so the bubble can show "Message deleted".

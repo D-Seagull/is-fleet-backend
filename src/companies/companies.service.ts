@@ -13,7 +13,7 @@ export class CompaniesService {
     const company = await this.prisma.company.findFirst({
       where: { id: companyId },
     });
-    if (!company) throw new NotFoundException('Компанія не знайдена');
+    if (!company) throw new NotFoundException('errors.companyNotFound');
     return company;
   }
 

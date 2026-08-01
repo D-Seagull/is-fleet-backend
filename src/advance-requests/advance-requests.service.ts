@@ -31,7 +31,7 @@ export class AdvanceRequestsService {
       },
     });
 
-    if (!driver) throw new NotFoundException('Водій не знайдений');
+    if (!driver) throw new NotFoundException('errors.driverNotFound');
 
     // зберігаємо заявку
     const request = await this.prisma.advanceRequest.create({

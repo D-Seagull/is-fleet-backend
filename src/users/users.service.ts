@@ -25,7 +25,7 @@ function requireValidPhone(input: string): string {
   const canonical = toCanonicalPhone(input);
   if (!canonical) {
     throw new BadRequestException(
-      'Phone must be in international format, e.g. +380501234567',
+      'errors.phoneFormat',
     );
   }
   return canonical;
@@ -96,7 +96,7 @@ export class UsersService {
         e.code === 'P2002'
       ) {
         throw new ConflictException(
-          'A user with this email or phone already exists.',
+          'errors.userExists',
         );
       }
       throw e;
@@ -131,7 +131,7 @@ export class UsersService {
         e.code === 'P2002'
       ) {
         throw new ConflictException(
-          'This phone number is already used by another driver.',
+          'errors.phoneUsedDriver',
         );
       }
       throw e;
@@ -208,7 +208,7 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('errors.userNotFound');
 
     // Track truck change so we can emit the same socket + push notifications
     // TrucksService.update emits when a manager reassigns from the truck side.
@@ -412,7 +412,7 @@ export class UsersService {
         e.code === 'P2002'
       ) {
         throw new ConflictException(
-          'Цей номер уже використовується іншим користувачем.',
+          'errors.phoneUsedUser',
         );
       }
       throw e;
@@ -423,7 +423,7 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('errors.userNotFound');
 
     await this.prisma.user.update({
       where: { id },
@@ -441,15 +441,15 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('errors.userNotFound');
 
     if (user.role === 'TEAMLEAD' && requesterRole !== 'ADMIN') {
-      throw new ForbiddenException('Only an admin can deactivate this user');
+      throw new ForbiddenException('errors.onlyAdminDeactivate');
     }
 
     if (user.role === 'MANAGER' && requesterRole === 'MANAGER') {
       throw new ForbiddenException(
-        'You do not have permission to deactivate this user',
+        'errors.noPermissionDeactivate',
       );
     }
 
@@ -535,7 +535,7 @@ export class UsersService {
         },
       },
     });
-    if (!user) throw new NotFoundException('Користувач не знайдений');
+    if (!user) throw new NotFoundException('errors.userNotFound');
 
     const rawDriver = user.ratingsReceived;
     const averageRating =
@@ -633,7 +633,7 @@ export class UsersService {
     anonymous?: boolean,
   ) {
     if (score < 1 || score > 5) {
-      throw new BadRequestException('Score must be between 1 and 5');
+      throw new BadRequestException('errors.scoreRange');
     }
     // A driver's "manager" on the truck screen is whoever is assigned to
     // their truck — that can be a MANAGER or a TEAMLEAD acting as dispatcher.
@@ -642,7 +642,7 @@ export class UsersService {
       where: { id: managerId, role: { in: ['MANAGER', 'TEAMLEAD'] }, companyId },
       select: { id: true },
     });
-    if (!manager) throw new NotFoundException('Manager not found');
+    if (!manager) throw new NotFoundException('errors.managerNotFound');
 
     return this.prisma.managerRating.upsert({
       where: { managerId_ratedById: { managerId, ratedById } },

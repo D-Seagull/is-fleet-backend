@@ -27,7 +27,7 @@ export class AdminService {
     });
 
     if (existing)
-      throw new BadRequestException('Company with this name already created');
+      throw new BadRequestException('errors.companyExists');
 
     const company = await this.prisma.company.create({
       data: {
@@ -216,7 +216,7 @@ export class AdminService {
       ? await this.getAdminCompanyId(adminId)
       : undefined;
     if (excludeCompanyId && id === excludeCompanyId) {
-      throw new NotFoundException('Компанія не знайдена');
+      throw new NotFoundException('errors.companyNotFound');
     }
     const company = await this.prisma.company.findUnique({
       where: { id },
@@ -233,7 +233,7 @@ export class AdminService {
         inviteExpiry: true,
       },
     });
-    if (!company) throw new NotFoundException('Компанія не знайдена');
+    if (!company) throw new NotFoundException('errors.companyNotFound');
 
     const activeTripStatuses = [
       'ASSIGNED',
@@ -347,7 +347,7 @@ export class AdminService {
   // admin.service.ts
   async resendInvite(id: string, email: string) {
     const company = await this.prisma.company.findFirst({ where: { id } });
-    if (!company) throw new NotFoundException('Компанія не знайдена');
+    if (!company) throw new NotFoundException('errors.companyNotFound');
 
     const inviteLink = `${process.env.FRONTEND_URL}/auth/register?token=${company.inviteToken}`;
     await this.mail.sendCompanyInvite(email, company.name, inviteLink);

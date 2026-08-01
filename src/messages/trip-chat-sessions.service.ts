@@ -81,7 +81,7 @@ export class TripChatSessionsService {
   async getActiveSessionOrThrow(tripId: string, tx: Prisma.TransactionClient = this.prisma) {
     const session = await this.getActiveSession(tripId, tx);
     if (!session) {
-      throw new NotFoundException('No active chat session for this trip');
+      throw new NotFoundException('errors.noActiveSession');
     }
     return session;
   }
@@ -250,7 +250,7 @@ export class TripChatSessionsService {
     const session = await this.prisma.tripChatSession.findUnique({
       where: { id: sessionId },
     });
-    if (!session) throw new NotFoundException('Session not found');
+    if (!session) throw new NotFoundException('errors.sessionNotFound');
 
     const isParticipant =
       session.driverId === requester.id ||
@@ -274,7 +274,7 @@ export class TripChatSessionsService {
       !isParticipant &&
       !isTeamManaged
     ) {
-      throw new ForbiddenException('No access to this chat session');
+      throw new ForbiddenException('errors.noAccessChatSession');
     }
 
     return this.prisma.message.findMany({

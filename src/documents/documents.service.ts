@@ -29,7 +29,7 @@ export class DocumentsService {
     if (!files || files.length === 0) throw new Error('No files provided');
 
     const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
-    if (!trip) throw new NotFoundException('Рейс не знайдений');
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
 
     const created = await Promise.all(
       files.map(async (file) => {
@@ -98,12 +98,12 @@ export class DocumentsService {
     const document = await this.prisma.tripDocument.findUnique({
       where: { id },
     });
-    if (!document) throw new NotFoundException('Документ не знайдений');
+    if (!document) throw new NotFoundException('errors.documentNotFound');
 
     // Drivers can only delete their own uploads; managers can delete anything.
     const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(userRole);
     if (!isManager && document.uploadedBy !== userId) {
-      throw new ForbiddenException('Ви не можете видалити цей документ');
+      throw new ForbiddenException('errors.cannotDeleteDocument');
     }
     if (document.deletedAt) {
       return { id: document.id };
@@ -129,14 +129,14 @@ export class DocumentsService {
 
   async view(id: string): Promise<{ url: string }> {
     const doc = await this.prisma.tripDocument.findUnique({ where: { id } });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600);
     return { url };
   }
 
   async download(id: string): Promise<{ url: string }> {
     const doc = await this.prisma.tripDocument.findUnique({ where: { id } });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600, doc.fileName);
     return { url };
   }

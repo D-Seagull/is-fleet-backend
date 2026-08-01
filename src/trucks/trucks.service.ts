@@ -66,7 +66,7 @@ export class TrucksService {
         },
       },
     });
-    if (!truck) throw new NotFoundException('truck not found');
+    if (!truck) throw new NotFoundException('errors.truckNotFound');
     return truck;
   }
 
@@ -365,7 +365,7 @@ export class TrucksService {
     const note = await this.prisma.truckNote.findFirst({
       where: { id, userId },
     });
-    if (!note) throw new NotFoundException('Note not found');
+    if (!note) throw new NotFoundException('errors.noteNotFound');
 
     await this.prisma.truckNote.delete({ where: { id } });
     return { message: 'Note deleted' };

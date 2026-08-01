@@ -123,7 +123,7 @@ export class TripsService {
       where: { id, companyId },
       include: tripInclude,
     });
-    if (!trip) throw new NotFoundException('Рейс не знайдений');
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
     return trip;
   }
 
@@ -169,7 +169,7 @@ export class TripsService {
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, companyId },
     });
-    if (!trip) throw new NotFoundException('Рейс не знайдений');
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
 
     const sessionIds = await this.sessions.getVisibleSessionIds(
       tripId,
@@ -319,7 +319,7 @@ export class TripsService {
     const trip = await this.prisma.trip.findFirst({
       where: { id, companyId },
     });
-    if (!trip) throw new NotFoundException('Рейс не знайдений');
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
 
     const driverChanged = trip.driverId !== driverId;
 
@@ -366,7 +366,7 @@ export class TripsService {
     const trip = await this.prisma.trip.findFirst({
       where: { id, companyId },
     });
-    if (!trip) throw new NotFoundException('Рейс не знайдений');
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
 
     const managerChanged = trip.managerId !== managerId;
 
@@ -470,7 +470,7 @@ export class TripsService {
     const trip = await this.prisma.trip.findFirst({
       where: { id, driverId },
     });
-    if (!trip) throw new ForbiddenException('No access to this trip');
+    if (!trip) throw new ForbiddenException('errors.noAccessTrip');
     return this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },

@@ -32,7 +32,7 @@ export class GroupMessageDocumentsService {
       where: { id: groupId },
       include: { managers: true },
     });
-    if (!group) throw new NotFoundException('Групу не знайдено');
+    if (!group) throw new NotFoundException('errors.groupNotFound');
 
     // Тільки учасник групи (або її творець) може завантажувати документи.
     // For the company-wide DRIVERS group membership is implicit — anyone in
@@ -49,7 +49,7 @@ export class GroupMessageDocumentsService {
       isMember = !!uploader && uploader.companyId === group.companyId;
     }
     if (!isMember) {
-      throw new ForbiddenException('Ви не є учасником цієї групи');
+      throw new ForbiddenException('errors.notGroupMember');
     }
 
     const created = await Promise.all(
@@ -172,7 +172,7 @@ export class GroupMessageDocumentsService {
     const doc = await this.prisma.groupMessageDocument.findUnique({
       where: { id },
     });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600);
     return { url };
   }
@@ -181,7 +181,7 @@ export class GroupMessageDocumentsService {
     const doc = await this.prisma.groupMessageDocument.findUnique({
       where: { id },
     });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
     const url = await this.storage.getSignedUrl(
       doc.fileUrl,
       3600,
@@ -194,11 +194,11 @@ export class GroupMessageDocumentsService {
     const doc = await this.prisma.groupMessageDocument.findUnique({
       where: { id },
     });
-    if (!doc) throw new NotFoundException('Документ не знайдений');
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
 
     // Тільки той, хто завантажив, може видалити.
     if (doc.uploadedBy !== userId) {
-      throw new ForbiddenException('Ви не можете видалити цей документ');
+      throw new ForbiddenException('errors.cannotDeleteDocument');
     }
     if (doc.deletedAt) {
       return { id: doc.id };

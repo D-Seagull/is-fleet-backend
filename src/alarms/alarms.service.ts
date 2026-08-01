@@ -73,7 +73,7 @@ export class AlarmsService {
       dto.targetUserId,
     );
     if (!allowed) {
-      throw new ForbiddenException('Cannot create alarm for that user');
+      throw new ForbiddenException('errors.cannotCreateAlarmForUser');
     }
 
     if (dto.tripId) {
@@ -81,7 +81,7 @@ export class AlarmsService {
         where: { id: dto.tripId, companyId: creatorCompanyId },
         select: { id: true },
       });
-      if (!trip) throw new NotFoundException('Trip not found');
+      if (!trip) throw new NotFoundException('errors.tripNotFound');
     }
 
     // Resolve the alarm's absolute moment using the target's timezone — so a
@@ -134,14 +134,14 @@ export class AlarmsService {
       where: { id: tripId, companyId: requester.companyId },
       select: { driverId: true, managerId: true },
     });
-    if (!trip) throw new NotFoundException('Trip not found');
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
 
     const isManager =
       requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
     const isParticipant =
       trip.driverId === requester.id || trip.managerId === requester.id;
     if (!isManager && !isParticipant) {
-      throw new ForbiddenException('No access to this trip');
+      throw new ForbiddenException('errors.noAccessTrip');
     }
 
     return this.prisma.alarm.findMany({
@@ -161,7 +161,7 @@ export class AlarmsService {
       where: { id: truckId, companyId: requester.companyId },
       select: { currentDriverId: true, managerId: true },
     });
-    if (!truck) throw new NotFoundException('Truck not found');
+    if (!truck) throw new NotFoundException('errors.truckNotFound');
 
     const targetIds = [truck.currentDriverId, truck.managerId].filter(
       (x): x is string => !!x,
@@ -184,9 +184,9 @@ export class AlarmsService {
 
   async update(id: string, userId: string, dto: UpdateAlarmDto) {
     const alarm = await this.prisma.alarm.findUnique({ where: { id } });
-    if (!alarm) throw new NotFoundException('Alarm not found');
+    if (!alarm) throw new NotFoundException('errors.alarmNotFound');
     if (alarm.createdById !== userId) {
-      throw new ForbiddenException('Only the creator can edit this alarm');
+      throw new ForbiddenException('errors.onlyCreatorEditAlarm');
     }
 
     let timePatch: { time: Date; isSent: false } | Record<string, never> = {};
@@ -216,9 +216,9 @@ export class AlarmsService {
   /** Either creator OR target may dismiss/delete an alarm. */
   async remove(id: string, userId: string) {
     const alarm = await this.prisma.alarm.findUnique({ where: { id } });
-    if (!alarm) throw new NotFoundException('Alarm not found');
+    if (!alarm) throw new NotFoundException('errors.alarmNotFound');
     if (alarm.createdById !== userId && alarm.targetUserId !== userId) {
-      throw new ForbiddenException('No access to this alarm');
+      throw new ForbiddenException('errors.noAccessAlarm');
     }
     await this.prisma.alarm.delete({ where: { id } });
     return { ok: true };

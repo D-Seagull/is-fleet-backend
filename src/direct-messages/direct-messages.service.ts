@@ -305,23 +305,23 @@ export class DirectMessagesService {
   async editMessage(messageId: string, userId: string, content: string) {
     const trimmed = content.trim();
     if (!trimmed) {
-      throw new Error('Повідомлення не може бути порожнім');
+      throw new Error('errors.messageNotEmpty');
     }
     const msg = await this.prisma.directMessage.findUnique({
       where: { id: messageId },
     });
     if (!msg) {
-      throw new Error('Повідомлення не знайдене');
+      throw new Error('errors.messageNotFound');
     }
     if (msg.senderId !== userId) {
-      throw new Error('Ви можете редагувати лише свої повідомлення');
+      throw new Error('errors.editOwnMessages');
     }
     if (msg.deletedAt) {
-      throw new Error('Не можна редагувати видалене повідомлення');
+      throw new Error('errors.cannotEditDeleted');
     }
     const ageMs = Date.now() - msg.createdAt.getTime();
     if (ageMs > 15 * 60 * 1000) {
-      throw new Error('Час на редагування минув (15 хв)');
+      throw new Error('errors.editWindowPassed');
     }
     return this.prisma.directMessage.update({
       where: { id: messageId },

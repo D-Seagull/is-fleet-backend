@@ -69,11 +69,11 @@ export class AuthService {
     });
 
     if (!user || user.role !== 'ADMIN') {
-      throw new UnauthorizedException('Немає доступу');
+      throw new UnauthorizedException('errors.noAccess');
     }
 
     const valid = await bcrypt.compare(dto.password, user.password!);
-    if (!valid) throw new UnauthorizedException('Невірний email або пароль');
+    if (!valid) throw new UnauthorizedException('errors.wrongEmailOrPassword');
 
     await this.markSessionStart(user.id);
     return this.signToken(
@@ -132,7 +132,7 @@ export class AuthService {
     });
 
     if (!company)
-      throw new BadRequestException('Невірний або прострочений токен');
+      throw new BadRequestException('errors.invalidOrExpiredToken');
 
     const hash = await bcrypt.hash(dto.password, 10);
 
@@ -174,10 +174,10 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
-    if (!user) throw new UnauthorizedException('Login or password is wrong');
+    if (!user) throw new UnauthorizedException('errors.loginOrPasswordWrong');
 
     const valid = await bcrypt.compare(dto.password, user.password!);
-    if (!valid) throw new UnauthorizedException('Login or password is wrong');
+    if (!valid) throw new UnauthorizedException('errors.loginOrPasswordWrong');
     await this.markSessionStart(user.id);
     return this.signToken(
       user.id,
@@ -272,7 +272,7 @@ export class AuthService {
       },
     });
 
-    if (!company) throw new BadRequestException('Невірний токен');
+    if (!company) throw new BadRequestException('errors.invalidToken');
 
     return {
       type: 'company',
@@ -319,7 +319,7 @@ export class AuthService {
     });
     if (lastSent) {
       throw new HttpException(
-        'Please wait before requesting another code.',
+        'errors.pleaseWaitCode',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -349,7 +349,7 @@ export class AuthService {
     );
 
     if (!phone) {
-      throw new UnauthorizedException('Code is invalid or expired.');
+      throw new UnauthorizedException('errors.codeInvalidOrExpired');
     }
 
     const otp = await this.prisma.otpCode.findFirst({
@@ -363,7 +363,7 @@ export class AuthService {
     });
 
     if (!otp) {
-      throw new UnauthorizedException('Code is invalid or expired.');
+      throw new UnauthorizedException('errors.codeInvalidOrExpired');
     }
 
     if (otp.attempts >= OTP_MAX_ATTEMPTS) {
@@ -373,7 +373,7 @@ export class AuthService {
         data: { usedAt: new Date() },
       });
       throw new UnauthorizedException(
-        'Too many attempts. Please request a new code.',
+        'errors.tooManyAttempts',
       );
     }
 
@@ -382,11 +382,11 @@ export class AuthService {
         where: { id: otp.id },
         data: { attempts: { increment: 1 } },
       });
-      throw new UnauthorizedException('Code is invalid or expired.');
+      throw new UnauthorizedException('errors.codeInvalidOrExpired');
     }
 
     if (otp.user.role !== 'DRIVER' || !otp.user.isActive) {
-      throw new ForbiddenException('Driver account is not active.');
+      throw new ForbiddenException('errors.driverNotActive');
     }
 
     // Mark as used + invalidate any other pending OTPs for this phone.
@@ -452,7 +452,7 @@ export class AuthService {
     });
 
     if (!record || record.usedAt || record.expiresAt < new Date()) {
-      throw new BadRequestException('Посилання недійсне або застаріле');
+      throw new BadRequestException('errors.linkInvalidOrExpired');
     }
 
     const hash = await bcrypt.hash(newPassword, 10);

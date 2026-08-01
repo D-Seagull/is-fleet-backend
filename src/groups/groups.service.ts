@@ -34,14 +34,14 @@ export class GroupsService {
       where: { id: groupId },
       select: { id: true, createdBy: true },
     });
-    if (!group) throw new NotFoundException('Група не знайдена');
+    if (!group) throw new NotFoundException('errors.groupNotFound');
     if (role === 'ADMIN' || group.createdBy === userId) return;
     const membership = await this.prisma.groupManager.findFirst({
       where: { groupId, managerId: userId },
       select: { id: true },
     });
     if (!membership) {
-      throw new ForbiddenException('Лише учасники групи можуть редагувати її.');
+      throw new ForbiddenException('errors.onlyGroupMembersEdit');
     }
   }
 
@@ -151,10 +151,10 @@ export class GroupsService {
 
   async update(id: string, userId: string, role: string, dto: UpdateGroupDto) {
     const group = await this.prisma.group.findFirst({ where: { id } });
-    if (!group) throw new NotFoundException('Група не знайдена');
+    if (!group) throw new NotFoundException('errors.groupNotFound');
 
     if (role === 'MANAGER' && group.createdBy !== userId) {
-      throw new ForbiddenException('Можна редагувати тільки свої групи');
+      throw new ForbiddenException('errors.editOwnGroups');
     }
 
     const updated = await this.prisma.group.update({
@@ -172,12 +172,12 @@ export class GroupsService {
         managers: { select: { managerId: true } },
       },
     });
-    if (!group) throw new NotFoundException('Група не знайдена');
+    if (!group) throw new NotFoundException('errors.groupNotFound');
 
     // Creator-only. Even ADMIN/TEAMLEAD can't delete someone else's group
     // from the chat sidebar — this action is meant to be the owner's call.
     if (group.createdBy !== userId) {
-      throw new ForbiddenException('Видаляти може тільки той, хто створив групу');
+      throw new ForbiddenException('errors.onlyCreatorDeleteGroup');
     }
 
     // Soft-delete: mark the row and leave every FK-linked record intact
@@ -210,14 +210,14 @@ export class GroupsService {
     role: string,
   ) {
     const group = await this.prisma.group.findFirst({ where: { id: groupId } });
-    if (!group) throw new NotFoundException('Група не знайдена');
+    if (!group) throw new NotFoundException('errors.groupNotFound');
 
     if (role === 'MANAGER' && group.createdBy !== userId) {
-      throw new ForbiddenException('Можна редагувати тільки свої групи');
+      throw new ForbiddenException('errors.editOwnGroups');
     }
     if (group.type !== 'TRUCKS') {
       throw new ForbiddenException(
-        'Це група менеджерів — не можна додавати вантажівки',
+        'errors.notTrucksGroup',
       );
     }
 
@@ -236,11 +236,11 @@ export class GroupsService {
       where: { groupId, truckId },
     });
     if (!groupTruck)
-      throw new NotFoundException('Вантажівка не знайдена в групі');
+      throw new NotFoundException('errors.truckNotInGroup');
 
     const group = await this.prisma.group.findFirst({ where: { id: groupId } });
     if (role === 'MANAGER' && group!.createdBy !== userId) {
-      throw new ForbiddenException('Можна редагувати тільки свої групи');
+      throw new ForbiddenException('errors.editOwnGroups');
     }
 
     await this.prisma.groupTruck.delete({ where: { id: groupTruck.id } });
@@ -249,11 +249,11 @@ export class GroupsService {
 
   async addManager(groupId: string, managerId: string) {
     const group = await this.prisma.group.findFirst({ where: { id: groupId } });
-    if (!group) throw new NotFoundException('Група не знайдена');
+    if (!group) throw new NotFoundException('errors.groupNotFound');
 
     if (group.type !== 'MANAGERS') {
       throw new ForbiddenException(
-        'Це група вантажівок — не можна додавати менеджерів',
+        'errors.notManagersGroup',
       );
     }
 
@@ -266,7 +266,7 @@ export class GroupsService {
     // people the server then refused to add.
     if (!user || (user.role !== 'MANAGER' && user.role !== 'TEAMLEAD')) {
       throw new ForbiddenException(
-        'Можна додавати тільки менеджерів або тімлідів',
+        'errors.canAddManagersOnly',
       );
     }
 
@@ -352,7 +352,7 @@ export class GroupsService {
       where: { groupId, managerId },
     });
     if (!groupManager)
-      throw new NotFoundException('Менеджер не знайдений в групі');
+      throw new NotFoundException('errors.managerNotInGroup');
 
     // Load the group + the user being kicked so we can post a matching
     // system message ("removed X") before we drop the membership row.
@@ -468,7 +468,7 @@ export class GroupsService {
     });
     if (!owner) {
       throw new NotFoundException(
-        'Немає менеджера/тімліда, щоб створити групу водіїв',
+        'errors.noOwnerForDriverGroup',
       );
     }
 

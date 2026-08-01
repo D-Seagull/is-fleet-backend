@@ -128,7 +128,7 @@ export class AnnouncementsService {
     const draft = await this.prisma.announcementDraft.findFirst({
       where: { id: draftId },
     });
-    if (!draft) throw new NotFoundException('Чернетка не знайдена');
+    if (!draft) throw new NotFoundException('errors.draftNotFound');
 
     const announcement = await this.prisma.announcement.create({
       data: {
@@ -161,10 +161,10 @@ export class AnnouncementsService {
         },
       },
     });
-    if (!announcement) throw new NotFoundException('Оголошення не знайдено');
+    if (!announcement) throw new NotFoundException('errors.announcementNotFound');
 
     if (announcement.createdBy !== userId) {
-      throw new ForbiddenException('Можна редагувати тільки свої оголошення');
+      throw new ForbiddenException('errors.editOwnAnnouncements');
     }
 
     const updated = await this.prisma.announcement.update({
@@ -213,7 +213,7 @@ export class AnnouncementsService {
     const draft = await this.prisma.announcementDraft.findFirst({
       where: { id },
     });
-    if (!draft) throw new NotFoundException('Чернетка не знайдена');
+    if (!draft) throw new NotFoundException('errors.draftNotFound');
     await this.prisma.announcementDraft.delete({ where: { id } });
     return { message: 'Чернетка видалена' };
   }

@@ -25,12 +25,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: { sub: string; role: string; companyId: string }) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, isActive: true, role: true, companyId: true },
+      select: {
+        id: true,
+        isActive: true,
+        role: true,
+        companyId: true,
+        language: true,
+      },
     });
     if (!user || !user.isActive) {
-      throw new UnauthorizedException(
-        'User no longer exists or is deactivated',
-      );
+      throw new UnauthorizedException('errors.userGoneOrDeactivated');
     }
     return {
       id: user.id,
@@ -39,6 +43,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // already pay for the lookup).
       role: user.role,
       companyId: user.companyId,
+      // Drives per-request localization of error messages in the exception
+      // filter (see AllExceptionsFilter).
+      language: user.language,
     };
   }
 }

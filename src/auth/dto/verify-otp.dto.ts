@@ -3,7 +3,7 @@ import { IsString, Length, Matches } from 'class-validator';
 export class VerifyOtpDto {
   @IsString()
   @Matches(/^\+?\d{8,16}$/, {
-    message: 'Phone must be in international format, e.g. +380501234567',
+    message: 'errors.phoneFormat',
   })
   phone: string;
 
