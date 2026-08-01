@@ -134,11 +134,23 @@ export class TripChatSessionsService {
       ]);
       const plate = trip?.truck.plate ?? '';
 
+      // Persisted once but shown to participants who may each use a different
+      // language — so store a structured token (key + params) and let every
+      // client localize it at render time. Plain (legacy) strings without the
+      // `[[sys]]` prefix keep rendering as-is.
+      const sysToken = (k: string, p: Record<string, string>) =>
+        `[[sys]]${JSON.stringify({ k, p })}`;
       let content = '';
       if (reason === 'DRIVER_CHANGED') {
-        content = `До вантажівки ${plate} призначений водій ${fullName(driver) || 'без імені'}`;
+        content = sysToken('sys.driverAssigned', {
+          plate,
+          name: fullName(driver) || '—',
+        });
       } else if (reason === 'MANAGER_CHANGED') {
-        content = `До вантажівки ${plate} призначений менеджер ${fullName(manager) || 'без імені'}`;
+        content = sysToken('sys.managerAssigned', {
+          plate,
+          name: fullName(manager) || '—',
+        });
       }
 
       // 1. Close the old session.

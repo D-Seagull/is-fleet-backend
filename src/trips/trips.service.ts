@@ -52,6 +52,28 @@ export class TripsService {
     private reactions: ReactionsService,
   ) {}
 
+  /**
+   * Notify everyone who needs to re-fetch a trip after it changes: its chat
+   * room, the company room (web managers' lists), and the driver's personal
+   * room — the last is what makes the mobile Trips list / active-trip refresh
+   * live without a reload.
+   */
+  private emitTripUpdated(
+    tripId: string,
+    companyId?: string | null,
+    driverId?: string | null,
+  ) {
+    this.gateway.server.to(tripId).emit('tripUpdated', { tripId });
+    if (companyId) {
+      this.gateway.server
+        .to(`company-${companyId}`)
+        .emit('tripUpdated', { tripId });
+    }
+    if (driverId) {
+      this.gateway.server.to(driverId).emit('tripUpdated', { tripId });
+    }
+  }
+
   async create(companyId: string, managerId: string, dto: CreateTripDto) {
     const trip = await this.prisma.trip.create({
       data: {
@@ -97,6 +119,9 @@ export class TripsService {
         },
       },
     );
+
+    // Live-refresh the assigned driver's Trips list / active trip.
+    this.emitTripUpdated(trip.id, companyId, trip.driverId);
 
     return trip;
   }
@@ -273,15 +298,17 @@ export class TripsService {
 
   async updateStatus(id: string, companyId: string, dto: UpdateTripDto) {
     await this.findOne(id, companyId);
-    return this.prisma.trip.update({
+    const updated = await this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
     });
+    this.emitTripUpdated(id, companyId, updated.driverId);
+    return updated;
   }
 
   // update trip info (notes + stops) — replaces all stops
   async updateInfo(id: string, companyId: string, dto: UpdateTripDto) {
-    await this.findOne(id, companyId);
+    const existing = await this.findOne(id, companyId);
 
     if (dto.stops !== undefined) {
       // delete all existing stops then recreate
@@ -300,11 +327,13 @@ export class TripsService {
       }
     }
 
-    return this.prisma.trip.update({
+    const updated = await this.prisma.trip.update({
       where: { id },
       data: { notes: dto.notes, orderNumber: dto.orderNumber },
       include: tripInclude,
     });
+    this.emitTripUpdated(id, companyId, existing.driverId);
+    return updated;
   }
 
   /** Reassign a trip to a different driver (manager action).
@@ -337,12 +366,7 @@ export class TripsService {
         trip.managerId,
         triggeredById,
       );
-      this.gateway.server.to(id).emit('tripUpdated', { tripId: id });
-      if (trip.companyId) {
-        this.gateway.server
-          .to(`company-${trip.companyId}`)
-          .emit('tripUpdated', { tripId: id });
-      }
+      this.emitTripUpdated(id, trip.companyId, driverId);
       if (systemMessage) {
         this.gateway.server.to(id).emit('newMessage', systemMessage);
         if (trip.companyId) {
@@ -384,12 +408,7 @@ export class TripsService {
         managerId,
         triggeredById,
       );
-      this.gateway.server.to(id).emit('tripUpdated', { tripId: id });
-      if (trip.companyId) {
-        this.gateway.server
-          .to(`company-${trip.companyId}`)
-          .emit('tripUpdated', { tripId: id });
-      }
+      this.emitTripUpdated(id, trip.companyId, trip.driverId);
       if (systemMessage) {
         this.gateway.server.to(id).emit('newMessage', systemMessage);
         if (trip.companyId) {
@@ -471,10 +490,14 @@ export class TripsService {
       where: { id, driverId },
     });
     if (!trip) throw new ForbiddenException('errors.noAccessTrip');
-    return this.prisma.trip.update({
+    const updated = await this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
     });
+    // Driver changed it themselves (their app updates optimistically); push
+    // to the company room + trip room so web managers see it live.
+    this.emitTripUpdated(id, trip.companyId, null);
+    return updated;
   }
 
   async remove(id: string, companyId: string) {
@@ -519,9 +542,22 @@ export class TripsService {
                 role: true,
               },
             },
+            // Driver's realtime handler drops any message whose `session`
+            // doesn't include them — so the broadcast payload MUST carry it,
+            // otherwise it only appears after a reload.
+            session: { select: { driverId: true, managerId: true } },
           },
         });
         this.gateway.server.to(trip.id).emit('newMessage', message);
+        // Fan out the lightweight unread signal to the driver's personal room
+        // so their bell / trip list updates live even when the chat isn't open
+        // (mirrors the normal send path in MessagesGateway). Without this a
+        // broadcast only showed up after an app reload.
+        if (trip.driverId && trip.driverId !== userId) {
+          this.gateway.server
+            .to(trip.driverId)
+            .emit('tripUnreadChanged', { tripId: trip.id });
+        }
 
         // Push only when the driver is not online (socket would otherwise
         // already deliver the message in real time).
