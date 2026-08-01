@@ -300,6 +300,18 @@ export class TrucksService {
           take: 1,
           select: { content: true, createdAt: true },
         },
+        // Активний тріп (не DELIVERED) — список My Trucks показує його статус
+        // замість статусу вантажівки. 0 або 1 елемент.
+        trips: {
+          where: {
+            status: {
+              in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'],
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, status: true },
+        },
       },
     });
   }
