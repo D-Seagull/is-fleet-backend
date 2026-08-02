@@ -331,6 +331,10 @@ export class AuthService {
       data: { phone, code, userId: user.id, expiresAt },
     });
 
+    // TEMPORARY: Twilio SMS not wired yet — surface the OTP in Render logs so
+    // testers can log in without an SMS. ⚠️ REMOVE BEFORE PRODUCTION LAUNCH.
+    this.logger.warn(`[TEMP OTP] ${phone} → ${code}`);
+
     await this.sms.send(phone, `Your IS Fleet code: ${code}`);
 
     return { ok: true };
