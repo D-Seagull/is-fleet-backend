@@ -165,16 +165,32 @@ export class TripsService {
   // Перевіряємо також що трак ЗАРАЗ належить цьому водію —
   // щоб не повернути старий тріп після переводу водія на інший трак.
   async findMyActiveTrip(driverId: string) {
-    const active = await this.prisma.trip.findFirst({
+    const candidates = await this.prisma.trip.findMany({
       where: {
         driverId,
         status: { in: [...ACTIVE_STATUSES] },
         truck: { currentDriverId: driverId },
       },
       include: tripInclude,
-      orderBy: { createdAt: 'desc' },
     });
-    return active ?? null;
+    if (candidates.length === 0) return null;
+    // A trip that's actually in progress must win over one merely just
+    // assigned — otherwise a freshly ASSIGNED trip (newest createdAt) would
+    // hide the ON_WAY one the driver is really doing. Rank by status
+    // progression first, then most recent within the same tier.
+    const rank: Record<string, number> = {
+      LOADED: 5,
+      ON_SITE: 4,
+      ON_WAY: 3,
+      ACCEPTED: 2,
+      ASSIGNED: 1,
+    };
+    candidates.sort((a, b) => {
+      const byStatus = (rank[b.status] ?? 0) - (rank[a.status] ?? 0);
+      if (byStatus !== 0) return byStatus;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+    return candidates[0];
   }
 
   // load message history for a trip.

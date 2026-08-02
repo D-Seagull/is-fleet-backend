@@ -9,6 +9,9 @@ export interface PushPayload {
   /** iOS notification category — drives the action buttons. */
   categoryId?: string;
   sound?: 'default' | null;
+  /** Bypass the BUSY/SLEEP/AWAY/VACATION do-not-disturb gate. Use for
+   *  alarms — an alarm clock must ring regardless of presence status. */
+  ignoreDnd?: boolean;
 }
 
 /**
@@ -31,6 +34,7 @@ export class PushService {
         data: payload.data,
         categoryId: payload.categoryId,
         sound: payload.sound,
+        ignoreDnd: payload.ignoreDnd,
       },
     );
   }
@@ -48,6 +52,7 @@ export class PushService {
       data?: Record<string, unknown>;
       categoryId?: string;
       sound?: 'default' | null;
+      ignoreDnd?: boolean;
     } = {},
   ): Promise<void> {
     if (userIds.length === 0) return;
@@ -62,11 +67,15 @@ export class PushService {
       select: { id: true, status: true, statusUntil: true, language: true },
     });
     const now = Date.now();
-    const deliver = recipients.filter((u) => {
-      if (u.status === 'ONLINE') return true;
-      // BUSY/SLEEP: deliver only if the timer already expired.
-      return !!u.statusUntil && u.statusUntil.getTime() <= now;
-    });
+    // Alarms bypass do-not-disturb entirely — an alarm clock must ring in
+    // every status (incl. VACATION/SLEEP/BUSY). Otherwise apply the DND gate.
+    const deliver = extra.ignoreDnd
+      ? recipients
+      : recipients.filter((u) => {
+          if (u.status === 'ONLINE') return true;
+          // BUSY/SLEEP: deliver only if the timer already expired.
+          return !!u.statusUntil && u.statusUntil.getTime() <= now;
+        });
     const langById = new Map<string, string>(
       deliver.map((u) => [u.id, u.language]),
     );

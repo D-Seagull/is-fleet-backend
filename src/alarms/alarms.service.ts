@@ -241,6 +241,8 @@ export class AlarmsService {
         await this.push.sendToUsers([alarm.targetUserId], {
           title: alarm.title,
           body: alarm.note ?? '',
+          // An alarm clock must ring in every presence status (incl. VACATION).
+          ignoreDnd: true,
           data: {
             type: 'ALARM',
             alarmId: alarm.id,
