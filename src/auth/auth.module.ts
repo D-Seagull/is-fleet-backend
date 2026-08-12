@@ -17,7 +17,10 @@ import { MailModule } from 'src/mail/mail.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET', ''),
-        signOptions: { expiresIn: '7d' },
+        // Short-lived access token — clients silently rotate it via the 30-day
+        // refresh token (/auth/refresh). A stolen access token is useless in
+        // ~15 min; the refresh token is revocable server-side.
+        signOptions: { expiresIn: '15m' },
       }),
     }),
   ],
