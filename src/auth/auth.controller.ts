@@ -41,7 +41,8 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.AuthService.register(dto);
-    this.setRefreshCookie(res, result.refresh_token);
+    // Registration always establishes a persistent session.
+    this.setRefreshCookie(res, result.refresh_token, true);
     delete (result as { refresh_token?: string }).refresh_token;
     return result;
   }
@@ -55,7 +56,7 @@ export class AuthController {
     const result = await this.AuthService.login(dto);
     // Web keeps the refresh token in an httpOnly cookie (JS never sees it);
     // strip it from the JSON body so only the in-memory access token ships.
-    this.setRefreshCookie(res, result.refresh_token);
+    this.setRefreshCookie(res, result.refresh_token, dto.remember ?? true);
     delete (result as { refresh_token?: string }).refresh_token;
     return result;
   }
@@ -113,15 +114,16 @@ export class AuthController {
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Body() body: { refreshToken?: string },
+    @Body() body: { refreshToken?: string; remember?: boolean },
   ) {
     const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
     const result = await this.AuthService.refresh(
       fromCookie ?? body?.refreshToken,
     );
     if (fromCookie) {
-      // Web: rotate the cookie, keep the refresh out of the JSON body.
-      this.setRefreshCookie(res, result.refresh_token);
+      // Web: rotate the cookie (preserving the client's remember choice), and
+      // keep the refresh out of the JSON body.
+      this.setRefreshCookie(res, result.refresh_token, body?.remember ?? true);
       delete (result as { refresh_token?: string }).refresh_token;
     }
     return result;
@@ -143,13 +145,15 @@ export class AuthController {
     return { ok: true };
   }
 
-  private setRefreshCookie(res: Response, token: string) {
+  private setRefreshCookie(res: Response, token: string, remember: boolean) {
     res.cookie(REFRESH_COOKIE, token, {
       httpOnly: true,
       secure: IS_PROD,
       sameSite: IS_PROD ? 'none' : 'lax',
       path: '/auth',
-      maxAge: REFRESH_COOKIE_MAX_AGE,
+      // Persistent (30d) when "remember me" is on; a session cookie otherwise
+      // (dropped when the browser closes) so no long-lived token is left behind.
+      ...(remember ? { maxAge: REFRESH_COOKIE_MAX_AGE } : {}),
     });
   }
 
