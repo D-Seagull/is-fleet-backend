@@ -23,6 +23,7 @@ const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
 const OTP_MAX_ATTEMPTS = 5;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 @Injectable()
 export class AuthService {
@@ -131,8 +132,7 @@ export class AuthService {
       },
     });
 
-    if (!company)
-      throw new BadRequestException('errors.invalidOrExpiredToken');
+    if (!company) throw new BadRequestException('errors.invalidOrExpiredToken');
 
     const hash = await bcrypt.hash(dto.password, 10);
 
@@ -188,7 +188,11 @@ export class AuthService {
       user.uiLocale,
     );
   }
-  private signToken(
+  // Issues a short-ish access JWT (TTL from JwtModule — kept at 7d during the
+  // access+refresh rollout, to be flipped to 15m once every client refreshes)
+  // plus a 30-day refresh token persisted (hashed) in the DB. Shape stays
+  // backward-compatible: `access_token` + `user` as before, plus `refresh_token`.
+  private async signToken(
     userId: string,
     role: string,
     companyId: string,
@@ -197,8 +201,10 @@ export class AuthService {
     uiLocale: 'UK' | 'EN' | 'PL' | 'LT' | 'DE' | 'RU',
   ) {
     const payload = { sub: userId, role, companyId };
+    const refresh_token = await this.issueRefreshToken(userId);
     return {
       access_token: this.jwt.sign(payload),
+      refresh_token,
       user: {
         id: userId,
         role,
@@ -208,6 +214,66 @@ export class AuthService {
         uiLocale,
       },
     };
+  }
+
+  // ─── Refresh tokens (access + refresh flow) ─────────────────────────────────
+  // We persist only a SHA-256 hash of the opaque token — a DB leak can't be
+  // replayed, and each token is single-use (rotated on every refresh).
+  private hashToken(raw: string) {
+    return crypto.createHash('sha256').update(raw).digest('hex');
+  }
+
+  private async issueRefreshToken(userId: string): Promise<string> {
+    const raw = crypto.randomBytes(48).toString('base64url');
+    await this.prisma.refreshToken.create({
+      data: {
+        tokenHash: this.hashToken(raw),
+        userId,
+        expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+      },
+    });
+    return raw;
+  }
+
+  /**
+   * Rotate a refresh token: validate it, revoke the old row, and mint a fresh
+   * access+refresh pair. A revoked / expired / unknown token is rejected — that
+   * is what makes a stolen or logged-out session stop working (unlike a bare
+   * long-lived JWT, which can't be revoked).
+   */
+  async refresh(rawRefresh: string | undefined) {
+    if (!rawRefresh) throw new UnauthorizedException('errors.noAccess');
+    const record = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: this.hashToken(rawRefresh) },
+      include: { user: true },
+    });
+    if (!record || record.revokedAt || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('errors.noAccess');
+    }
+    await this.prisma.refreshToken.update({
+      where: { id: record.id },
+      data: { revokedAt: new Date() },
+    });
+    const u = record.user;
+    return this.signToken(
+      u.id,
+      u.role,
+      u.companyId,
+      u.firstName,
+      u.lastName,
+      u.uiLocale,
+    );
+  }
+
+  /** Logout — revoke the presented refresh token (no-op if absent/unknown). */
+  async revokeRefresh(rawRefresh: string | undefined) {
+    if (rawRefresh) {
+      await this.prisma.refreshToken.updateMany({
+        where: { tokenHash: this.hashToken(rawRefresh), revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+    return { ok: true };
   }
   async getMe(userId: string) {
     return this.prisma.user.findUnique({
@@ -223,7 +289,9 @@ export class AuthService {
         language: true,
         uiLocale: true,
         timezone: true,
-        avatar: true, status: true, statusUntil: true,
+        avatar: true,
+        status: true,
+        statusUntil: true,
         // For driver routing: which truck am I on, who is my manager.
         // Null for non-drivers — safe to expose either way.
         currentTruck: {
@@ -239,7 +307,9 @@ export class AuthService {
             firstName: true,
             lastName: true,
             phone: true,
-            avatar: true, status: true, statusUntil: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
           },
         },
       },
@@ -376,9 +446,7 @@ export class AuthService {
         where: { id: otp.id },
         data: { usedAt: new Date() },
       });
-      throw new UnauthorizedException(
-        'errors.tooManyAttempts',
-      );
+      throw new UnauthorizedException('errors.tooManyAttempts');
     }
 
     if (otp.code !== code) {

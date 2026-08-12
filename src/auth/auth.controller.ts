@@ -6,9 +6,18 @@ import {
   HttpStatus,
   Param,
   Post,
+  Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+
+// Cross-site in prod (Vercel frontend → Render backend) needs SameSite=None
+// + Secure; on http://localhost dev the same-site Lax cookie works over http.
+const IS_PROD = process.env.NODE_ENV === 'production';
+const REFRESH_COOKIE = 'refresh_token';
+const REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RequestOtpDto } from './dto/request-otp.dto';
@@ -27,14 +36,28 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.AuthService.register(dto);
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.AuthService.register(dto);
+    this.setRefreshCookie(res, result.refresh_token);
+    delete (result as { refresh_token?: string }).refresh_token;
+    return result;
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.AuthService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.AuthService.login(dto);
+    // Web keeps the refresh token in an httpOnly cookie (JS never sees it);
+    // strip it from the JSON body so only the in-memory access token ships.
+    this.setRefreshCookie(res, result.refresh_token);
+    delete (result as { refresh_token?: string }).refresh_token;
+    return result;
   }
 
   @Get('invite/:token')
@@ -79,5 +102,58 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.AuthService.resetPassword(dto.token, dto.password);
+  }
+
+  // Rotate the refresh token → new access (+ new refresh). Web sends the
+  // httpOnly cookie (auto); the driver sends { refreshToken } in the body and
+  // reads the new pair back from the body.
+  @SkipThrottle()
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: { refreshToken?: string },
+  ) {
+    const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
+    const result = await this.AuthService.refresh(
+      fromCookie ?? body?.refreshToken,
+    );
+    if (fromCookie) {
+      // Web: rotate the cookie, keep the refresh out of the JSON body.
+      this.setRefreshCookie(res, result.refresh_token);
+      delete (result as { refresh_token?: string }).refresh_token;
+    }
+    return result;
+  }
+
+  // Revoke the presented refresh token and clear the cookie.
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: { refreshToken?: string },
+  ) {
+    const raw =
+      (req.cookies?.[REFRESH_COOKIE] as string | undefined) ??
+      body?.refreshToken;
+    await this.AuthService.revokeRefresh(raw);
+    this.clearRefreshCookie(res);
+    return { ok: true };
+  }
+
+  private setRefreshCookie(res: Response, token: string) {
+    res.cookie(REFRESH_COOKIE, token, {
+      httpOnly: true,
+      secure: IS_PROD,
+      sameSite: IS_PROD ? 'none' : 'lax',
+      path: '/auth',
+      maxAge: REFRESH_COOKIE_MAX_AGE,
+    });
+  }
+
+  private clearRefreshCookie(res: Response) {
+    res.clearCookie(REFRESH_COOKIE, { path: '/auth' });
   }
 }

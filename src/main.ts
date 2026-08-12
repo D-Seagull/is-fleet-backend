@@ -5,10 +5,36 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { AdminInterceptor } from './common/interceptors/admin.interceptor';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { corsOrigin } from './common/cors-origin';
+import cookieParser from 'cookie-parser';
+import { appendFileSync } from 'fs';
+import { join } from 'path';
+
+// ── TEMPORARY crash diagnostics ─────────────────────────────────────────────
+// Captures whatever is killing the process (Node 24 exits on unhandled
+// rejections). Logs the full stack to the console AND to crash.log so it
+// survives terminal scroll. We intentionally DON'T exit — this keeps the
+// backend alive while we identify the culprit. ⚠️ REMOVE after diagnosis.
+function logCrash(kind: string, err: unknown) {
+  const stack = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  const line = `\n[${new Date().toISOString()}] ${kind}\n${stack}\n`;
+  console.error(`\x1b[41m\x1b[97m ${kind} \x1b[0m`, stack);
+  try {
+    appendFileSync(join(process.cwd(), 'crash.log'), line);
+  } catch {
+    /* ignore file errors */
+  }
+}
+process.on('unhandledRejection', (reason) =>
+  logCrash('UNHANDLED_REJECTION', reason),
+);
+process.on('uncaughtException', (err) => logCrash('UNCAUGHT_EXCEPTION', err));
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+  // Parses Cookie header into req.cookies so the auth controller can read the
+  // httpOnly refresh_token cookie on /auth/refresh and /auth/logout.
+  app.use(cookieParser());
   app.enableCors({
     origin: corsOrigin,
     credentials: true,

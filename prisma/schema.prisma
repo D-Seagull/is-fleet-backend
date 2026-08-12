@@ -77,6 +77,7 @@ model User {
   sentMessages     DirectMessage[] @relation("SentMessages")
   receivedMessages DirectMessage[] @relation("ReceivedMessages")
   groupMessages GroupMessage[]
+  refreshTokens    RefreshToken[]
 
   manager    User?  @relation("DriverManager", fields: [managerId], references: [id])
   teamlead   User?  @relation("ManagerTeamlead", fields: [teamleadId], references: [id])
@@ -135,6 +136,24 @@ model PasswordResetToken {
   userId    String
   expiresAt DateTime
   usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Long-lived refresh tokens for the access+refresh flow. We store only a
+// SHA-256 hash of the opaque token (never the token itself), so a DB leak
+// can't be replayed. Rotated on every /auth/refresh (old row revoked, new
+// one issued) and revoked on logout — which is what makes a stolen session
+// killable, unlike a bare 7-day JWT.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
