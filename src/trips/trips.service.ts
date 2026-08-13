@@ -434,6 +434,29 @@ export class TripsService {
         }
       }
 
+      // Invalidate the unread badge for the driver + new manager in real time
+      // — the manager-change system message is a fresh unread for them, so we
+      // mirror the normal-message fan-out (which the badge relies on). Without
+      // this the driver's bell only caught up on the next 20s poll, so it
+      // looked like reading the chat didn't reset it. Skip whoever triggered
+      // the change (no unread for self); ADMIN/TEAMLEAD get it via their room.
+      const unreadSignal = { tripId: id };
+      if (trip.driverId && trip.driverId !== triggeredById) {
+        this.gateway.server
+          .to(trip.driverId)
+          .emit('tripUnreadChanged', unreadSignal);
+      }
+      if (managerId !== triggeredById) {
+        this.gateway.server
+          .to(managerId)
+          .emit('tripUnreadChanged', unreadSignal);
+      }
+      if (trip.companyId) {
+        this.gateway.server
+          .to(`company-admin-${trip.companyId}`)
+          .emit('tripUnreadChanged', unreadSignal);
+      }
+
       // Push to the new manager (they now own this trip) and to the driver
       // (their counterpart changed). The in-chat system message is great
       // when the user has the chat open; a push is what gets attention when
