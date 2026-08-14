@@ -92,6 +92,9 @@ export class TripsService {
                 address: s.address,
                 ref: s.ref,
                 coords: s.coords,
+                windowDate: s.windowDate,
+                windowStart: s.windowStart,
+                windowEnd: s.windowEnd,
               })),
             }
           : undefined,
@@ -338,6 +341,9 @@ export class TripsService {
             address: s.address,
             ref: s.ref,
             coords: s.coords,
+            windowDate: s.windowDate,
+            windowStart: s.windowStart,
+            windowEnd: s.windowEnd,
           })),
         });
       }

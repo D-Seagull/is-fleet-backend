@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsArray, ValidateNested, IsString, IsInt } from 'class-validator';
+import { IsEnum, IsOptional, IsArray, ValidateNested, IsString, IsInt, Matches } from 'class-validator';
 import { TripStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 
@@ -31,6 +31,18 @@ export class UpdateStopDto {
   @IsString()
   @IsOptional()
   coords?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  windowDate?: string;
+
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/)
+  windowStart?: string;
+
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/)
+  windowEnd?: string;
 }
 
 export class UpdateTripDto {

@@ -5,6 +5,7 @@ import {
   ValidateNested,
   IsEnum,
   IsInt,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -27,6 +28,19 @@ export class TripStopDto {
   @IsString()
   @IsOptional()
   coords?: string;
+
+  // Планове вікно завантаження/вивантаження (рядки, без конвертації TZ).
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  windowDate?: string;
+
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/)
+  windowStart?: string;
+
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/)
+  windowEnd?: string;
 }
 
 export class CreateTripDto {
