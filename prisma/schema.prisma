@@ -299,6 +299,12 @@ model TripStop {
   ref     String?
   coords  String?  // "lat,lng" format
 
+  // Планове вікно завантаження/вивантаження. Зберігаємо як рядки (не DateTime),
+  // щоб "8:00" лишалось "8:00" незалежно від часової зони менеджера чи водія.
+  windowDate  String? // "YYYY-MM-DD"
+  windowStart String? // "HH:mm"
+  windowEnd   String? // "HH:mm"
+
   trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
 }
 
