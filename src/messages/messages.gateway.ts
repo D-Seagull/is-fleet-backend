@@ -206,7 +206,25 @@ export class MessagesGateway {
         .session?.driverId;
       const managerId = (message as { session?: { managerId: string | null } })
         .session?.managerId;
-      const signal = { tripId: dto.tripId };
+      // Carry just enough for the client to raise a desktop notification
+      // (sender + text + truck to navigate to) without a follow-up fetch.
+      const sender = (
+        message as {
+          sender?: { firstName: string; lastName: string | null };
+        }
+      ).sender;
+      const senderName = sender
+        ? `${sender.firstName} ${sender.lastName ?? ''}`.trim()
+        : '';
+      const truckId = (message as { trip?: { truckId: string | null } }).trip
+        ?.truckId;
+      const signal = {
+        tripId: dto.tripId,
+        truckId: truckId ?? null,
+        senderId,
+        senderName,
+        content: message.content ?? '',
+      };
 
       if (companyId) {
         // ADMIN / TEAMLEAD of the company.
