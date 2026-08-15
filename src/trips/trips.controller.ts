@@ -191,7 +191,7 @@ export class TripsController {
     return this.tripsService.driverUpdateStatus(id, driverId, dto);
   }
 
-  @Roles('ADMIN', 'TEAMLEAD')
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete(':id')
   async remove(
     @Param('id') id: string,
