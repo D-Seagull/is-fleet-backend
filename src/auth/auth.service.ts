@@ -404,7 +404,18 @@ export class AuthService {
     // Delivery: with Twilio creds set, this sends a real SMS; without them
     // (dev/test) SmsService falls back to logging the body, so the OTP flow
     // is still testable locally without leaking codes in production logs.
-    await this.sms.send(phone, `Your IS Fleet code: ${code}`);
+    // A delivery failure (e.g. a Twilio trial account can only reach verified
+    // numbers → error 21608) must NOT 500 the request — the OTP row already
+    // exists. Log the real reason for ops; the client still sees a neutral ok.
+    try {
+      await this.sms.send(phone, `Your IS Fleet code: ${code}`);
+    } catch (err) {
+      this.logger.error(
+        `SMS delivery failed for ${phone}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
 
     return { ok: true };
   }
