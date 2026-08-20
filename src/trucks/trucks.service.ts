@@ -326,6 +326,9 @@ export class TrucksService {
   }
 
   async activate(id: string, companyId: string) {
+    // Scope to the caller's company — mirrors remove(). Without this guard a
+    // teamlead of one company could reactivate another company's truck by id.
+    await this.findOne(id, companyId);
     await this.prisma.truck.update({
       where: { id },
       data: { isActive: true },
