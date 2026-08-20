@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from './common/logging';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
@@ -33,6 +35,9 @@ import { HealthController } from './health/health.controller';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    // Structured request-scoped logging (JSON in prod, pretty in dev) with
+    // per-request ids. See src/common/logging.ts.
+    LoggerModule.forRoot(loggerConfig),
     // Global rate-limit baseline; the auth controller tightens per-route
     // via @Throttle for endpoints that are bruteforce or SMS/email cost
     // sensitive (login, OTP, forgot-password).

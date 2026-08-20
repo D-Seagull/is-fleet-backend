@@ -5,6 +5,7 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { AdminInterceptor } from './common/interceptors/admin.interceptor';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { corsOrigin } from './common/cors-origin';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import { appendFileSync } from 'fs';
 import { join } from 'path';
@@ -31,7 +32,10 @@ process.on('uncaughtException', (err) => logCrash('UNCAUGHT_EXCEPTION', err));
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  // bufferLogs holds startup logs until the pino logger is installed below,
+  // so even bootstrap output is structured.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(PinoLogger));
   // Parses Cookie header into req.cookies so the auth controller can read the
   // httpOnly refresh_token cookie on /auth/refresh and /auth/logout.
   app.use(cookieParser());
