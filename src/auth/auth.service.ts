@@ -401,10 +401,9 @@ export class AuthService {
       data: { phone, code, userId: user.id, expiresAt },
     });
 
-    // TEMPORARY: Twilio SMS not wired yet — surface the OTP in Render logs so
-    // testers can log in without an SMS. ⚠️ REMOVE BEFORE PRODUCTION LAUNCH.
-    this.logger.warn(`[TEMP OTP] ${phone} → ${code}`);
-
+    // Delivery: with Twilio creds set, this sends a real SMS; without them
+    // (dev/test) SmsService falls back to logging the body, so the OTP flow
+    // is still testable locally without leaking codes in production logs.
     await this.sms.send(phone, `Your IS Fleet code: ${code}`);
 
     return { ok: true };
