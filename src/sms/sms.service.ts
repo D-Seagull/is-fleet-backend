@@ -12,8 +12,13 @@ export class SmsService {
   // (number or registered alphanumeric ID) is the fallback.
   private readonly messagingServiceSid: string | null;
   private readonly fromNumber: string | null;
+  // Dev escape hatch: SMS_DEV_LOG=true logs the body instead of sending, even
+  // when Twilio creds are present. Lets local dev see OTP codes without
+  // spending on / being blocked by a trial account. Never set in production.
+  private readonly devLog: boolean;
 
   constructor(private readonly config: ConfigService) {
+    this.devLog = this.config.get<string>('SMS_DEV_LOG') === 'true';
     const accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID');
 
     // Preferred: a scoped, revocable API Key (SK... SID + secret). The SDK
@@ -40,7 +45,12 @@ export class SmsService {
       authKind = 'auth token';
     }
 
-    if (client && hasSender) {
+    if (this.devLog) {
+      this.client = null;
+      this.messagingServiceSid = null;
+      this.fromNumber = null;
+      this.logger.warn('SMS_DEV_LOG=true — SMS will be logged, not sent');
+    } else if (client && hasSender) {
       this.client = client;
       this.messagingServiceSid = msgServiceSid ?? null;
       this.fromNumber = from ?? null;
