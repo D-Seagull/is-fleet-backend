@@ -12,4 +12,11 @@ export class LoginDto {
   @IsOptional()
   @IsBoolean()
   remember?: boolean;
+
+  /** Native clients (is-manager / is-driver) can't rely on an httpOnly cookie,
+   *  so when true the refresh token is returned in the JSON body instead of
+   *  being moved into a Set-Cookie header. Web leaves this unset. */
+  @IsOptional()
+  @IsBoolean()
+  mobile?: boolean;
 }

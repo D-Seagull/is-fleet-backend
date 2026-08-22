@@ -54,6 +54,12 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.AuthService.login(dto);
+    // Native clients (is-manager / is-driver) can't hold an httpOnly cookie, so
+    // they pass { mobile: true } and read the refresh token straight from the
+    // body — same shape as the driver's verify-otp response.
+    if (dto.mobile) {
+      return result;
+    }
     // Web keeps the refresh token in an httpOnly cookie (JS never sees it);
     // strip it from the JSON body so only the in-memory access token ships.
     this.setRefreshCookie(res, result.refresh_token, dto.remember ?? true);
