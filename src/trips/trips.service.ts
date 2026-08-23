@@ -89,6 +89,7 @@ export class TripsService {
               create: dto.stops.map((s, i) => ({
                 type: s.type,
                 order: s.order ?? i,
+                name: s.name,
                 address: s.address,
                 ref: s.ref,
                 coords: s.coords,
@@ -338,6 +339,7 @@ export class TripsService {
             tripId: id,
             type: s.type,
             order: s.order ?? i,
+            name: s.name,
             address: s.address,
             ref: s.ref,
             coords: s.coords,
@@ -351,7 +353,12 @@ export class TripsService {
 
     const updated = await this.prisma.trip.update({
       where: { id },
-      data: { notes: dto.notes, orderNumber: dto.orderNumber },
+      data: {
+        notes: dto.notes,
+        orderNumber: dto.orderNumber,
+        // назва рейсу перераховується клієнтом з адрес; оновлюємо лише коли передана
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+      },
       include: tripInclude,
     });
     this.emitTripUpdated(id, companyId, existing.driverId);

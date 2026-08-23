@@ -10,12 +10,17 @@ import {
 import { Type } from 'class-transformer';
 
 export class TripStopDto {
-  @IsEnum(['LOADING', 'UNLOADING'])
-  type: 'LOADING' | 'UNLOADING';
+  @IsEnum(['LOADING', 'UNLOADING', 'WAYPOINT'])
+  type: 'LOADING' | 'UNLOADING' | 'WAYPOINT';
 
   @IsInt()
   @IsOptional()
   order?: number;
+
+  // мітка для проміжного пункту (WAYPOINT), напр. "Кастомс"
+  @IsString()
+  @IsOptional()
+  name?: string;
 
   @IsString()
   @IsOptional()

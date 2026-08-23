@@ -295,6 +295,7 @@ model TripStop {
   tripId  String
   type    StopType
   order   Int      @default(0)
+  name    String?  // мітка для WAYPOINT (напр. "Кастомс"); null для LOADING/UNLOADING
   address String?  // full address: company, street, postcode, city
   ref     String?
   coords  String?  // "lat,lng" format
@@ -311,6 +312,7 @@ model TripStop {
 enum StopType {
   LOADING
   UNLOADING
+  WAYPOINT
 }
 
 enum TripStatus {

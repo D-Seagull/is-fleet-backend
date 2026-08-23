@@ -13,12 +13,17 @@ export class AssignManagerDto {
 }
 
 export class UpdateStopDto {
-  @IsEnum(['LOADING', 'UNLOADING'])
-  type: 'LOADING' | 'UNLOADING';
+  @IsEnum(['LOADING', 'UNLOADING', 'WAYPOINT'])
+  type: 'LOADING' | 'UNLOADING' | 'WAYPOINT';
 
   @IsInt()
   @IsOptional()
   order?: number;
+
+  // мітка для проміжного пункту (WAYPOINT), напр. "Кастомс"
+  @IsString()
+  @IsOptional()
+  name?: string;
 
   @IsString()
   @IsOptional()
@@ -49,6 +54,10 @@ export class UpdateTripDto {
   @IsEnum(TripStatus)
   @IsOptional()
   status?: TripStatus;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
 
   @IsString()
   @IsOptional()
