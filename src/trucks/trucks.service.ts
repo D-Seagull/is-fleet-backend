@@ -74,6 +74,15 @@ export class TrucksService {
         manager: {
           select: { id: true, firstName: true, lastName: true, avatar: true },
         },
+        // Активний тріп (не DELIVERED) — деталь траку бере з нього activeTripId.
+        trips: {
+          where: {
+            status: { in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'] },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, status: true },
+        },
       },
     });
     if (!truck) throw new NotFoundException('errors.truckNotFound');
