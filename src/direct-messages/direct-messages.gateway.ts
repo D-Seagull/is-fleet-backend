@@ -13,7 +13,10 @@ import { JwtService } from '@nestjs/jwt';
 import { DirectMessagesService } from './direct-messages.service';
 import { GroupMessagesService } from 'src/group-messages/group-messages.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { PushService } from 'src/push/push.service';
 import { corsOrigin } from 'src/common/cors-origin';
+import { fullName } from 'src/common/utils/full-name';
+import { t } from 'src/i18n/i18n';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class DirectMessagesGateway
@@ -29,7 +32,14 @@ export class DirectMessagesGateway
     private groupService: GroupMessagesService,
     private jwt: JwtService,
     private prisma: PrismaService,
+    private push: PushService,
   ) {}
+
+  /** True when the user has at least one live socket (their personal room). */
+  private async isUserOnline(userId: string): Promise<boolean> {
+    const socks = await this.server.in(`user:${userId}`).fetchSockets();
+    return socks.length > 0;
+  }
 
   handleConnection(client: Socket) {
     try {
@@ -240,6 +250,32 @@ export class DirectMessagesGateway
           .to(`user:${memberId}`)
           .emit('group_unread_update', { groupId: data.groupId });
       }
+
+      // Push to members who are offline — online ones already received the
+      // message over the socket (`new_group_message`). Never push the sender.
+      void (async () => {
+        const senderName = fullName(message.sender);
+        const offlineIds: string[] = [];
+        for (const memberId of memberIds) {
+          if (memberId === senderId) continue;
+          if (!(await this.isUserOnline(memberId))) offlineIds.push(memberId);
+        }
+        if (offlineIds.length === 0) return;
+        await this.push.sendLocalizedToUsers(
+          offlineIds,
+          (lang) => ({
+            title: senderName || t(lang, 'push.newMessage'),
+            body: data.content.slice(0, 200),
+          }),
+          {
+            data: {
+              type: 'GROUP_MESSAGE',
+              groupId: data.groupId,
+              messageId: message.id,
+            },
+          },
+        );
+      })();
     }
     return message;
   }

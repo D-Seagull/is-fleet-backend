@@ -7,11 +7,13 @@ import { DirectMessagesController } from './direct-messages.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { GroupMessagesModule } from 'src/group-messages/group-messages.module';
 import { ReactionsModule } from 'src/reactions/reactions.module';
+import { PushModule } from '../push/push.module';
 @Module({
   imports: [
     PrismaModule,
     forwardRef(() => GroupMessagesModule),
     ReactionsModule,
+    PushModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
