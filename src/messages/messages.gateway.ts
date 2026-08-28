@@ -273,6 +273,12 @@ export class MessagesGateway {
       messageIds: result.messageIds,
       documentIds: result.documentIds,
     });
+    // Refresh the reader's own unread badge / bell — they just cleared this
+    // trip, so their notification counter must drop (they may not be sitting
+    // in the trip room from the bell's perspective).
+    this.server
+      .to(userId)
+      .emit('tripUnreadChanged', { tripId: body.tripId });
   }
 
   /**

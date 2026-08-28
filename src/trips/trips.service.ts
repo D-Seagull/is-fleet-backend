@@ -403,6 +403,20 @@ export class TripsService {
             .to(`company-${trip.companyId}`)
             .emit('newMessage', systemMessage);
         }
+        // Refresh the bell/badges of the trip's participants — the driver-change
+        // system message is a fresh unread (skip whoever triggered it).
+        const signal = { tripId: id, truckId: updated.truckId };
+        if (driverId !== triggeredById) {
+          this.gateway.server.to(driverId).emit('tripUnreadChanged', signal);
+        }
+        if (trip.managerId && trip.managerId !== triggeredById) {
+          this.gateway.server.to(trip.managerId).emit('tripUnreadChanged', signal);
+        }
+        if (trip.companyId) {
+          this.gateway.server
+            .to(`company-admin-${trip.companyId}`)
+            .emit('tripUnreadChanged', signal);
+        }
       }
     }
 

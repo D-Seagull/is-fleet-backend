@@ -318,6 +318,18 @@ export class TrucksService {
           this.gateway.server
             .to(`company-${companyId}`)
             .emit('newMessage', systemMessage);
+          // Refresh the bell/badges of the trip's participants — the system
+          // message is a fresh unread for them (skip whoever triggered it).
+          const signal = { tripId: trip.id, truckId: id };
+          if (newManagerId !== triggeredById) {
+            this.gateway.server.to(newManagerId).emit('tripUnreadChanged', signal);
+          }
+          if (trip.driverId && trip.driverId !== triggeredById) {
+            this.gateway.server.to(trip.driverId).emit('tripUnreadChanged', signal);
+          }
+          this.gateway.server
+            .to(`company-admin-${companyId}`)
+            .emit('tripUnreadChanged', signal);
         }
       }
     }
