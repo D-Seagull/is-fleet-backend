@@ -67,6 +67,9 @@ model User {
   /// When non-null, BUSY/SLEEP auto-expires at this instant — the next
   /// read resolves the user back to ONLINE.
   statusUntil        DateTime?
+  /// Last time the user had a live socket (updated on connect + disconnect).
+  /// Drives the "away" tier: offline but seen < 7 days → amber, else grey.
+  lastSeenAt         DateTime?
   isActive           Boolean             @default(true)
   companyId          String
   createdAt          DateTime            @default(now())

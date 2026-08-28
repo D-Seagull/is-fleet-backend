@@ -34,6 +34,31 @@ export class MessagesGateway {
     private prisma: PrismaService,
   ) {}
 
+  // Offline users seen within this window render as "away" (amber); older →
+  // grey OFFLINE.
+  private static readonly AWAY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+  /** Bump the user's last-seen so the away/offline tier can age out. */
+  private touchLastSeen(userId: string) {
+    void this.prisma.user
+      .update({ where: { id: userId }, data: { lastSeenAt: new Date() } })
+      .catch(() => {});
+  }
+
+  /** Company members who are offline but were seen within the away window. */
+  private async awayUserIds(
+    companyId: string,
+    onlineIds: string[],
+  ): Promise<string[]> {
+    const since = new Date(Date.now() - MessagesGateway.AWAY_WINDOW_MS);
+    const recent = await this.prisma.user.findMany({
+      where: { companyId, lastSeenAt: { gte: since } },
+      select: { id: true },
+    });
+    const online = new Set(onlineIds);
+    return recent.map((r) => r.id).filter((id) => !online.has(id));
+  }
+
   async handleConnection(client: Socket) {
     try {
       // Support both:
@@ -59,6 +84,7 @@ export class MessagesGateway {
       // the app); mobile flips it back to false in onBackground.
       client.data.active = true;
       void client.join(userId);
+      this.touchLastSeen(userId);
       // Company-level room — kept for presence broadcasts (userPresence-
       // Changed / presenceSnapshot). Unread-related signals now go to
       // role-scoped rooms below (Phase 2 fan-out).
@@ -88,7 +114,8 @@ export class MessagesGateway {
               .filter((id): id is string => typeof id === 'string'),
           ),
         );
-        client.emit('presenceSnapshot', { userIds: onlineUserIds });
+        const awayUserIds = await this.awayUserIds(companyId, onlineUserIds);
+        client.emit('presenceSnapshot', { userIds: onlineUserIds, awayUserIds });
 
         // If this is the user's first socket in the company room, tell
         // everyone else they came online. (Skip the broadcast on the
@@ -120,6 +147,7 @@ export class MessagesGateway {
       `Client disconnected: ${client.id} user:${userId ?? 'n/a'}`,
     );
     if (!userId || !companyId) return;
+    this.touchLastSeen(userId);
 
     // Socket.io removes the socket from rooms BEFORE handleDisconnect
     // fires, so a fetch now reflects the post-disconnect state.
@@ -130,9 +158,11 @@ export class MessagesGateway {
       (s) => (s.data as { userId?: string }).userId === userId,
     );
     if (!mineLeft) {
+      // They just went offline, so they're within the away window → amber.
       this.server.to(`company-${companyId}`).emit('userPresenceChanged', {
         userId,
         online: false,
+        away: true,
       });
     }
   }
@@ -158,7 +188,8 @@ export class MessagesGateway {
           .filter((id): id is string => typeof id === 'string'),
       ),
     );
-    client.emit('presenceSnapshot', { userIds: onlineUserIds });
+    const awayUserIds = await this.awayUserIds(companyId, onlineUserIds);
+    client.emit('presenceSnapshot', { userIds: onlineUserIds, awayUserIds });
   }
 
   @SubscribeMessage('joinTrip')
