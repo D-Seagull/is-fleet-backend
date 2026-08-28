@@ -514,6 +514,42 @@ export class TripsService {
           },
         );
       }
+
+      // Keep team leads in the loop on the change (info, third person).
+      const excludeIds = [managerId, trip.managerId].filter(
+        (x): x is string => !!x,
+      );
+      const teamleads = await this.prisma.user.findMany({
+        where: { companyId, role: 'TEAMLEAD', id: { notIn: excludeIds } },
+        select: { id: true },
+      });
+      if (teamleads.length > 0) {
+        await this.push.sendLocalizedToUsers(
+          teamleads.map((u) => u.id),
+          (lang) => ({
+            title: t(lang, 'push.managerInfoTitle'),
+            body: t(lang, 'push.managerAssignedTripInfo', {
+              title: updated.title,
+              name: fullName(newManager) || t(lang, 'push.noName'),
+            }),
+          }),
+          { data: { type: 'MANAGER_ASSIGNED_TRIP', tripId: id, truckId: updated.truckId } },
+        );
+      }
+
+      // The previous manager lost this trip — tell them, and who took over.
+      if (trip.managerId && trip.managerId !== managerId) {
+        await this.push.sendLocalizedToUsers(
+          [trip.managerId],
+          (lang) => ({
+            title: t(lang, 'push.tripUnassignedTitle', { title: updated.title }),
+            body: t(lang, 'push.unassignedNewManager', {
+              manager: fullName(newManager) || t(lang, 'push.noName'),
+            }),
+          }),
+          { data: { type: 'MANAGER_REMOVED_TRIP', tripId: id, truckId: updated.truckId } },
+        );
+      }
     }
 
     return updated;
@@ -545,10 +581,29 @@ export class TripsService {
     const updated = await this.prisma.trip.update({
       where: { id },
       data: { status: dto.status },
+      include: { truck: { select: { plate: true } } },
     });
     // Driver changed it themselves (their app updates optimistically); push
     // to the company room + trip room so web managers see it live.
     this.emitTripUpdated(id, trip.companyId, null);
+
+    // Push the trip's manager so they learn the driver advanced the trip even
+    // when the app is closed. Body reads e.g. "AB1234: On Way".
+    if (trip.managerId && dto.status) {
+      const status = dto.status;
+      const plate = updated.truck?.plate ?? '';
+      void this.push.sendLocalizedToUsers(
+        [trip.managerId],
+        (lang) => ({
+          title: t(lang, 'push.tripStatusTitle'),
+          body: t(lang, 'push.tripStatusBody', {
+            plate,
+            status: t(lang, `tripStatus.${status}`),
+          }),
+        }),
+        { data: { type: 'TRIP_STATUS', tripId: id, truckId: trip.truckId } },
+      );
+    }
     return updated;
   }
 

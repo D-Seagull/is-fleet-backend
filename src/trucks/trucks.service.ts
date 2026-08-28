@@ -252,6 +252,42 @@ export class TrucksService {
         );
       }
 
+      // Keep team leads in the loop on any manager change (info, third person).
+      const excludeIds = [newManagerId, oldTruck.managerId].filter(
+        (x): x is string => !!x,
+      );
+      const teamleads = await this.prisma.user.findMany({
+        where: { companyId, role: 'TEAMLEAD', id: { notIn: excludeIds } },
+        select: { id: true },
+      });
+      if (teamleads.length > 0) {
+        await this.push.sendLocalizedToUsers(
+          teamleads.map((u) => u.id),
+          (lang) => ({
+            title: t(lang, 'push.managerInfoTitle'),
+            body: t(lang, 'push.managerAssignedTruckInfo', {
+              plate: updated.plate,
+              name: fullName(newManager) || t(lang, 'push.noName'),
+            }),
+          }),
+          { data: { type: 'MANAGER_ASSIGNED_TRUCK', truckId: id, plate: updated.plate } },
+        );
+      }
+
+      // The previous manager lost this truck — tell them, and who took over.
+      if (oldTruck.managerId && oldTruck.managerId !== newManagerId) {
+        await this.push.sendLocalizedToUsers(
+          [oldTruck.managerId],
+          (lang) => ({
+            title: t(lang, 'push.truckUnassignedTitle', { plate: updated.plate }),
+            body: t(lang, 'push.unassignedNewManager', {
+              manager: fullName(newManager) || t(lang, 'push.noName'),
+            }),
+          }),
+          { data: { type: 'MANAGER_REMOVED_TRUCK', truckId: id, plate: updated.plate } },
+        );
+      }
+
       const activeTrips = await this.prisma.trip.findMany({
         where: {
           truckId: id,
