@@ -35,10 +35,15 @@ export class DirectMessagesGateway
     private push: PushService,
   ) {}
 
-  /** True when the user has at least one live socket (their personal room). */
+  /**
+   * True when the user has the app in the FOREGROUND — a live socket whose
+   * `data.active` flag is set (clients flip it via appActive/appBackground).
+   * Matches MessagesGateway.isUserOnline so chat push suppression is consistent:
+   * suppress only while the app is open, push when it's backgrounded/closed.
+   */
   private async isUserOnline(userId: string): Promise<boolean> {
     const socks = await this.server.in(`user:${userId}`).fetchSockets();
-    return socks.length > 0;
+    return socks.some((s) => s.data?.active === true);
   }
 
   handleConnection(client: Socket) {
@@ -139,6 +144,27 @@ export class DirectMessagesGateway
     this.server
       .to(`user:${data.receiverId}`)
       .emit('new_direct_message', message);
+
+    // Push the recipient when their app isn't in the foreground — online users
+    // already received it over the socket. Never push the sender.
+    void (async () => {
+      if (await this.isUserOnline(data.receiverId)) return;
+      const senderName = fullName(message.sender);
+      await this.push.sendLocalizedToUsers(
+        [data.receiverId],
+        (lang) => ({
+          title: senderName || t(lang, 'push.newMessage'),
+          body: data.content.slice(0, 200),
+        }),
+        {
+          data: {
+            type: 'DM_MESSAGE',
+            userId: senderId,
+            messageId: message.id,
+          },
+        },
+      );
+    })();
 
     return message;
   }
