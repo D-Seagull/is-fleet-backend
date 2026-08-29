@@ -362,6 +362,35 @@ export class MessagesGateway {
     this.server.to(tripId).emit('newDocument', doc);
   }
 
+  // Attachments count toward the unread bell exactly like text messages, so a
+  // new trip document must fan out the same lightweight `tripUnreadChanged`
+  // signal to stakeholders who aren't sitting in the trip room (mirrors the
+  // Phase 2 fan-out in handleMessage). Skips the uploader — no unread for self.
+  emitTripUnreadForDocument(signal: {
+    tripId: string;
+    truckId: string | null;
+    senderId: string;
+    senderName: string;
+    content: string;
+  }, opts: {
+    companyId?: string | null;
+    driverId?: string | null;
+    managerId?: string | null;
+  }) {
+    const { companyId, driverId, managerId } = opts;
+    if (companyId) {
+      this.server
+        .to(`company-admin-${companyId}`)
+        .emit('tripUnreadChanged', signal);
+    }
+    if (driverId && driverId !== signal.senderId) {
+      this.server.to(driverId).emit('tripUnreadChanged', signal);
+    }
+    if (managerId && managerId !== signal.senderId) {
+      this.server.to(managerId).emit('tripUnreadChanged', signal);
+    }
+  }
+
   emitDocumentDeleted(tripId: string, documentId: string) {
     this.server.to(tripId).emit('documentDeleted', { tripId, documentId });
   }

@@ -443,11 +443,18 @@ export class TrucksService {
     });
   }
 
-  async removeNote(id: string, userId: string) {
-    const note = await this.prisma.truckNote.findFirst({
-      where: { id, userId },
+  async removeNote(id: string, companyId: string | null) {
+    // Anyone in the company can delete a truck note — not only its author.
+    // We still scope by company so notes can't be deleted across tenants.
+    // ADMIN has companyId nulled by AdminInterceptor, so skip that check.
+    const note = await this.prisma.truckNote.findUnique({
+      where: { id },
+      include: { truck: { select: { companyId: true } } },
     });
     if (!note) throw new NotFoundException('errors.noteNotFound');
+    if (companyId && note.truck.companyId !== companyId) {
+      throw new NotFoundException('errors.noteNotFound');
+    }
 
     await this.prisma.truckNote.delete({ where: { id } });
     return { message: 'Note deleted' };

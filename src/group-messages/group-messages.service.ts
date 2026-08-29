@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { EDIT_WINDOW_MS } from 'src/common/constants';
 import { ReactionsService } from 'src/reactions/reactions.service';
 import { fullName } from 'src/common/utils/full-name';
 
@@ -143,7 +144,7 @@ export class GroupMessagesService {
     });
   }
 
-  // 15-min edit window for group messages — author-only, rejects deleted &
+  // 24-hour edit window for group messages — author-only, rejects deleted &
   // stale edits. Returns the full updated row ready for emit to the group room.
   async editMessage(messageId: string, userId: string, content: string) {
     const trimmed = content.trim();
@@ -161,7 +162,7 @@ export class GroupMessagesService {
       throw new Error('errors.cannotEditDeleted');
     }
     const ageMs = Date.now() - msg.createdAt.getTime();
-    if (ageMs > 15 * 60 * 1000) {
+    if (ageMs > EDIT_WINDOW_MS) {
       throw new Error('errors.editWindowPassed');
     }
     return this.prisma.groupMessage.update({
@@ -261,6 +262,18 @@ export class GroupMessagesService {
             SELECT 1 FROM "GroupMessageRead" gmr
             WHERE gmr."messageId" = gm.id AND gmr."userId" = ${userId}
           )
+        UNION ALL
+        -- Attachments count toward unread too. Group docs use a single shared
+        -- isRead flag (first member to open clears it), unlike text messages
+        -- which track per-user reads via GroupMessageRead.
+        SELECT gd.id, gd."groupId", gd."uploadedBy" AS "senderId",
+               COALESCE(NULLIF(gd.caption, ''), gd."fileName") AS content,
+               gd."createdAt"
+        FROM "GroupMessageDocument" gd
+        WHERE gd."groupId" IN (SELECT id FROM user_groups)
+          AND gd."uploadedBy" != ${userId}
+          AND gd."isRead" = false
+          AND gd."deletedAt" IS NULL
       ),
       counts AS (
         SELECT "groupId", COUNT(*)::int AS unread_count

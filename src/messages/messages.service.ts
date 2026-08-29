@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { EDIT_WINDOW_MS } from 'src/common/constants';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { TranslationService } from 'src/translation/translation.service';
 import { TripChatSessionsService } from './trip-chat-sessions.service';
@@ -126,7 +127,7 @@ export class MessagesService {
     return message;
   }
 
-  // 15-min edit window — author-only, rejects deleted/system messages and
+  // 24-hour edit window — author-only, rejects deleted/system messages and
   // stale edits. Returns the updated message ready for emit to the trip room.
   async editMessage(messageId: string, userId: string, content: string) {
     const trimmed = content.trim();
@@ -147,7 +148,7 @@ export class MessagesService {
       throw new ForbiddenException('errors.systemMessagesNotEditable');
     }
     const ageMs = Date.now() - msg.createdAt.getTime();
-    if (ageMs > 15 * 60 * 1000) {
+    if (ageMs > EDIT_WINDOW_MS) {
       throw new ForbiddenException('errors.editWindowPassed');
     }
     return this.prisma.message.update({
@@ -226,6 +227,14 @@ export class MessagesService {
               WHERE "driverId" = ${requesterId} OR "managerId" = ${requesterId}
             )`;
 
+    // Trip documents have no chat session, so they can't reuse the
+    // session-scoped filter above — gate them on current trip participation
+    // instead (same "live chat only" intent, minus the per-session check).
+    const docParticipantFilter =
+      requesterRole === 'ADMIN'
+        ? Prisma.empty
+        : Prisma.sql`AND (t."driverId" = ${requesterId} OR t."managerId" = ${requesterId})`;
+
     type Row = {
       truckId: string;
       plate: string;
@@ -254,6 +263,22 @@ export class MessagesService {
           AND m."senderId" != ${requesterId}
           AND t."companyId" = ${companyId}
           ${sessionFilter}
+        UNION ALL
+        -- Attachments count toward unread too. Trip docs use a single shared
+        -- isRead flag; fall back to the filename when there's no caption.
+        SELECT td.id, td."tripId", td."uploadedBy" AS "senderId",
+               COALESCE(NULLIF(td.caption, ''), td."fileName") AS content,
+               td."createdAt",
+               t."truckId",
+               (t.status IN ('ASSIGNED','ACCEPTED','ON_WAY','ON_SITE','LOADED'))
+                 AS is_active
+        FROM "TripDocument" td
+        JOIN "Trip" t ON t.id = td."tripId"
+        WHERE td."isRead" = false
+          AND td."uploadedBy" != ${requesterId}
+          AND td."deletedAt" IS NULL
+          AND t."companyId" = ${companyId}
+          ${docParticipantFilter}
       ),
       trip_counts AS (
         SELECT "tripId", "truckId", is_active, COUNT(*)::int AS cnt
@@ -356,6 +381,20 @@ export class MessagesService {
           AND m."sessionId" IN (
             SELECT id FROM "TripChatSession" WHERE "driverId" = ${driverId}
           )
+        UNION ALL
+        -- Attachments count toward unread too (single shared isRead flag).
+        SELECT td.id, td."tripId", td."uploadedBy" AS "senderId",
+               COALESCE(NULLIF(td.caption, ''), td."fileName") AS content,
+               td."createdAt",
+               t.title AS trip_title,
+               (t.status IN ('ASSIGNED','ACCEPTED','ON_WAY','ON_SITE','LOADED'))
+                 AS is_active
+        FROM "TripDocument" td
+        JOIN "Trip" t ON t.id = td."tripId"
+        WHERE td."isRead" = false
+          AND td."uploadedBy" != ${driverId}
+          AND td."deletedAt" IS NULL
+          AND t."driverId" = ${driverId}
       ),
       trip_counts AS (
         SELECT "tripId", trip_title, is_active, COUNT(*)::int AS unread

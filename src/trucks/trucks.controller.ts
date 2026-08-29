@@ -107,7 +107,10 @@ export class TrucksController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete('notes/:id')
-  removeNote(@Param('id') id: string, @GetUser('id') userId: string) {
-    return this.trucksService.removeNote(id, userId);
+  removeNote(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+  ) {
+    return this.trucksService.removeNote(id, companyId);
   }
 }

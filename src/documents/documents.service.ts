@@ -57,6 +57,9 @@ export class DocumentsService {
                 id: true,
                 title: true,
                 orderNumber: true,
+                companyId: true,
+                driverId: true,
+                managerId: true,
                 truck: { select: { id: true, plate: true } },
               },
             },
@@ -89,6 +92,32 @@ export class DocumentsService {
     // app see the doc appear in chat without refetching.
     for (const doc of created) {
       this.gateway.emitNewDocument(tripId, doc);
+    }
+
+    // Fan out the unread-bell signal to stakeholders who aren't in the trip
+    // room, so an attachment lights up their bell just like a text message.
+    // One signal per batch (React Query coalesces the refetch anyway).
+    const first = created[0];
+    if (first) {
+      const trip = first.trip;
+      const uploader = first.uploader;
+      const senderName = uploader
+        ? `${uploader.firstName} ${uploader.lastName ?? ''}`.trim()
+        : '';
+      this.gateway.emitTripUnreadForDocument(
+        {
+          tripId,
+          truckId: trip?.truck?.id ?? null,
+          senderId: uploadedBy,
+          senderName,
+          content: first.caption?.trim() || first.fileName,
+        },
+        {
+          companyId: trip?.companyId ?? null,
+          driverId: trip?.driverId ?? null,
+          managerId: trip?.managerId ?? null,
+        },
+      );
     }
 
     return created;

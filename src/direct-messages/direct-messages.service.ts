@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EDIT_WINDOW_MS } from '../common/constants';
 import { ReactionsService } from '../reactions/reactions.service';
 
 @Injectable()
@@ -320,7 +321,7 @@ export class DirectMessagesService {
       throw new Error('errors.cannotEditDeleted');
     }
     const ageMs = Date.now() - msg.createdAt.getTime();
-    if (ageMs > 15 * 60 * 1000) {
+    if (ageMs > EDIT_WINDOW_MS) {
       throw new Error('errors.editWindowPassed');
     }
     return this.prisma.directMessage.update({
