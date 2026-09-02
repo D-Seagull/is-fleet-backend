@@ -28,6 +28,7 @@ import { GroupMessagesModule } from './group-messages/group-messages.module';
 import { GroupMessageDocumentsModule } from './group-message-documents/group-message-documents.module';
 import { ReactionsModule } from './reactions/reactions.module';
 import { ChatModule } from './chat/chat.module';
+import { BugReportsModule } from './bug-reports/bug-reports.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -64,6 +65,7 @@ import { HealthController } from './health/health.controller';
     GroupMessageDocumentsModule,
     ReactionsModule,
     ChatModule,
+    BugReportsModule,
   ],
   controllers: [HealthController],
   providers: [

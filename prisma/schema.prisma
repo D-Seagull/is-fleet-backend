@@ -18,18 +18,19 @@ model Company {
   users              User[]
   trucks             Truck[]
   trips              Trip[]
-  logo            String?
-  logoPublicId  String?
-  accountingEmail String?
-  hrEmail         String?
-  directorEmail   String?
-  inviteToken  String?   @unique
-  inviteExpiry DateTime?
-  isActive     Boolean   @default(true)
+  logo               String?
+  logoPublicId       String?
+  accountingEmail    String?
+  hrEmail            String?
+  directorEmail      String?
+  inviteToken        String?             @unique
+  inviteExpiry       DateTime?
+  isActive           Boolean             @default(true)
   announcements      Announcement[]
   announcementDrafts AnnouncementDraft[]
-  advanceRequests AdvanceRequest[]
-  alarms          Alarm[]
+  advanceRequests    AdvanceRequest[]
+  alarms             Alarm[]
+  bugReports         BugReport[]
 }
 
 model TruckNote {
@@ -44,87 +45,88 @@ model TruckNote {
 }
 
 model User {
-  id                 String              @id @default(uuid())
-  firstName          String
-  lastName           String?
-  email              String?             @unique
-  phone              String?             @unique
-  password           String?
-  avatar String?
-  avatarPublicId String?
-  role               Role
-  language           Language            @default(EN)
+  id               String          @id @default(uuid())
+  firstName        String
+  lastName         String?
+  email            String?         @unique
+  phone            String?         @unique
+  password         String?
+  avatar           String?
+  avatarPublicId   String?
+  role             Role
+  language         Language        @default(EN)
   /// UI locale for the web / driver-app rendering. Independent of
   /// `language`, which drives the chat-message auto-translation for this
   /// user. Kept in a smaller enum so the picker only ever shows locales we
   /// actually translate the UI into.
-  uiLocale           UILocale            @default(UK)
-  timezone           String?             // IANA tz, e.g. "Europe/Warsaw"
+  uiLocale         UILocale        @default(UK)
+  timezone         String? // IANA tz, e.g. "Europe/Warsaw"
   /// Self-set presence status. Combined with socket presence on read:
   /// no active socket -> displayed as OFFLINE regardless. ONLINE while a
   /// socket is up. BUSY / SLEEP both suppress push notifications.
-  status             UserStatus          @default(ONLINE)
+  status           UserStatus      @default(ONLINE)
   /// When non-null, BUSY/SLEEP auto-expires at this instant — the next
   /// read resolves the user back to ONLINE.
-  statusUntil        DateTime?
+  statusUntil      DateTime?
   /// Last time the user had a live socket (updated on connect + disconnect).
   /// Drives the "away" tier: offline but seen < 7 days → amber, else grey.
-  lastSeenAt         DateTime?
-  isActive           Boolean             @default(true)
-  companyId          String
-  createdAt          DateTime            @default(now())
-  managerId    String?
-  teamleadId   String?
-  inviteToken    String?
-  inviteExpiry   DateTime?
+  lastSeenAt       DateTime?
+  isActive         Boolean         @default(true)
+  companyId        String
+  createdAt        DateTime        @default(now())
+  managerId        String?
+  teamleadId       String?
+  inviteToken      String?
+  inviteExpiry     DateTime?
   sentMessages     DirectMessage[] @relation("SentMessages")
   receivedMessages DirectMessage[] @relation("ReceivedMessages")
-  groupMessages GroupMessage[]
+  groupMessages    GroupMessage[]
   refreshTokens    RefreshToken[]
 
-  manager    User?  @relation("DriverManager", fields: [managerId], references: [id])
-  teamlead   User?  @relation("ManagerTeamlead", fields: [teamleadId], references: [id])
-  drivers     User[] @relation("DriverManager")
-  managers    User[] @relation("ManagerTeamlead")
-  groupsCreated      Group[]             @relation("GroupCreator")
-  groupManagers      GroupManager[]
-  truckNotes         TruckNote[]
-  company            Company             @relation(fields: [companyId], references: [id])
-  tripsAsDriver      Trip[]              @relation("DriverTrips")
-  tripsAsManager     Trip[]              @relation("ManagerTrips")
-  messages           Message[]
-  comments           TripComment[]
-  alarmsCreated      Alarm[]             @relation("AlarmCreator")
-  alarmsTargeted     Alarm[]             @relation("AlarmTarget")
-  uploadedDocuments  TripDocument[]
-  dmDocsUploaded     DirectMessageDocument[] @relation("DMDocsUploader")
-  dmDocsReceived     DirectMessageDocument[] @relation("DMDocsOtherUser")
-  groupDocsUploaded  GroupMessageDocument[]  @relation("GroupDocsUploader")
-  announcementReads  AnnouncementRead[]
-  announcements      Announcement[]
-  announcementDrafts AnnouncementDraft[]
-  currentTruck       Truck?              @relation("CurrentDriver")
-  assignedTrucks     Truck[]             @relation("TruckManager")
-  advanceRequests AdvanceRequest[] @relation("DriverAdvanceRequests")
-  otpCodes           OtpCode[]
-  ratingsReceived         DriverRating[]  @relation("DriverRatings")
-  ratingsGiven            DriverRating[]  @relation("GivenRatings")
-  managerRatingsReceived  ManagerRating[] @relation("ManagerRatings")
-  managerRatingsGiven     ManagerRating[] @relation("GivenManagerRatings")
-  sessionsAsDriver     TripChatSession[] @relation("SessionDriver")
-  sessionsAsManager    TripChatSession[] @relation("SessionManager")
-  pushTokens         PushToken[]
-  passwordResetTokens PasswordResetToken[]
-  hiddenConversations HiddenConversation[] @relation("HiddenConversations")
-  groupMessageReads  GroupMessageRead[] @relation("GroupMessageReads")
-  messageReactions   MessageReaction[]  @relation("MessageReactions")
+  manager                User?                   @relation("DriverManager", fields: [managerId], references: [id])
+  teamlead               User?                   @relation("ManagerTeamlead", fields: [teamleadId], references: [id])
+  drivers                User[]                  @relation("DriverManager")
+  managers               User[]                  @relation("ManagerTeamlead")
+  groupsCreated          Group[]                 @relation("GroupCreator")
+  groupManagers          GroupManager[]
+  truckNotes             TruckNote[]
+  company                Company                 @relation(fields: [companyId], references: [id])
+  tripsAsDriver          Trip[]                  @relation("DriverTrips")
+  tripsAsManager         Trip[]                  @relation("ManagerTrips")
+  messages               Message[]
+  comments               TripComment[]
+  alarmsCreated          Alarm[]                 @relation("AlarmCreator")
+  alarmsTargeted         Alarm[]                 @relation("AlarmTarget")
+  uploadedDocuments      TripDocument[]
+  dmDocsUploaded         DirectMessageDocument[] @relation("DMDocsUploader")
+  dmDocsReceived         DirectMessageDocument[] @relation("DMDocsOtherUser")
+  groupDocsUploaded      GroupMessageDocument[]  @relation("GroupDocsUploader")
+  announcementReads      AnnouncementRead[]
+  announcements          Announcement[]
+  announcementDrafts     AnnouncementDraft[]
+  currentTruck           Truck?                  @relation("CurrentDriver")
+  assignedTrucks         Truck[]                 @relation("TruckManager")
+  advanceRequests        AdvanceRequest[]        @relation("DriverAdvanceRequests")
+  otpCodes               OtpCode[]
+  ratingsReceived        DriverRating[]          @relation("DriverRatings")
+  ratingsGiven           DriverRating[]          @relation("GivenRatings")
+  managerRatingsReceived ManagerRating[]         @relation("ManagerRatings")
+  managerRatingsGiven    ManagerRating[]         @relation("GivenManagerRatings")
+  sessionsAsDriver       TripChatSession[]       @relation("SessionDriver")
+  sessionsAsManager      TripChatSession[]       @relation("SessionManager")
+  pushTokens             PushToken[]
+  passwordResetTokens    PasswordResetToken[]
+  hiddenConversations    HiddenConversation[]    @relation("HiddenConversations")
+  groupMessageReads      GroupMessageRead[]      @relation("GroupMessageReads")
+  messageReactions       MessageReaction[]       @relation("MessageReactions")
+  bugReports             BugReport[]
 }
 
 model PushToken {
   id        String   @id @default(uuid())
   userId    String
   token     String   @unique
-  platform  String?  // "ios" | "android" | "web"
+  platform  String? // "ios" | "android" | "web"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -242,39 +244,39 @@ enum TruckStatus {
 }
 
 model Trip {
-  id           String     @id @default(uuid())
-  title        String
-  status       TripStatus @default(ASSIGNED)
-  managerId    String
-  driverId     String
-  truckId      String
-  companyId    String
-  notes        String?
-  orderNumber  String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  chatResetAt  DateTime?  // встановлюється при зміні водія — чат "починається заново"
+  id          String     @id @default(uuid())
+  title       String
+  status      TripStatus @default(ASSIGNED)
+  managerId   String
+  driverId    String
+  truckId     String
+  companyId   String
+  notes       String?
+  orderNumber String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  chatResetAt DateTime? // встановлюється при зміні водія — чат "починається заново"
 
-  manager    User           @relation("ManagerTrips", fields: [managerId], references: [id])
-  driver     User           @relation("DriverTrips", fields: [driverId], references: [id])
-  truck      Truck          @relation(fields: [truckId], references: [id])
-  company    Company        @relation(fields: [companyId], references: [id])
-  stops      TripStop[]
-  documents  TripDocument[]
-  messages   Message[]
-  comments   TripComment[]
-  alarms     Alarm[]
+  manager      User              @relation("ManagerTrips", fields: [managerId], references: [id])
+  driver       User              @relation("DriverTrips", fields: [driverId], references: [id])
+  truck        Truck             @relation(fields: [truckId], references: [id])
+  company      Company           @relation(fields: [companyId], references: [id])
+  stops        TripStop[]
+  documents    TripDocument[]
+  messages     Message[]
+  comments     TripComment[]
+  alarms       Alarm[]
   chatSessions TripChatSession[]
 }
 
 model TripChatSession {
-  id         String            @id @default(uuid())
-  tripId     String
-  driverId   String?           // null only for LEGACY_RESET sessions
-  managerId  String?           // null only for LEGACY_RESET sessions
-  startedAt  DateTime          @default(now())
-  endedAt    DateTime?
-  endReason  SessionEndReason?
+  id        String            @id @default(uuid())
+  tripId    String
+  driverId  String? // null only for LEGACY_RESET sessions
+  managerId String? // null only for LEGACY_RESET sessions
+  startedAt DateTime          @default(now())
+  endedAt   DateTime?
+  endReason SessionEndReason?
 
   trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
   driver   User?     @relation("SessionDriver", fields: [driverId], references: [id])
@@ -298,10 +300,10 @@ model TripStop {
   tripId  String
   type    StopType
   order   Int      @default(0)
-  name    String?  // мітка для WAYPOINT (напр. "Кастомс"); null для LOADING/UNLOADING
-  address String?  // full address: company, street, postcode, city
+  name    String? // мітка для WAYPOINT (напр. "Кастомс"); null для LOADING/UNLOADING
+  address String? // full address: company, street, postcode, city
   ref     String?
-  coords  String?  // "lat,lng" format
+  coords  String? // "lat,lng" format
 
   // Планове вікно завантаження/вивантаження. Зберігаємо як рядки (не DateTime),
   // щоб "8:00" лишалось "8:00" незалежно від часової зони менеджера чи водія.
@@ -346,22 +348,22 @@ model TripDocument {
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
-  trip     Trip @relation(fields: [tripId], references: [id])
-  uploader User @relation(fields: [uploadedBy], references: [id])
+  trip              Trip        @relation(fields: [tripId], references: [id])
+  uploader          User        @relation(fields: [uploadedBy], references: [id])
 
   replyTo         Message?      @relation("TripMsgDocReplies", fields: [replyToMessageId], references: [id])
   replyToDocument TripDocument? @relation("TripDocToDocReplies", fields: [replyToDocumentId], references: [id])
 
-  msgRepliedFrom Message[]       @relation("TripMsgToDocReplies")
-  docRepliedFrom TripDocument[]  @relation("TripDocToDocReplies")
+  msgRepliedFrom Message[]      @relation("TripMsgToDocReplies")
+  docRepliedFrom TripDocument[] @relation("TripDocToDocReplies")
 
   @@index([tripId, isRead])
 }
 
 model DirectMessageDocument {
   id                String      @id @default(uuid())
-  uploadedBy        String      // хто завантажив
-  otherUserId       String      // інший учасник conversation
+  uploadedBy        String // хто завантажив
+  otherUserId       String // інший учасник conversation
   fileUrl           String
   fileName          String
   fileType          FileDocType @default(DOCUMENT)
@@ -373,7 +375,7 @@ model DirectMessageDocument {
   replyToMessageId  String?
   replyToDocumentId String?
 
-  uploader  User @relation("DMDocsUploader",  fields: [uploadedBy],  references: [id])
+  uploader  User @relation("DMDocsUploader", fields: [uploadedBy], references: [id])
   otherUser User @relation("DMDocsOtherUser", fields: [otherUserId], references: [id])
 
   replyTo         DirectMessage?         @relation("DmMsgDocReplies", fields: [replyToMessageId], references: [id])
@@ -401,7 +403,7 @@ model GroupMessageDocument {
   replyToMessageId  String?
   replyToDocumentId String?
 
-  group    Group @relation(fields: [groupId],   references: [id])
+  group    Group @relation(fields: [groupId], references: [id])
   uploader User  @relation("GroupDocsUploader", fields: [uploadedBy], references: [id])
 
   replyTo         GroupMessage?         @relation("GroupMsgDocReplies", fields: [replyToMessageId], references: [id])
@@ -415,16 +417,16 @@ model GroupMessageDocument {
 }
 
 model DirectMessage {
-  id                 String    @id @default(uuid())
-  senderId           String
-  receiverId         String
-  content            String
-  isRead             Boolean   @default(false)
-  createdAt          DateTime  @default(now())
-  deletedAt          DateTime?
-  editedAt           DateTime?
-  replyToId          String?
-  replyToDocumentId  String?
+  id                String    @id @default(uuid())
+  senderId          String
+  receiverId        String
+  content           String
+  isRead            Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  deletedAt         DateTime?
+  editedAt          DateTime?
+  replyToId         String?
+  replyToDocumentId String?
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])
   receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
@@ -491,18 +493,18 @@ model TripComment {
 }
 
 model Alarm {
-  id           String           @id @default(uuid())
+  id           String          @id @default(uuid())
   companyId    String
-  createdById  String           // who scheduled the alarm
-  targetUserId String           // whom to wake — self (== createdById) or another user
-  tripId       String?          // optional: alarm linked to a specific trip
-  title        String           // тема — short subject shown as push title
-  note         String?          // optional details / body
-  time         DateTime         // when to fire next
-  recurrence   AlarmRecurrence  @default(NONE)
-  isSent       Boolean          @default(false) // for one-shot alarms; recurring alarms reset on each fire
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  createdById  String // who scheduled the alarm
+  targetUserId String // whom to wake — self (== createdById) or another user
+  tripId       String? // optional: alarm linked to a specific trip
+  title        String // тема — short subject shown as push title
+  note         String? // optional details / body
+  time         DateTime // when to fire next
+  recurrence   AlarmRecurrence @default(NONE)
+  isSent       Boolean         @default(false) // for one-shot alarms; recurring alarms reset on each fire
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   company Company @relation(fields: [companyId], references: [id])
   creator User    @relation("AlarmCreator", fields: [createdById], references: [id])
@@ -530,7 +532,7 @@ model Announcement {
   isTemplate Boolean            @default(false)
   createdAt  DateTime           @default(now())
   groupId    String?
-  updatedAt DateTime @updatedAt
+  updatedAt  DateTime           @updatedAt
 
   group   Group?             @relation(fields: [groupId], references: [id])
   company Company            @relation(fields: [companyId], references: [id])
@@ -592,27 +594,28 @@ enum GroupType {
 }
 
 model Group {
-  id              String    @id @default(uuid())
-  name            String
-  avatar          String?
-  avatarPublicId  String?
-  type            GroupType
-  companyId       String
-  createdBy       String
-  createdAt       DateTime  @default(now())
+  id                 String                 @id @default(uuid())
+  name               String
+  avatar             String?
+  avatarPublicId     String?
+  type               GroupType
+  companyId          String
+  createdBy          String
+  createdAt          DateTime               @default(now())
   /// Soft-delete marker. When set, the group is invisible to every member
   /// but its rows (messages, docs, members) stay put so foreign keys don't
   /// break. Only the creator can flip this.
-  deletedAt       DateTime?
-  messages GroupMessage[]
-  documents GroupMessageDocument[]
-  company            Company             @relation(fields: [companyId], references: [id])
-  creator            User                @relation("GroupCreator", fields: [createdBy], references: [id])
+  deletedAt          DateTime?
+  messages           GroupMessage[]
+  documents          GroupMessageDocument[]
+  company            Company                @relation(fields: [companyId], references: [id])
+  creator            User                   @relation("GroupCreator", fields: [createdBy], references: [id])
   trucks             GroupTruck[]
   managers           GroupManager[]
   announcements      Announcement[]
   announcementsDraft AnnouncementDraft[]
 }
+
 model GroupMessage {
   id                String    @id @default(uuid())
   groupId           String
@@ -693,6 +696,7 @@ model GroupManager {
   group   Group @relation(fields: [groupId], references: [id])
   manager User  @relation(fields: [managerId], references: [id])
 }
+
 model DriverRating {
   id        String   @id @default(uuid())
   driverId  String
@@ -724,14 +728,50 @@ model ManagerRating {
 }
 
 model AdvanceRequest {
-  id        String        @id @default(uuid())
+  id        String   @id @default(uuid())
   driverId  String
   companyId String
   amount    Float
   reason    String
-  createdAt DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   driver  User    @relation("DriverAdvanceRequests", fields: [driverId], references: [id])
   company Company @relation(fields: [companyId], references: [id])
 }
 
+/// User-submitted bug/feedback reports. Filed from any client (web / driver /
+/// manager / desktop) via the header "report a problem" button. Screenshots
+/// live in Supabase Storage; only the signed URLs are stored here. Admins get
+/// a realtime socket event + push when a new one lands, and triage via status.
+model BugReport {
+  id          String    @id @default(uuid())
+  reporterId  String
+  companyId   String?
+  role        Role
+  description String
+  /// Signed Supabase URLs of attached screenshots (0..n).
+  screenshots String[]
+  /// Which client filed it: "web" | "driver" | "manager" | "desktop".
+  appName     String?
+  appVersion  String?
+  /// OS + browser/device, e.g. "Android 14", "Chrome / Windows".
+  platform    String?
+  /// The screen/route the user was on when they reported (not the settings screen).
+  route       String?
+  /// Socket liveness at report time, for debugging realtime issues.
+  socketState String?
+  status      BugStatus @default(NEW)
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  reporter User     @relation(fields: [reporterId], references: [id])
+  company  Company? @relation(fields: [companyId], references: [id])
+
+  @@index([status, createdAt])
+}
+
+enum BugStatus {
+  NEW
+  TRIAGED
+  RESOLVED
+}
