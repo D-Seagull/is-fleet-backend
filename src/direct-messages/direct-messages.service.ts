@@ -171,6 +171,9 @@ export class DirectMessagesService {
         editedAt: string | null;
         replyToId: string | null;
         replyToDocumentId: string | null;
+        // True when the latest item in the thread is a file: `content` then
+        // carries the file name so the chat-list / bell preview shows it.
+        isDocument: boolean;
         sender: Row['user'];
         receiver: Row['user'];
       };
@@ -178,19 +181,33 @@ export class DirectMessagesService {
     };
 
     const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
-      WITH peers AS (
+      WITH events AS (
         SELECT
           id,
-          CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END AS peer_id,
-          ROW_NUMBER() OVER (
-            PARTITION BY CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END
-            ORDER BY "createdAt" DESC
-          ) AS rn
+          'msg' AS kind,
+          "createdAt",
+          CASE WHEN "senderId" = ${userId} THEN "receiverId" ELSE "senderId" END AS peer_id
         FROM "DirectMessage"
         WHERE "senderId" = ${userId} OR "receiverId" = ${userId}
+        UNION ALL
+        SELECT
+          id,
+          'doc' AS kind,
+          "createdAt",
+          CASE WHEN "uploadedBy" = ${userId} THEN "otherUserId" ELSE "uploadedBy" END AS peer_id
+        FROM "DirectMessageDocument"
+        WHERE ("uploadedBy" = ${userId} OR "otherUserId" = ${userId})
+          AND "deletedAt" IS NULL
+      ),
+      ranked AS (
+        SELECT id, kind, peer_id, "createdAt",
+          ROW_NUMBER() OVER (
+            PARTITION BY peer_id ORDER BY "createdAt" DESC, id DESC
+          ) AS rn
+        FROM events
       ),
       latest AS (
-        SELECT id, peer_id FROM peers WHERE rn = 1
+        SELECT id, kind, peer_id FROM ranked WHERE rn = 1
       ),
       unread AS (
         SELECT "senderId" AS peer_id, COUNT(*)::int AS unread_count
@@ -223,40 +240,68 @@ export class DirectMessagesService {
           'phone', peer.phone,
           'truckPlate', pt.plate
         ) AS user,
-        json_build_object(
-          'id', m.id,
-          'senderId', m."senderId",
-          'receiverId', m."receiverId",
-          'content', m.content,
-          'isRead', m."isRead",
-          'createdAt', m."createdAt",
-          'deletedAt', m."deletedAt",
-          'editedAt', m."editedAt",
-          'replyToId', m."replyToId",
-          'replyToDocumentId', m."replyToDocumentId",
-          'sender', json_build_object(
-            'id', s.id, 'firstName', s."firstName", 'lastName', s."lastName",
-            'avatar', s.avatar, 'status', s.status, 'statusUntil', s."statusUntil",
-            'role', s.role
-          ),
-          'receiver', json_build_object(
-            'id', r.id, 'firstName', r."firstName", 'lastName', r."lastName",
-            'avatar', r.avatar, 'status', r.status, 'statusUntil', r."statusUntil",
-            'role', r.role
+        CASE WHEN l.kind = 'msg' THEN
+          json_build_object(
+            'id', m.id,
+            'senderId', m."senderId",
+            'receiverId', m."receiverId",
+            'content', m.content,
+            'isRead', m."isRead",
+            'createdAt', m."createdAt",
+            'deletedAt', m."deletedAt",
+            'editedAt', m."editedAt",
+            'replyToId', m."replyToId",
+            'replyToDocumentId', m."replyToDocumentId",
+            'isDocument', false,
+            'sender', json_build_object(
+              'id', s.id, 'firstName', s."firstName", 'lastName', s."lastName",
+              'avatar', s.avatar, 'status', s.status, 'statusUntil', s."statusUntil",
+              'role', s.role
+            ),
+            'receiver', json_build_object(
+              'id', r.id, 'firstName', r."firstName", 'lastName', r."lastName",
+              'avatar', r.avatar, 'status', r.status, 'statusUntil', r."statusUntil",
+              'role', r.role
+            )
           )
-        ) AS last_message,
+        ELSE
+          json_build_object(
+            'id', d.id,
+            'senderId', d."uploadedBy",
+            'receiverId', d."otherUserId",
+            'content', '📎 ' || d."fileName",
+            'isRead', d."isRead",
+            'createdAt', d."createdAt",
+            'deletedAt', d."deletedAt",
+            'editedAt', NULL,
+            'replyToId', NULL,
+            'replyToDocumentId', NULL,
+            'isDocument', true,
+            'sender', json_build_object(
+              'id', s.id, 'firstName', s."firstName", 'lastName', s."lastName",
+              'avatar', s.avatar, 'status', s.status, 'statusUntil', s."statusUntil",
+              'role', s.role
+            ),
+            'receiver', json_build_object(
+              'id', r.id, 'firstName', r."firstName", 'lastName', r."lastName",
+              'avatar', r.avatar, 'status', r.status, 'statusUntil', r."statusUntil",
+              'role', r.role
+            )
+          )
+        END AS last_message,
         COALESCE(u.unread_count, 0) + COALESCE(du.cnt, 0) AS unread_count
       FROM latest l
-      JOIN "DirectMessage" m ON m.id = l.id
+      LEFT JOIN "DirectMessage" m ON l.kind = 'msg' AND m.id = l.id
+      LEFT JOIN "DirectMessageDocument" d ON l.kind = 'doc' AND d.id = l.id
       JOIN "User" peer ON peer.id = l.peer_id
       LEFT JOIN "Truck" pt ON pt."currentDriverId" = peer.id
-      JOIN "User" s ON s.id = m."senderId"
-      JOIN "User" r ON r.id = m."receiverId"
+      JOIN "User" s ON s.id = COALESCE(m."senderId", d."uploadedBy")
+      JOIN "User" r ON r.id = COALESCE(m."receiverId", d."otherUserId")
       LEFT JOIN unread u ON u.peer_id = l.peer_id
       LEFT JOIN doc_unread du ON du.peer_id = l.peer_id
       LEFT JOIN hidden h ON h."peerId" = l.peer_id
-      WHERE h."hiddenAt" IS NULL OR m."createdAt" > h."hiddenAt"
-      ORDER BY m."createdAt" DESC
+      WHERE h."hiddenAt" IS NULL OR COALESCE(m."createdAt", d."createdAt") > h."hiddenAt"
+      ORDER BY COALESCE(m."createdAt", d."createdAt") DESC
     `);
 
     this.logger.log(

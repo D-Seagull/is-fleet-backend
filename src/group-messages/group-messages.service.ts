@@ -267,7 +267,7 @@ export class GroupMessagesService {
         -- isRead flag (first member to open clears it), unlike text messages
         -- which track per-user reads via GroupMessageRead.
         SELECT gd.id, gd."groupId", gd."uploadedBy" AS "senderId",
-               COALESCE(NULLIF(gd.caption, ''), gd."fileName") AS content,
+               '📎 ' || COALESCE(NULLIF(gd.caption, ''), gd."fileName") AS content,
                gd."createdAt"
         FROM "GroupMessageDocument" gd
         WHERE gd."groupId" IN (SELECT id FROM user_groups)

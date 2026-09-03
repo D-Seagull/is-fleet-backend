@@ -7,28 +7,18 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { corsOrigin } from './common/cors-origin';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
-import { appendFileSync } from 'fs';
-import { join } from 'path';
-
-// ── TEMPORARY crash diagnostics ─────────────────────────────────────────────
-// Captures whatever is killing the process (Node 24 exits on unhandled
-// rejections). Logs the full stack to the console AND to crash.log so it
-// survives terminal scroll. We intentionally DON'T exit — this keeps the
-// backend alive while we identify the culprit. ⚠️ REMOVE after diagnosis.
-function logCrash(kind: string, err: unknown) {
-  const stack = err instanceof Error ? (err.stack ?? err.message) : String(err);
-  const line = `\n[${new Date().toISOString()}] ${kind}\n${stack}\n`;
-  console.error(`\x1b[41m\x1b[97m ${kind} \x1b[0m`, stack);
-  try {
-    appendFileSync(join(process.cwd(), 'crash.log'), line);
-  } catch {
-    /* ignore file errors */
-  }
-}
-process.on('unhandledRejection', (reason) =>
-  logCrash('UNHANDLED_REJECTION', reason),
-);
-process.on('uncaughtException', (err) => logCrash('UNCAUGHT_EXCEPTION', err));
+// Process-level safety net: log stray async errors through the normal logger
+// rather than letting Node take the whole server down on a single unhandled
+// rejection. (Replaces the temporary crash.log diagnostics.)
+const processLogger = new Logger('Process');
+process.on('unhandledRejection', (reason) => {
+  const detail =
+    reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+  processLogger.error(`Unhandled promise rejection: ${detail}`);
+});
+process.on('uncaughtException', (err) => {
+  processLogger.error(`Uncaught exception: ${err.stack ?? err.message}`);
+});
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
