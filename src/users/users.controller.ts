@@ -167,6 +167,17 @@ export class UsersController {
     return this.usersService.deleteAvatar(userId);
   }
 
+  /**
+   * Self-service account erasure. Google Play and the App Store both require
+   * an in-app path to this for any app with sign-in, so every role gets it.
+   * Anonymises rather than hard-deletes — see UsersService.deleteOwnAccount.
+   */
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Delete('me')
+  deleteOwnAccount(@GetUser('id') userId: string) {
+    return this.usersService.deleteOwnAccount(userId);
+  }
+
   // ── Push tokens (mobile-driven) ───────────────────────────────────────
   /** Register / refresh an Expo push token for the current device. */
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')

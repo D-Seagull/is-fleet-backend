@@ -72,6 +72,12 @@ model User {
   /// Drives the "away" tier: offline but seen < 7 days → amber, else grey.
   lastSeenAt       DateTime?
   isActive         Boolean         @default(true)
+  /// Set when the user erased their own account (GDPR / store requirement).
+  /// The row survives so trips, messages and manager links keep a valid FK,
+  /// but every personal field is scrubbed and sign-in is impossible forever.
+  /// Distinct from `isActive: false`, which is a reversible deactivation —
+  /// a deleted account must never be reactivated.
+  deletedAt        DateTime?
   companyId        String
   createdAt        DateTime        @default(now())
   managerId        String?

@@ -7,6 +7,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { corsOrigin } from './common/cors-origin';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 // Process-level safety net: log stray async errors through the normal logger
 // rather than letting Node take the whole server down on a single unhandled
 // rejection. (Replaces the temporary crash.log diagnostics.)
@@ -26,6 +27,17 @@ async function bootstrap() {
   // so even bootstrap output is structured.
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(PinoLogger));
+  // Security headers. Two deliberate relaxations:
+  //  - CSP off: this process serves JSON plus the Swagger UI at /api, and the
+  //    default policy blocks Swagger's inline bootstrap scripts.
+  //  - CORP cross-origin: the web app and both mobile apps live on other
+  //    origins, so same-origin resource blocking would reject their responses.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   // Parses Cookie header into req.cookies so the auth controller can read the
   // httpOnly refresh_token cookie on /auth/refresh and /auth/logout.
   app.use(cookieParser());

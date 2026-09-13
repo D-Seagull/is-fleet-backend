@@ -424,6 +424,9 @@ export class UsersService {
       where: companyId ? { id, companyId } : { id },
     });
     if (!user) throw new NotFoundException('errors.userNotFound');
+    // A self-deleted account has no phone/email left, so reactivating it
+    // would produce a user nobody can ever sign in as.
+    if (user.deletedAt) throw new ForbiddenException('errors.accountDeleted');
 
     await this.prisma.user.update({
       where: { id },
@@ -431,6 +434,81 @@ export class UsersService {
     });
 
     return { message: `User ${fullName(user)} activated!` };
+  }
+
+  /**
+   * Self-service account erasure, required by Google Play / App Store for any
+   * app with accounts. We anonymise rather than hard-delete: trips, messages
+   * and documents are company records that must survive, and every one of
+   * them carries an FK back to this row.
+   *
+   * Sign-in dies immediately and permanently:
+   *  - phone/email/password go null, so neither OTP nor password login can
+   *    ever resolve this user again (Postgres allows many NULLs under the
+   *    unique indexes, so the columns stay free for a genuine re-signup);
+   *  - `isActive: false` is checked by JwtStrategy on every request, so
+   *    already-issued access tokens stop working on their next call rather
+   *    than lingering for the rest of their 15-minute life;
+   *  - refresh/push/OTP/reset rows are deleted outright.
+   */
+  async deleteOwnAccount(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('errors.userNotFound');
+    if (user.deletedAt) throw new ForbiddenException('errors.accountDeleted');
+
+    // Losing the only ADMIN would leave the company with nobody able to
+    // administer it, so that account has to be handed over first.
+    if (user.role === 'ADMIN') {
+      const otherAdmins = await this.prisma.user.count({
+        where: {
+          companyId: user.companyId,
+          role: 'ADMIN',
+          isActive: true,
+          deletedAt: null,
+          id: { not: id },
+        },
+      });
+      if (otherAdmins === 0) {
+        throw new ForbiddenException('errors.lastAdminCannotDelete');
+      }
+    }
+
+    await this.prisma.$transaction([
+      // Release the truck first: currentDriverId is unique, so leaving it set
+      // would block the next driver from taking that truck.
+      this.prisma.truck.updateMany({
+        where: { currentDriverId: id },
+        data: { currentDriverId: null },
+      }),
+      this.prisma.refreshToken.deleteMany({ where: { userId: id } }),
+      this.prisma.pushToken.deleteMany({ where: { userId: id } }),
+      this.prisma.otpCode.deleteMany({ where: { userId: id } }),
+      this.prisma.passwordResetToken.deleteMany({ where: { userId: id } }),
+      this.prisma.user.update({
+        where: { id },
+        data: {
+          // Clients localise the tombstone off `deletedAt`; this literal is
+          // only a fallback for anything that renders the raw name.
+          firstName: 'Deleted user',
+          lastName: null,
+          email: null,
+          phone: null,
+          password: null,
+          avatar: null,
+          avatarPublicId: null,
+          inviteToken: null,
+          inviteExpiry: null,
+          isActive: false,
+          // `status` is left alone on purpose: UserStatus has no OFFLINE
+          // member — presence resolves to offline at read time whenever the
+          // user has no live socket, which a deleted account never will.
+          statusUntil: null,
+          deletedAt: new Date(),
+        },
+      }),
+    ]);
+
+    return { message: 'Account deleted' };
   }
 
   async deactivate(

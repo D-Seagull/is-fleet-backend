@@ -47,6 +47,7 @@
     "dotenv": "^17.3.1",
     "expo-server-sdk": "^6.1.0",
     "heic-convert": "^2.1.0",
+    "helmet": "^8.3.0",
     "multer": "^2.1.0",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^8.0.2",
