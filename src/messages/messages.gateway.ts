@@ -84,6 +84,10 @@ export class MessagesGateway {
       // the app); mobile flips it back to false in onBackground.
       client.data.active = true;
       void client.join(userId);
+      // Global admins room — cross-company presence nudges for the admin
+      // dashboard's live "online now" list (admins oversee every company, so
+      // this room is NOT company-scoped like `company-…`).
+      if (role === 'ADMIN') void client.join('admins');
       this.touchLastSeen(userId);
       // Company-level room — kept for presence broadcasts (userPresence-
       // Changed / presenceSnapshot). Unread-related signals now go to
@@ -130,6 +134,11 @@ export class MessagesGateway {
             userId,
             online: true,
           });
+          // Nudge the admin dashboard to refresh its cross-company online list.
+          this.server.to('admins').emit('adminPresenceChanged', {
+            userId,
+            online: true,
+          });
         }
       }
       this.logger.log(
@@ -164,7 +173,27 @@ export class MessagesGateway {
         online: false,
         away: true,
       });
+      this.server.to('admins').emit('adminPresenceChanged', {
+        userId,
+        online: false,
+      });
     }
+  }
+
+  /**
+   * All userIds with at least one live socket, across every company. Backs the
+   * admin dashboard's cross-company "online now" list — "online" here means an
+   * open socket, the truest signal (unlike the stored `User.status` preference).
+   */
+  async getOnlineUserIds(): Promise<string[]> {
+    const sockets = await this.server.fetchSockets();
+    return Array.from(
+      new Set(
+        sockets
+          .map((s) => (s.data as { userId?: string }).userId)
+          .filter((id): id is string => typeof id === 'string'),
+      ),
+    );
   }
 
   /**

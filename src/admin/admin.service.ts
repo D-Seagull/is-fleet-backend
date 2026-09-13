@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
+import { MessagesGateway } from 'src/messages/messages.gateway';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -13,6 +14,7 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     private mail: MailService,
+    private gateway: MessagesGateway,
   ) {}
 
   async createCompany(dto: CreateCompanyDto) {
@@ -90,6 +92,11 @@ export class AdminService {
       'LOADED',
     ] as const;
 
+    // "Online" = a live socket right now, NOT the stored `User.status` (which
+    // defaults to ONLINE and is never flipped to OFFLINE on disconnect, so a
+    // status-based count reads as "almost everyone").
+    const onlineIds = await this.gateway.getOnlineUserIds();
+
     const [
       companiesTotal,
       companiesActive,
@@ -149,7 +156,7 @@ export class AdminService {
       this.prisma.user.count({
         where: {
           role: 'DRIVER',
-          status: 'ONLINE',
+          id: { in: onlineIds },
           isActive: true,
           ...(excludeCompanyId ? { NOT: { companyId: excludeCompanyId } } : {}),
         },
@@ -157,7 +164,7 @@ export class AdminService {
       this.prisma.user.count({
         where: {
           role: { in: ['MANAGER', 'TEAMLEAD'] },
-          status: 'ONLINE',
+          id: { in: onlineIds },
           isActive: true,
           ...(excludeCompanyId ? { NOT: { companyId: excludeCompanyId } } : {}),
         },
@@ -246,6 +253,9 @@ export class AdminService {
     const monthAgo = new Date();
     monthAgo.setDate(monthAgo.getDate() - 30);
 
+    // Live sockets, not the stored `User.status` (see getStats note).
+    const onlineIds = await this.gateway.getOnlineUserIds();
+
     const [
       admins,
       teamleads,
@@ -276,7 +286,7 @@ export class AdminService {
         where: {
           companyId: id,
           role: 'DRIVER',
-          status: 'ONLINE',
+          id: { in: onlineIds },
           isActive: true,
         },
       }),
@@ -284,7 +294,7 @@ export class AdminService {
         where: {
           companyId: id,
           role: { in: ['MANAGER', 'TEAMLEAD'] },
-          status: 'ONLINE',
+          id: { in: onlineIds },
           isActive: true,
         },
       }),
@@ -344,14 +354,55 @@ export class AdminService {
       data: { isActive: false },
     });
   }
-  // admin.service.ts
+
+  async reactivateCompany(id: string) {
+    return this.prisma.company.update({
+      where: { id },
+      data: { isActive: true },
+    });
+  }
+
   async resendInvite(id: string, email: string) {
     const company = await this.prisma.company.findFirst({ where: { id } });
     if (!company) throw new NotFoundException('errors.companyNotFound');
 
-    const inviteLink = `${process.env.FRONTEND_URL}/auth/register?token=${company.inviteToken}`;
+    // Must match the public register route (route group `(auth)` is NOT in the
+    // URL → it's `/register`, not `/auth/register`). Kept in sync with
+    // createCompany above.
+    const inviteLink = `${process.env.FRONTEND_URL}/register?token=${company.inviteToken}`;
     await this.mail.sendCompanyInvite(email, company.name, inviteLink);
 
     return { message: 'Invite відправлено!' };
+  }
+
+  /**
+   * Users with a live socket right now, across every company except the
+   * admin's own — backs the dashboard's real-time "online now" list. "Online"
+   * = an open socket (from the gateway), the truest signal.
+   */
+  async getOnlineUsers(adminId?: string) {
+    const excludeCompanyId = adminId
+      ? await this.getAdminCompanyId(adminId)
+      : undefined;
+    const onlineIds = await this.gateway.getOnlineUserIds();
+    if (onlineIds.length === 0) return [];
+    return this.prisma.user.findMany({
+      where: {
+        id: { in: onlineIds },
+        isActive: true,
+        role: { in: ['DRIVER', 'MANAGER', 'TEAMLEAD'] },
+        ...(excludeCompanyId ? { NOT: { companyId: excludeCompanyId } } : {}),
+      },
+      orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        avatar: true,
+        status: true,
+        company: { select: { id: true, name: true } },
+      },
+    });
   }
 }

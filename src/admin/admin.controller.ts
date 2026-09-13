@@ -41,6 +41,12 @@ export class AdminController {
   }
 
   @Roles('ADMIN')
+  @Get('online-users')
+  getOnlineUsers(@GetUser('id') adminId: string) {
+    return this.adminService.getOnlineUsers(adminId);
+  }
+
+  @Roles('ADMIN')
   @Get('companies/:id')
   findCompanyById(
     @Param('id') id: string,
@@ -53,6 +59,12 @@ export class AdminController {
   @Patch('companies/:id/deactivate')
   deactivateCompany(@Param('id') id: string) {
     return this.adminService.deactivateCompany(id);
+  }
+
+  @Roles('ADMIN')
+  @Patch('companies/:id/activate')
+  reactivateCompany(@Param('id') id: string) {
+    return this.adminService.reactivateCompany(id);
   }
 
   @Roles('ADMIN')
