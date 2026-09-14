@@ -1,3 +1,6 @@
+// Must stay the first import: the Sentry SDK patches http/pg at require
+// time, so anything imported above it would run uninstrumented.
+import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
@@ -7,6 +10,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { corsOrigin } from './common/cors-origin';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
+import * as Sentry from '@sentry/nestjs';
 import helmet from 'helmet';
 // Process-level safety net: log stray async errors through the normal logger
 // rather than letting Node take the whole server down on a single unhandled
@@ -16,9 +20,11 @@ process.on('unhandledRejection', (reason) => {
   const detail =
     reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
   processLogger.error(`Unhandled promise rejection: ${detail}`);
+  Sentry.captureException(reason);
 });
 process.on('uncaughtException', (err) => {
   processLogger.error(`Uncaught exception: ${err.stack ?? err.message}`);
+  Sentry.captureException(err);
 });
 
 async function bootstrap() {
@@ -71,5 +77,7 @@ async function bootstrap() {
 }
 bootstrap().catch((err) => {
   new Logger('Bootstrap').error('Bootstrap failed', err);
-  process.exit(1);
+  Sentry.captureException(err);
+  // exit() would kill the process before the event is sent.
+  void Sentry.flush(2000).finally(() => process.exit(1));
 });

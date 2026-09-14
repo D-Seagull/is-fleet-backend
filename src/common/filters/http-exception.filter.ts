@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import * as Sentry from '@sentry/nestjs';
 import { t } from '../../i18n/i18n';
 
 @Catch()
@@ -58,6 +59,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         `[non-HTTP] ${exception instanceof Error ? exception.message : String(exception)}`,
         exception instanceof Error ? exception.stack : undefined,
       );
+      Sentry.captureException(exception);
       return;
     }
 
@@ -102,6 +104,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         }`,
         exception instanceof Error ? exception.stack : undefined,
       );
+      // Only 5xx: the 4xx above are expected outcomes (validation, auth,
+      // not-found) and would drown the real failures in noise.
+      Sentry.captureException(exception, {
+        tags: { method: request.method, path: request.url },
+      });
     } else if (exception instanceof HttpException) {
       this.logger.debug(`${request.method} ${request.url} → ${status}`);
     }
