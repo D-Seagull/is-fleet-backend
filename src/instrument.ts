@@ -15,19 +15,33 @@ Sentry.init({
   dsn,
   environment: process.env.NODE_ENV ?? 'development',
 
-  // This app carries driver phone numbers, addresses and chat messages. Never
-  // let the SDK attach request bodies, cookies, headers or user IPs on its own.
-  sendDefaultPii: false,
-
   // Errors only. Performance tracing on a Socket.io app generates a large,
-  // low-value span volume and would burn the quota within days; turn it on
-  // deliberately later if we ever need latency data.
+  // low-value span volume and would burn the quota that errors need.
   tracesSampleRate: 0,
 
   /**
-   * Second line of defence behind sendDefaultPii. The SDK's own redaction
-   * rules change between versions, so strip the sensitive parts of the request
-   * ourselves rather than trusting the default to stay conservative.
+   * Stated explicitly, one category at a time. The v10 defaults are far more
+   * permissive than this app can afford — request bodies, database query data
+   * (including returned rows) and stack-frame locals are all collected unless
+   * told otherwise. `sendDefaultPii` used to cover this but is deprecated in
+   * v10, removed in v11, and ignored outright when `dataCollection` is set.
+   */
+  dataCollection: {
+    userInfo: false,
+    cookies: false,
+    httpHeaders: { request: false, response: false },
+    httpBodies: [],
+    urlQueryParams: false,
+    // Prisma result rows are driver names, phone numbers and message text.
+    databaseQueryData: false,
+    // A local named `message`, `phone` or `token` is exactly what must not
+    // leave the server; nest build keeps real names, so this would be literal.
+    stackFrameVariables: false,
+  },
+
+  /**
+   * Second line of defence behind dataCollection. The SDK's categories shift
+   * between versions; these fields never become acceptable to send.
    */
   beforeSend(event) {
     if (event.request) {
