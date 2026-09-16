@@ -39,6 +39,9 @@ describe('TripsService', () => {
         update: jest.fn(),
         delete: jest.fn().mockResolvedValue({}),
       },
+      truck: {
+        findUnique: jest.fn(),
+      },
       tripStop: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -229,25 +232,44 @@ describe('TripsService', () => {
     });
   });
 
-  // ─── remove (company scoping) ───────────────────────────────────────────────
+  // ─── remove (company scoping + who may delete) ─────────────────────────────
   describe('remove', () => {
+    const teamlead = { id: 'tl1', role: 'TEAMLEAD' };
+    const trip = { id: 't1', companyId: 'c1', truckId: 'tr1', title: 'Load A' };
+
     it('refuses to delete a trip outside the company', async () => {
       prisma.trip.findFirst.mockResolvedValue(null);
-      await expect(service.remove('t1', 'c1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.remove('t1', 'c1', teamlead),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.trip.delete).not.toHaveBeenCalled();
     });
 
-    it('deletes an in-company trip', async () => {
-      prisma.trip.findFirst.mockResolvedValue({
-        id: 't1',
-        companyId: 'c1',
-        title: 'Load A',
-      });
-      const res = await service.remove('t1', 'c1');
+    it('lets a teamlead delete any in-company trip', async () => {
+      prisma.trip.findFirst.mockResolvedValue(trip);
+      const res = await service.remove('t1', 'c1', teamlead);
       expect(prisma.trip.delete).toHaveBeenCalledWith({ where: { id: 't1' } });
       expect(res.message).toContain('Load A');
+      // A teamlead is trusted outright, so the truck is never looked up.
+      expect(prisma.truck.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('lets the truck manager delete the trip', async () => {
+      prisma.trip.findFirst.mockResolvedValue(trip);
+      prisma.truck.findUnique.mockResolvedValue({ managerId: 'm1' });
+      await service.remove('t1', 'c1', { id: 'm1', role: 'MANAGER' });
+      expect(prisma.trip.delete).toHaveBeenCalledWith({ where: { id: 't1' } });
+    });
+
+    it('refuses a manager who does not hold the truck', async () => {
+      prisma.trip.findFirst.mockResolvedValue(trip);
+      // The truck belongs to someone else — responsibility follows the truck,
+      // not whoever happens to be in the same company.
+      prisma.truck.findUnique.mockResolvedValue({ managerId: 'm2' });
+      await expect(
+        service.remove('t1', 'c1', { id: 'm1', role: 'MANAGER' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.trip.delete).not.toHaveBeenCalled();
     });
   });
 });

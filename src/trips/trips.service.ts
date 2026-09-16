@@ -621,8 +621,36 @@ export class TripsService {
     return updated;
   }
 
-  async remove(id: string, companyId: string) {
+  /**
+   * Permanently deletes a trip. Cascades to its messages, documents and
+   * sessions, so this is the most destructive action a manager has.
+   *
+   * Only the manager currently assigned to the *truck* may delete its trips;
+   * teamleads and admins may delete any. Enforced here rather than in the
+   * controller because the UI is not the only caller — a plain DELETE would
+   * otherwise walk straight past the rule the buttons imply.
+   *
+   * Note the check is on the truck's manager, not the trip's: a trip keeps
+   * the manager who created it, while responsibility follows whoever holds
+   * the truck now.
+   */
+  async remove(
+    id: string,
+    companyId: string,
+    actor: { id: string; role: string },
+  ) {
     const trip = await this.findOne(id, companyId);
+
+    if (actor.role === 'MANAGER') {
+      const truck = await this.prisma.truck.findUnique({
+        where: { id: trip.truckId },
+        select: { managerId: true },
+      });
+      if (truck?.managerId !== actor.id) {
+        throw new ForbiddenException('errors.cannotDeleteTrip');
+      }
+    }
+
     await this.prisma.trip.delete({ where: { id } });
     return { message: `Trip ${trip.title} deleted!` };
   }

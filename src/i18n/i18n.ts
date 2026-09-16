@@ -122,6 +122,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Емодзі не підтримується',
     'errors.recordExists': 'Такий запис вже існує',
     'errors.recordNotFound': 'Запис не знайдений',
+    'errors.cannotDeleteTrip': 'Видалити рейс може лише менеджер цієї вантажівки або тімлід',
   },
   en: {
     'push.newMessage': 'New message',
@@ -217,6 +218,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Unsupported emoji',
     'errors.recordExists': 'This record already exists',
     'errors.recordNotFound': 'Record not found',
+    'errors.cannotDeleteTrip': 'Only the assigned manager of this truck or a teamlead can delete this trip',
   },
   pl: {
     'push.newMessage': 'Nowa wiadomość',
@@ -320,6 +322,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Nieobsługiwane emoji',
     'errors.recordExists': 'Taki rekord już istnieje',
     'errors.recordNotFound': 'Nie znaleziono rekordu',
+    'errors.cannotDeleteTrip': 'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
   },
   lt: {
     'push.newMessage': 'Nauja žinutė',
@@ -421,6 +424,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Nepalaikomas jaustukas',
     'errors.recordExists': 'Toks įrašas jau egzistuoja',
     'errors.recordNotFound': 'Įrašas nerastas',
+    'errors.cannotDeleteTrip': 'Reisą gali ištrinti tik dabartinis šios transporto priemonės vadybininkas arba komandos vadovas',
   },
   ru: {
     'push.newMessage': 'Новое сообщение',
@@ -526,6 +530,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Эмодзи не поддерживается',
     'errors.recordExists': 'Такая запись уже существует',
     'errors.recordNotFound': 'Запись не найдена',
+    'errors.cannotDeleteTrip': 'Удалить рейс может только менеджер этой машины или тимлид',
   },
 };
 

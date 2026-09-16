@@ -196,7 +196,9 @@ export class TripsController {
   async remove(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
   ) {
-    return this.tripsService.remove(id, companyId);
+    return this.tripsService.remove(id, companyId, { id: userId, role });
   }
 }
