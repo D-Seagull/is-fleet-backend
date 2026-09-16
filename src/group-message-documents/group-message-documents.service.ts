@@ -162,7 +162,7 @@ export class GroupMessageDocumentsService {
         ...d,
         signedUrl: d.deletedAt
           ? ''
-          : await this.storage.getSignedUrl(d.fileUrl, 3600),
+          : ((await this.storage.getSignedUrlOrNull(d.fileUrl, 3600)) ?? ''),
         reactions: reactionsByDoc.get(d.id) ?? [],
       })),
     );

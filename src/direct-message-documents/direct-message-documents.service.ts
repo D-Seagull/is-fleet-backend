@@ -158,7 +158,7 @@ export class DirectMessageDocumentsService {
         // signed URL request (it would 404 anyway).
         signedUrl: d.deletedAt
           ? ''
-          : await this.storage.getSignedUrl(d.fileUrl, 3600),
+          : ((await this.storage.getSignedUrlOrNull(d.fileUrl, 3600)) ?? ''),
         reactions: reactionsByDoc.get(d.id) ?? [],
       })),
     );

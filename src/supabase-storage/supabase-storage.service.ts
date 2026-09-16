@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
@@ -100,20 +100,73 @@ export class SupabaseStorageService {
   }
 
   // Підписаний URL дійсний expiresIn секунд (default 1 година)
-  async getSignedUrl(
+  /**
+   * Signs a URL, distinguishing a missing object from a broken bucket.
+   *
+   * A file deleted straight from the Supabase dashboard leaves its database
+   * row behind, and signing it fails. That is a state of the data, not a
+   * server fault: answering 500 both misleads the user and files a Sentry
+   * issue every time anyone opens the document. Storage being unreachable is
+   * a different thing entirely and must keep throwing.
+   */
+  private async sign(
     storagePath: string,
-    expiresIn = 3600,
+    expiresIn: number,
     download?: string,
-  ): Promise<string> {
+  ): Promise<{ url: string } | { missing: true }> {
     const options = download ? { download } : undefined;
     const { data, error } = await this.client.storage
       .from(BUCKET)
       .createSignedUrl(storagePath, expiresIn, options);
 
-    if (error || !data?.signedUrl) {
-      throw new Error(`Cannot create signed URL: ${error?.message}`);
-    }
+    if (data?.signedUrl) return { url: data.signedUrl };
 
-    return data.signedUrl;
+    // Supabase reports an absent object as "Object not found", sometimes with
+    // a 404 status attached. Match on either — the message wording is not a
+    // contract, so a status check alone would be as fragile as a string one.
+    const status = Number(
+      (error as { statusCode?: string | number } | null)?.statusCode,
+    );
+    const missing =
+      status === 404 || /not\s*found/i.test(error?.message ?? '');
+    if (missing) return { missing: true };
+
+    throw new Error(`Cannot create signed URL: ${error?.message}`);
+  }
+
+  /**
+   * Signed URL for a file that must exist. Throws a translated 404 when the
+   * object is gone, so the client can say so instead of showing a crash.
+   */
+  async getSignedUrl(
+    storagePath: string,
+    expiresIn = 3600,
+    download?: string,
+  ): Promise<string> {
+    const result = await this.sign(storagePath, expiresIn, download);
+    if ('missing' in result) {
+      this.logger.warn(`Storage object missing: ${storagePath}`);
+      throw new NotFoundException('errors.fileMissing');
+    }
+    return result.url;
+  }
+
+  /**
+   * Signed URL, or null when the object no longer exists. For list endpoints:
+   * one orphaned row must not take the whole list down with it. Real storage
+   * failures still throw — an outage must never look like a bucket full of
+   * missing files.
+   */
+  async getSignedUrlOrNull(
+    storagePath: string,
+    expiresIn = 3600,
+    download?: string,
+  ): Promise<string | null> {
+    const result = await this.sign(storagePath, expiresIn, download);
+    if ('missing' in result) {
+      this.logger.warn(`Storage object missing: ${storagePath}`);
+      return null;
+    }
+    return result.url;
   }
 }

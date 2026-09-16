@@ -173,9 +173,13 @@ export class DocumentsService {
   private async withSignedUrl<T extends { fileUrl: string; deletedAt?: Date | null }>(
     doc: T,
   ) {
+    // An empty signedUrl already means "no file here" to every client — it
+    // is what soft-deleted docs return. A file removed straight from the
+    // bucket is the same situation for the reader, so reuse it rather than
+    // failing an entire list over one orphaned row.
     const signedUrl = doc.deletedAt
       ? ''
-      : await this.storage.getSignedUrl(doc.fileUrl, 3600);
+      : ((await this.storage.getSignedUrlOrNull(doc.fileUrl, 3600)) ?? '');
     return { ...doc, signedUrl };
   }
 
