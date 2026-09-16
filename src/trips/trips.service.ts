@@ -26,7 +26,9 @@ const tripInclude = {
       phone: true,
     },
   },
-  truck: { select: { id: true, plate: true } },
+  // managerId is here so clients can tell who may delete the trip without a
+  // second request — the rule is the truck's current manager, or a teamlead.
+  truck: { select: { id: true, plate: true, managerId: true } },
   manager: {
     select: { id: true, firstName: true, lastName: true, avatar: true },
   },
