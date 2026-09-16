@@ -29,7 +29,9 @@ export class DocumentsService {
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
-    const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: tripId, deletedAt: null },
+    });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
 
     const created = await Promise.all(

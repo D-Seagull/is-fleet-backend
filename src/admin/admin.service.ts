@@ -171,6 +171,7 @@ export class AdminService {
       }),
       this.prisma.trip.count({
         where: {
+          deletedAt: null,
           status: { in: [...activeTripStatuses] },
           ...(excludeCompanyId ? { NOT: { companyId: excludeCompanyId } } : {}),
         },
@@ -301,10 +302,14 @@ export class AdminService {
       this.prisma.truck.count({ where: { companyId: id } }),
       this.prisma.truck.count({ where: { companyId: id, isActive: true } }),
       this.prisma.trip.count({
-        where: { companyId: id, status: { in: [...activeTripStatuses] } },
+        where: {
+            companyId: id,
+            deletedAt: null,
+            status: { in: [...activeTripStatuses] },
+          },
       }),
       this.prisma.trip.count({
-        where: { companyId: id, createdAt: { gte: monthAgo } },
+        where: { companyId: id, deletedAt: null, createdAt: { gte: monthAgo } },
       }),
       this.prisma.user.count({
         where: { companyId: id, isActive: true, pushTokens: { some: {} } },

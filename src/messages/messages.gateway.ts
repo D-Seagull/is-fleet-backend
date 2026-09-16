@@ -353,8 +353,8 @@ export class MessagesGateway {
   ) {
     const userId = client.data.userId as string | undefined;
     if (!userId || !body?.tripId) return;
-    const trip = await this.prisma.trip.findUnique({
-      where: { id: body.tripId },
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: body.tripId, deletedAt: null },
       select: { driverId: true, managerId: true },
     });
     if (!trip) return;

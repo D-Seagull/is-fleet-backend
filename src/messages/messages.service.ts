@@ -31,8 +31,8 @@ export class MessagesService {
     // Privacy: only the trip's current driver or current manager may write.
     // Otherwise an old participant could still post into the active session
     // they're no longer part of (and the new participants would receive it).
-    const trip = await this.prisma.trip.findUnique({
-      where: { id: dto.tripId },
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: dto.tripId, deletedAt: null },
       include: {
         driver: { select: { id: true, language: true } },
         manager: { select: { id: true, language: true } },

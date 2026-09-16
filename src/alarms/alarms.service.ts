@@ -78,7 +78,7 @@ export class AlarmsService {
 
     if (dto.tripId) {
       const trip = await this.prisma.trip.findFirst({
-        where: { id: dto.tripId, companyId: creatorCompanyId },
+        where: { id: dto.tripId, companyId: creatorCompanyId, deletedAt: null },
         select: { id: true },
       });
       if (!trip) throw new NotFoundException('errors.tripNotFound');
@@ -131,7 +131,7 @@ export class AlarmsService {
     requester: { id: string; role: string; companyId: string },
   ) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id: tripId, companyId: requester.companyId },
+      where: { id: tripId, companyId: requester.companyId, deletedAt: null },
       select: { driverId: true, managerId: true },
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');

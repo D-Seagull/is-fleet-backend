@@ -291,6 +291,7 @@ export class TrucksService {
       const activeTrips = await this.prisma.trip.findMany({
         where: {
           truckId: id,
+          deletedAt: null,
           status: { in: [...ACTIVE_TRIP_STATUSES] },
         },
         select: { id: true, driverId: true, managerId: true },

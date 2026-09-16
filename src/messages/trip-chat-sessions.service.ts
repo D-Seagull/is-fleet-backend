@@ -48,8 +48,8 @@ export class TripChatSessionsService {
       return sessions.map((s) => s.id);
     }
 
-    const trip = await this.prisma.trip.findUnique({
-      where: { id: tripId },
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: tripId, deletedAt: null },
       select: { driverId: true, managerId: true },
     });
     if (!trip) return [];

@@ -36,7 +36,7 @@ describe('TripsService', () => {
         create: jest.fn(),
         findFirst: jest.fn(),
         findMany: jest.fn(),
-        update: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
         delete: jest.fn().mockResolvedValue({}),
       },
       truck: {
@@ -242,13 +242,16 @@ describe('TripsService', () => {
       await expect(
         service.remove('t1', 'c1', teamlead),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(prisma.trip.delete).not.toHaveBeenCalled();
+      expect(prisma.trip.update).not.toHaveBeenCalled();
     });
 
     it('lets a teamlead delete any in-company trip', async () => {
       prisma.trip.findFirst.mockResolvedValue(trip);
       const res = await service.remove('t1', 'c1', teamlead);
-      expect(prisma.trip.delete).toHaveBeenCalledWith({ where: { id: 't1' } });
+      expect(prisma.trip.update).toHaveBeenCalledWith({
+        where: { id: 't1' },
+        data: { deletedAt: expect.any(Date) },
+      });
       expect(res.message).toContain('Load A');
       // A teamlead is trusted outright, so the truck is never looked up.
       expect(prisma.truck.findUnique).not.toHaveBeenCalled();
@@ -258,7 +261,10 @@ describe('TripsService', () => {
       prisma.trip.findFirst.mockResolvedValue(trip);
       prisma.truck.findUnique.mockResolvedValue({ managerId: 'm1' });
       await service.remove('t1', 'c1', { id: 'm1', role: 'MANAGER' });
-      expect(prisma.trip.delete).toHaveBeenCalledWith({ where: { id: 't1' } });
+      expect(prisma.trip.update).toHaveBeenCalledWith({
+        where: { id: 't1' },
+        data: { deletedAt: expect.any(Date) },
+      });
     });
 
     it('refuses a manager who does not hold the truck', async () => {
@@ -269,7 +275,7 @@ describe('TripsService', () => {
       await expect(
         service.remove('t1', 'c1', { id: 'm1', role: 'MANAGER' }),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(prisma.trip.delete).not.toHaveBeenCalled();
+      expect(prisma.trip.update).not.toHaveBeenCalled();
     });
   });
 });

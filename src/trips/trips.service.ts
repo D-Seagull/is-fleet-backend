@@ -132,7 +132,7 @@ export class TripsService {
 
   async findAll(companyId: string) {
     return this.prisma.trip.findMany({
-      where: { companyId },
+      where: { companyId, deletedAt: null },
       include: tripInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -141,7 +141,7 @@ export class TripsService {
   // trips for a specific truck (Chat + Trips tabs)
   async findByTruck(truckId: string, companyId: string) {
     return this.prisma.trip.findMany({
-      where: { truckId, companyId },
+      where: { truckId, companyId, deletedAt: null },
       include: tripInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -149,7 +149,7 @@ export class TripsService {
 
   async findOne(id: string, companyId: string) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
       include: tripInclude,
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
@@ -159,7 +159,7 @@ export class TripsService {
   // Driver's own trips — used by the driver mobile app.
   async findMyTrips(driverId: string) {
     return this.prisma.trip.findMany({
-      where: { driverId },
+      where: { driverId, deletedAt: null },
       include: tripInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -172,6 +172,7 @@ export class TripsService {
     const candidates = await this.prisma.trip.findMany({
       where: {
         driverId,
+        deletedAt: null,
         status: { in: [...ACTIVE_STATUSES] },
         truck: { currentDriverId: driverId },
       },
@@ -212,7 +213,7 @@ export class TripsService {
     opts: { take?: number; before?: Date } = {},
   ) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id: tripId, companyId },
+      where: { id: tripId, companyId, deletedAt: null },
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
 
@@ -375,7 +376,7 @@ export class TripsService {
     triggeredById: string,
   ) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
 
@@ -431,7 +432,7 @@ export class TripsService {
     triggeredById: string,
   ) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, companyId },
+      where: { id, companyId, deletedAt: null },
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
 
@@ -589,7 +590,7 @@ export class TripsService {
 
   async driverUpdateStatus(id: string, driverId: string, dto: UpdateTripDto) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, driverId },
+      where: { id, driverId, deletedAt: null },
     });
     if (!trip) throw new ForbiddenException('errors.noAccessTrip');
     const updated = await this.prisma.trip.update({
@@ -622,8 +623,17 @@ export class TripsService {
   }
 
   /**
-   * Permanently deletes a trip. Cascades to its messages, documents and
-   * sessions, so this is the most destructive action a manager has.
+   * Hides a trip from everyone. The row stays: a trip carries the transport
+   * record — its messages, documents and chat history — which the privacy
+   * policy promises to keep for the employing company, and which account
+   * deletion deliberately anonymises rather than destroys.
+   *
+   * Every read filters on `deletedAt: null`, so hidden trips vanish from
+   * lists, chat, alarms and admin counts alike. The UI still says "delete":
+   * that is what the user means, and keeping the row is our business.
+   *
+   * Reversible by clearing the column — which matters, because this is now
+   * reachable from a long-press on a phone.
    *
    * Only the manager currently assigned to the *truck* may delete its trips;
    * teamleads and admins may delete any. Enforced here rather than in the
@@ -651,7 +661,10 @@ export class TripsService {
       }
     }
 
-    await this.prisma.trip.delete({ where: { id } });
+    await this.prisma.trip.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
     return { message: `Trip ${trip.title} deleted!` };
   }
 
@@ -663,6 +676,7 @@ export class TripsService {
     const trips = await this.prisma.trip.findMany({
       where: {
         companyId,
+        deletedAt: null,
         status: { in: [...ACTIVE_STATUSES] },
         truck: { managerId: userId },
       },
