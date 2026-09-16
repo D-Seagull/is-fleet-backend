@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -154,14 +155,49 @@ export class DirectMessageDocumentsService {
     return Promise.all(
       docs.map(async (d) => ({
         ...d,
-        // For deleted docs the file is already gone from storage — skip the
-        // signed URL request (it would 404 anyway).
-        signedUrl: d.deletedAt
-          ? ''
-          : ((await this.storage.getSignedUrlOrNull(d.fileUrl, 3600)) ?? ''),
+        ...(await this.signOrHeal(d)),
         reactions: reactionsByDoc.get(d.id) ?? [],
       })),
     );
+  }
+
+  private readonly logger = new Logger(DirectMessageDocumentsService.name);
+
+  /**
+   * Signed URL for a list row — and a repair when the file turns out to be
+   * gone.
+   *
+   * A file deleted straight from the Supabase bucket leaves `deletedAt` null,
+   * so the row goes on claiming a file that no longer exists. Storage has just
+   * told us otherwise, so record it: every client already renders `deletedAt`
+   * as a "file deleted" tombstone, which is exactly what this is. Without the
+   * write the ghost would come back on every single read.
+   *
+   * Only ever reached when storage explicitly reported the object missing —
+   * an unreachable bucket throws further up and never lands here, so an
+   * outage cannot mass-delete anything.
+   *
+   * The write is fire-and-forget: the response already carries the corrected
+   * value, and a failed repair just means we try again on the next read.
+   */
+  private async signOrHeal(doc: {
+    id: string;
+    fileUrl: string;
+    deletedAt?: Date | null;
+  }): Promise<{ deletedAt: Date | null; signedUrl: string }> {
+    if (doc.deletedAt) return { deletedAt: doc.deletedAt, signedUrl: '' };
+
+    const url = await this.storage.getSignedUrlOrNull(doc.fileUrl, 3600);
+    if (url) return { deletedAt: null, signedUrl: url };
+
+    const deletedAt = new Date();
+    this.logger.warn(
+      `Marking directMessageDocument ${doc.id} deleted — file gone from storage: ${doc.fileUrl}`,
+    );
+    void this.prisma.directMessageDocument
+      .update({ where: { id: doc.id }, data: { deletedAt } })
+      .catch(() => undefined);
+    return { deletedAt, signedUrl: '' };
   }
 
   async view(id: string): Promise<{ url: string }> {

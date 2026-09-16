@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -170,17 +171,49 @@ export class DocumentsService {
     return { url };
   }
 
-  private async withSignedUrl<T extends { fileUrl: string; deletedAt?: Date | null }>(
-    doc: T,
-  ) {
-    // An empty signedUrl already means "no file here" to every client — it
-    // is what soft-deleted docs return. A file removed straight from the
-    // bucket is the same situation for the reader, so reuse it rather than
-    // failing an entire list over one orphaned row.
-    const signedUrl = doc.deletedAt
-      ? ''
-      : ((await this.storage.getSignedUrlOrNull(doc.fileUrl, 3600)) ?? '');
-    return { ...doc, signedUrl };
+  private readonly logger = new Logger(DocumentsService.name);
+
+  /**
+   * Signed URL for a list row — and a repair when the file turns out to be
+   * gone.
+   *
+   * A file deleted straight from the Supabase bucket leaves `deletedAt` null,
+   * so the row goes on claiming a file that no longer exists. Storage has just
+   * told us otherwise, so record it: every client already renders `deletedAt`
+   * as a "file deleted" tombstone, which is exactly what this is. Without the
+   * write the ghost would come back on every single read.
+   *
+   * Only ever reached when storage explicitly reported the object missing —
+   * an unreachable bucket throws further up and never lands here, so an
+   * outage cannot mass-delete anything.
+   *
+   * The write is fire-and-forget: the response already carries the corrected
+   * value, and a failed repair just means we try again on the next read.
+   */
+  private async signOrHeal(doc: {
+    id: string;
+    fileUrl: string;
+    deletedAt?: Date | null;
+  }): Promise<{ deletedAt: Date | null; signedUrl: string }> {
+    if (doc.deletedAt) return { deletedAt: doc.deletedAt, signedUrl: '' };
+
+    const url = await this.storage.getSignedUrlOrNull(doc.fileUrl, 3600);
+    if (url) return { deletedAt: null, signedUrl: url };
+
+    const deletedAt = new Date();
+    this.logger.warn(
+      `Marking tripDocument ${doc.id} deleted — file gone from storage: ${doc.fileUrl}`,
+    );
+    void this.prisma.tripDocument
+      .update({ where: { id: doc.id }, data: { deletedAt } })
+      .catch(() => undefined);
+    return { deletedAt, signedUrl: '' };
+  }
+
+  private async withSignedUrl<
+    T extends { id: string; fileUrl: string; deletedAt?: Date | null },
+  >(doc: T) {
+    return { ...doc, ...(await this.signOrHeal(doc)) };
   }
 
   async findByTrip(tripId: string) {
