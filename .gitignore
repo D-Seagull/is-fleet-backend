@@ -67,3 +67,16 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
+
+# Service-account and credential files. None of these exist right now, but a
+# key pasted in "just to test" is exactly how a Resend key ended up in this
+# repo's history in March — the rule is here so the next one cannot.
+fcm-service-account.json
+*-service-account*.json
+*serviceAccount*.json
+google-services.json
+GoogleService-Info.plist
+*.pem
+*.p12
+*.jks
+*.keystore
