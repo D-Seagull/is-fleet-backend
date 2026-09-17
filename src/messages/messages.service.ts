@@ -262,6 +262,7 @@ export class MessagesService {
         WHERE m."isRead" = false
           AND m."senderId" != ${requesterId}
           AND t."companyId" = ${companyId}
+          AND t."deletedAt" IS NULL
           ${sessionFilter}
         UNION ALL
         -- Attachments count toward unread too. Trip docs use a single shared
@@ -278,6 +279,7 @@ export class MessagesService {
           AND td."uploadedBy" != ${requesterId}
           AND td."deletedAt" IS NULL
           AND t."companyId" = ${companyId}
+          AND t."deletedAt" IS NULL
           ${docParticipantFilter}
       ),
       trip_counts AS (

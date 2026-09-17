@@ -54,6 +54,7 @@ export class TrucksService {
         // рейсу так само, як My Trucks. 0 або 1 елемент.
         trips: {
           where: {
+            deletedAt: null,
             status: { in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'] },
           },
           orderBy: { createdAt: 'desc' },
@@ -77,6 +78,7 @@ export class TrucksService {
         // Активний тріп (не DELIVERED) — деталь траку бере з нього activeTripId.
         trips: {
           where: {
+            deletedAt: null,
             status: { in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'] },
           },
           orderBy: { createdAt: 'desc' },
@@ -372,6 +374,7 @@ export class TrucksService {
         // замість статусу вантажівки. 0 або 1 елемент.
         trips: {
           where: {
+            deletedAt: null,
             status: {
               in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'],
             },

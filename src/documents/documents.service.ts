@@ -280,7 +280,7 @@ export class DocumentsService {
 
   async findByTruck(truckId: string) {
     const docs = await this.prisma.tripDocument.findMany({
-      where: { trip: { truckId } },
+      where: { trip: { truckId, deletedAt: null } },
       include: {
         uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         // createdAt + stop addresses let the driver Documents screen search
@@ -304,7 +304,7 @@ export class DocumentsService {
   // single "all my docs" page grouped by trip.
   async findByCompany(companyId: string) {
     const docs = await this.prisma.tripDocument.findMany({
-      where: { trip: { companyId } },
+      where: { trip: { companyId, deletedAt: null } },
       include: {
         uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
         trip: {
