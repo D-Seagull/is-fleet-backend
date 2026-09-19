@@ -380,6 +380,7 @@ export class MessagesService {
         WHERE m."isRead" = false
           AND m."senderId" != ${driverId}
           AND t."driverId" = ${driverId}
+          AND t."deletedAt" IS NULL
           AND m."sessionId" IN (
             SELECT id FROM "TripChatSession" WHERE "driverId" = ${driverId}
           )
@@ -397,6 +398,7 @@ export class MessagesService {
           AND td."uploadedBy" != ${driverId}
           AND td."deletedAt" IS NULL
           AND t."driverId" = ${driverId}
+          AND t."deletedAt" IS NULL
       ),
       trip_counts AS (
         SELECT "tripId", trip_title, is_active, COUNT(*)::int AS unread

@@ -29,8 +29,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.assignedToTruck': 'Вас призначено на {{plate}}',
     'push.assignedTruck': 'Вам призначено вантажівку {{plate}}',
     'push.managerInfoTitle': 'Зміна менеджера',
-    'push.managerAssignedTruckInfo': 'Для вантажівки {{plate}} призначений менеджер {{name}}',
-    'push.managerAssignedTripInfo': 'Для рейсу {{title}} призначений менеджер {{name}}',
+    'push.managerAssignedTruckInfo':
+      'Для вантажівки {{plate}} призначений менеджер {{name}}',
+    'push.managerAssignedTripInfo':
+      'Для рейсу {{title}} призначений менеджер {{name}}',
     'push.truckUnassignedTitle': 'Вантажівку {{plate}} відкріплено',
     'push.tripUnassignedTitle': 'Рейс {{title}} відкріплено',
     'push.unassignedNewManager': 'новий менеджер {{manager}}',
@@ -50,7 +52,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.companyNotFound': 'Компанія не знайдена',
     'errors.userNotFound': 'Користувача не знайдено',
     'errors.accountDeleted': 'Акаунт видалено',
-    'errors.lastAdminCannotDelete': 'Ви єдиний адміністратор компанії — передайте права іншому перед видаленням',
+    'errors.lastAdminCannotDelete':
+      'Ви єдиний адміністратор компанії — передайте права іншому перед видаленням',
     'errors.alarmNotFound': 'Будильник не знайдено',
     'errors.truckNotFound': 'Вантажівку не знайдено',
     'errors.noteNotFound': 'Нотатку не знайдено',
@@ -72,8 +75,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.noPermissionDeactivate':
       'У вас немає дозволу деактивувати цього користувача',
     'errors.cannotDeleteDocument': 'Ви не можете видалити цей документ',
-    'errors.onlyGroupMembersEdit':
-      'Лише учасники групи можуть редагувати її.',
+    'errors.onlyGroupMembersEdit': 'Лише учасники групи можуть редагувати її.',
     'errors.editOwnGroups': 'Можна редагувати тільки свої групи',
     'errors.onlyCreatorDeleteGroup':
       'Видаляти може тільки той, хто створив групу',
@@ -81,7 +83,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Це група менеджерів — не можна додавати вантажівки',
     'errors.notManagersGroup':
       'Це група вантажівок — не можна додавати менеджерів',
-    'errors.canAddManagersOnly': 'Можна додавати тільки менеджерів або тімлідів',
+    'errors.canAddManagersOnly':
+      'Можна додавати тільки менеджерів або тімлідів',
     'errors.notGroupMember': 'Ви не є учасником цієї групи',
     'errors.cannotCreateAlarmForUser':
       'Не можна створити будильник для цього користувача',
@@ -105,7 +108,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.userExists': 'Користувач з таким email або телефоном вже існує.',
     'errors.phoneUsedDriver':
       'Цей номер телефону вже використовує інший водій.',
-    'errors.phoneUsedUser': 'Цей номер уже використовується іншим користувачем.',
+    'errors.phoneUsedUser':
+      'Цей номер уже використовується іншим користувачем.',
     'errors.scoreRange': 'Оцінка має бути від 1 до 5',
     'errors.companyExists': 'Компанія з такою назвою вже створена',
     'errors.noAccess': 'Немає доступу',
@@ -122,7 +126,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Емодзі не підтримується',
     'errors.recordExists': 'Такий запис вже існує',
     'errors.recordNotFound': 'Запис не знайдений',
-    'errors.cannotDeleteTrip': 'Видалити рейс може лише менеджер цієї вантажівки або тімлід',
+    'errors.cannotDeleteTrip':
+      'Видалити рейс може лише менеджер цієї вантажівки або тімлід',
+    'errors.cannotReassignTrip':
+      'Перепризначити рейс може лише менеджер, який його веде, або тімлід',
+    'errors.truckHasNoDriver': 'На цій вантажівці немає водія',
+    'errors.targetTruckBusy': 'На цій вантажівці вже є активний рейс',
   },
   en: {
     'push.newMessage': 'New message',
@@ -135,8 +144,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.assignedToTruck': "You've been assigned to {{plate}}",
     'push.assignedTruck': "You've been assigned truck {{plate}}",
     'push.managerInfoTitle': 'Manager change',
-    'push.managerAssignedTruckInfo': 'Manager {{name}} assigned to truck {{plate}}',
-    'push.managerAssignedTripInfo': 'Manager {{name}} assigned to trip {{title}}',
+    'push.managerAssignedTruckInfo':
+      'Manager {{name}} assigned to truck {{plate}}',
+    'push.managerAssignedTripInfo':
+      'Manager {{name}} assigned to trip {{title}}',
     'push.truckUnassignedTitle': 'Truck {{plate}} unassigned',
     'push.tripUnassignedTitle': 'Trip {{title}} unassigned',
     'push.unassignedNewManager': 'new manager {{manager}}',
@@ -155,7 +166,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.companyNotFound': 'Company not found',
     'errors.userNotFound': 'User not found',
     'errors.accountDeleted': 'Account has been deleted',
-    'errors.lastAdminCannotDelete': 'You are the only administrator of this company — hand the role over before deleting',
+    'errors.lastAdminCannotDelete':
+      'You are the only administrator of this company — hand the role over before deleting',
     'errors.alarmNotFound': 'Alarm not found',
     'errors.truckNotFound': 'Truck not found',
     'errors.noteNotFound': 'Note not found',
@@ -218,7 +230,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Unsupported emoji',
     'errors.recordExists': 'This record already exists',
     'errors.recordNotFound': 'Record not found',
-    'errors.cannotDeleteTrip': 'Only the assigned manager of this truck or a teamlead can delete this trip',
+    'errors.cannotDeleteTrip':
+      'Only the assigned manager of this truck or a teamlead can delete this trip',
+    'errors.cannotReassignTrip':
+      'Only the manager running this trip or a teamlead can move it to another truck',
+    'errors.truckHasNoDriver': 'This truck has no driver',
+    'errors.targetTruckBusy': 'This truck already has an active trip',
   },
   pl: {
     'push.newMessage': 'Nowa wiadomość',
@@ -231,8 +248,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.assignedToTruck': 'Przydzielono cię do {{plate}}',
     'push.assignedTruck': 'Przydzielono ci ciężarówkę {{plate}}',
     'push.managerInfoTitle': 'Zmiana menedżera',
-    'push.managerAssignedTruckInfo': 'Menedżer {{name}} przydzielony do ciężarówki {{plate}}',
-    'push.managerAssignedTripInfo': 'Menedżer {{name}} przydzielony do trasy {{title}}',
+    'push.managerAssignedTruckInfo':
+      'Menedżer {{name}} przydzielony do ciężarówki {{plate}}',
+    'push.managerAssignedTripInfo':
+      'Menedżer {{name}} przydzielony do trasy {{title}}',
     'push.truckUnassignedTitle': 'Odpięto ciężarówkę {{plate}}',
     'push.tripUnassignedTitle': 'Odpięto trasę {{title}}',
     'push.unassignedNewManager': 'nowy menedżer {{manager}}',
@@ -251,7 +270,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.companyNotFound': 'Nie znaleziono firmy',
     'errors.userNotFound': 'Nie znaleziono użytkownika',
     'errors.accountDeleted': 'Konto zostało usunięte',
-    'errors.lastAdminCannotDelete': 'Jesteś jedynym administratorem firmy — przekaż uprawnienia przed usunięciem',
+    'errors.lastAdminCannotDelete':
+      'Jesteś jedynym administratorem firmy — przekaż uprawnienia przed usunięciem',
     'errors.alarmNotFound': 'Nie znaleziono budzika',
     'errors.truckNotFound': 'Nie znaleziono ciężarówki',
     'errors.noteNotFound': 'Nie znaleziono notatki',
@@ -322,7 +342,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Nieobsługiwane emoji',
     'errors.recordExists': 'Taki rekord już istnieje',
     'errors.recordNotFound': 'Nie znaleziono rekordu',
-    'errors.cannotDeleteTrip': 'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
+    'errors.cannotDeleteTrip':
+      'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
+    'errors.cannotReassignTrip':
+      'Trasę może przenieść na inny pojazd tylko jej menedżer lub teamlead',
+    'errors.truckHasNoDriver': 'Ten pojazd nie ma kierowcy',
+    'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
   },
   lt: {
     'push.newMessage': 'Nauja žinutė',
@@ -335,8 +360,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.assignedToTruck': 'Jūs priskirtas prie {{plate}}',
     'push.assignedTruck': 'Jums priskirtas vilkikas {{plate}}',
     'push.managerInfoTitle': 'Vadovo pakeitimas',
-    'push.managerAssignedTruckInfo': 'Vadovas {{name}} priskirtas vilkikui {{plate}}',
-    'push.managerAssignedTripInfo': 'Vadovas {{name}} priskirtas reisui {{title}}',
+    'push.managerAssignedTruckInfo':
+      'Vadovas {{name}} priskirtas vilkikui {{plate}}',
+    'push.managerAssignedTripInfo':
+      'Vadovas {{name}} priskirtas reisui {{title}}',
     'push.truckUnassignedTitle': 'Vilkikas {{plate}} atsietas',
     'push.tripUnassignedTitle': 'Reisas {{title}} atsietas',
     'push.unassignedNewManager': 'naujas vadovas {{manager}}',
@@ -355,7 +382,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.companyNotFound': 'Įmonė nerasta',
     'errors.userNotFound': 'Vartotojas nerastas',
     'errors.accountDeleted': 'Paskyra ištrinta',
-    'errors.lastAdminCannotDelete': 'Esate vienintelis įmonės administratorius — prieš ištrindami perduokite teises kitam',
+    'errors.lastAdminCannotDelete':
+      'Esate vienintelis įmonės administratorius — prieš ištrindami perduokite teises kitam',
     'errors.alarmNotFound': 'Žadintuvas nerastas',
     'errors.truckNotFound': 'Vilkikas nerastas',
     'errors.noteNotFound': 'Užrašas nerastas',
@@ -379,10 +407,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.onlyGroupMembersEdit': 'Redaguoti gali tik grupės nariai.',
     'errors.editOwnGroups': 'Galite redaguoti tik savo grupes',
     'errors.onlyCreatorDeleteGroup': 'Ištrinti gali tik grupės kūrėjas',
-    'errors.notTrucksGroup':
-      'Tai vadovų grupė — negalima pridėti vilkikų',
-    'errors.notManagersGroup':
-      'Tai vilkikų grupė — negalima pridėti vadovų',
+    'errors.notTrucksGroup': 'Tai vadovų grupė — negalima pridėti vilkikų',
+    'errors.notManagersGroup': 'Tai vilkikų grupė — negalima pridėti vadovų',
     'errors.canAddManagersOnly':
       'Galima pridėti tik vadovus arba komandos vadovus',
     'errors.notGroupMember': 'Nesate šios grupės narys',
@@ -413,8 +439,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.noAccess': 'Nėra prieigos',
     'errors.wrongEmailOrPassword': 'Neteisingas el. paštas arba slaptažodis',
     'errors.invalidOrExpiredToken': 'Neteisingas arba pasibaigęs tokenas',
-    'errors.loginOrPasswordWrong':
-      'Neteisingas prisijungimas arba slaptažodis',
+    'errors.loginOrPasswordWrong': 'Neteisingas prisijungimas arba slaptažodis',
     'errors.invalidToken': 'Neteisingas tokenas',
     'errors.codeInvalidOrExpired': 'Kodas neteisingas arba pasibaigęs.',
     'errors.tooManyAttempts': 'Per daug bandymų. Užsisakykite naują kodą.',
@@ -424,7 +449,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Nepalaikomas jaustukas',
     'errors.recordExists': 'Toks įrašas jau egzistuoja',
     'errors.recordNotFound': 'Įrašas nerastas',
-    'errors.cannotDeleteTrip': 'Reisą gali ištrinti tik dabartinis šios transporto priemonės vadybininkas arba komandos vadovas',
+    'errors.cannotDeleteTrip':
+      'Reisą gali ištrinti tik dabartinis šios transporto priemonės vadybininkas arba komandos vadovas',
+    'errors.cannotReassignTrip':
+      'Perkelti reisą į kitą vilkiką gali tik jį valdantis vadybininkas arba komandos vadovas',
+    'errors.truckHasNoDriver': 'Ši transporto priemonė neturi vairuotojo',
+    'errors.targetTruckBusy': 'Ši transporto priemonė jau turi aktyvų reisą',
   },
   ru: {
     'push.newMessage': 'Новое сообщение',
@@ -437,8 +467,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.assignedToTruck': 'Вас назначили на {{plate}}',
     'push.assignedTruck': 'Вам назначен грузовик {{plate}}',
     'push.managerInfoTitle': 'Смена менеджера',
-    'push.managerAssignedTruckInfo': 'Для грузовика {{plate}} назначен менеджер {{name}}',
-    'push.managerAssignedTripInfo': 'Для рейса {{title}} назначен менеджер {{name}}',
+    'push.managerAssignedTruckInfo':
+      'Для грузовика {{plate}} назначен менеджер {{name}}',
+    'push.managerAssignedTripInfo':
+      'Для рейса {{title}} назначен менеджер {{name}}',
     'push.truckUnassignedTitle': 'Грузовик {{plate}} откреплён',
     'push.tripUnassignedTitle': 'Рейс {{title}} откреплён',
     'push.unassignedNewManager': 'новый менеджер {{manager}}',
@@ -457,7 +489,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.companyNotFound': 'Компания не найдена',
     'errors.userNotFound': 'Пользователь не найден',
     'errors.accountDeleted': 'Аккаунт удалён',
-    'errors.lastAdminCannotDelete': 'Вы единственный администратор компании — передайте права другому перед удалением',
+    'errors.lastAdminCannotDelete':
+      'Вы единственный администратор компании — передайте права другому перед удалением',
     'errors.alarmNotFound': 'Будильник не найден',
     'errors.truckNotFound': 'Грузовик не найден',
     'errors.noteNotFound': 'Заметка не найдена',
@@ -511,8 +544,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Пользователь с таким email или телефоном уже существует.',
     'errors.phoneUsedDriver':
       'Этот номер телефона уже используется другим водителем.',
-    'errors.phoneUsedUser':
-      'Этот номер уже используется другим пользователем.',
+    'errors.phoneUsedUser': 'Этот номер уже используется другим пользователем.',
     'errors.scoreRange': 'Оценка должна быть от 1 до 5',
     'errors.companyExists': 'Компания с таким названием уже создана',
     'errors.noAccess': 'Нет доступа',
@@ -521,8 +553,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.loginOrPasswordWrong': 'Логин или пароль неверны',
     'errors.invalidToken': 'Неверный токен',
     'errors.codeInvalidOrExpired': 'Код неверный или просрочен.',
-    'errors.tooManyAttempts':
-      'Слишком много попыток. Запросите новый код.',
+    'errors.tooManyAttempts': 'Слишком много попыток. Запросите новый код.',
     'errors.pleaseWaitCode': 'Подождите перед запросом нового кода.',
     'errors.linkInvalidOrExpired': 'Ссылка недействительна или устарела',
     'errors.userGoneOrDeactivated':
@@ -530,7 +561,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.unsupportedEmoji': 'Эмодзи не поддерживается',
     'errors.recordExists': 'Такая запись уже существует',
     'errors.recordNotFound': 'Запись не найдена',
-    'errors.cannotDeleteTrip': 'Удалить рейс может только менеджер этой машины или тимлид',
+    'errors.cannotDeleteTrip':
+      'Удалить рейс может только менеджер этой машины или тимлид',
+    'errors.cannotReassignTrip':
+      'Переназначить рейс может только ведущий его менеджер или тимлид',
+    'errors.truckHasNoDriver': 'На этой машине нет водителя',
+    'errors.targetTruckBusy': 'На этой машине уже есть активный рейс',
   },
 };
 

@@ -298,6 +298,7 @@ model TripChatSession {
 enum SessionEndReason {
   DRIVER_CHANGED
   MANAGER_CHANGED
+  TRUCK_CHANGED
   TRIP_COMPLETED
   LEGACY_RESET
 }

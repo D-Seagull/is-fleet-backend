@@ -15,6 +15,7 @@ import { GetTripMessagesDto } from './dto/get-trip-messages.dto';
 import {
   AssignManagerDto,
   AssignTripDto,
+  AssignTruckDto,
   UpdateTripDto,
 } from './dto/update-trip.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -132,6 +133,22 @@ export class TripsController {
     return this.tripsService.assignDriver(id, companyId, dto.driverId, userId);
   }
 
+  /** Перецеп: рейс переїжджає на іншу вантажівку разом з її водієм. */
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Patch(':id/truck')
+  assignTruck(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+    @Body() dto: AssignTruckDto,
+  ) {
+    return this.tripsService.assignTruck(id, companyId, dto, {
+      id: userId,
+      role,
+    });
+  }
+
   /** Reassign an existing trip to a different manager. */
   @Roles('ADMIN', 'TEAMLEAD')
   @Patch(':id/manager')
@@ -158,7 +175,10 @@ export class TripsController {
     @GetUser('id') userId: string,
     @GetUser('role') role: string,
   ) {
-    return this.tripsService.getChatArchive(id, companyId, { id: userId, role });
+    return this.tripsService.getChatArchive(id, companyId, {
+      id: userId,
+      role,
+    });
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
@@ -168,7 +188,10 @@ export class TripsController {
     @GetUser('id') userId: string,
     @GetUser('role') role: string,
   ) {
-    return this.tripsService.getSessionMessages(sessionId, { id: userId, role });
+    return this.tripsService.getSessionMessages(sessionId, {
+      id: userId,
+      role,
+    });
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

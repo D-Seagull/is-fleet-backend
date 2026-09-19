@@ -2,11 +2,14 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
+
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTripDto } from './dto/create-trip.dto';
-import { UpdateTripDto } from './dto/update-trip.dto';
+import { AssignTruckDto, UpdateTripDto } from './dto/update-trip.dto';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
 import { PushService } from '../push/push.service';
@@ -274,7 +277,12 @@ export class TripsService {
               fileType: true,
               deletedAt: true,
               uploader: {
-                select: { id: true, firstName: true, lastName: true, avatar: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  avatar: true,
+                },
               },
             },
           },
@@ -413,7 +421,9 @@ export class TripsService {
           this.gateway.server.to(driverId).emit('tripUnreadChanged', signal);
         }
         if (trip.managerId && trip.managerId !== triggeredById) {
-          this.gateway.server.to(trip.managerId).emit('tripUnreadChanged', signal);
+          this.gateway.server
+            .to(trip.managerId)
+            .emit('tripUnreadChanged', signal);
         }
         if (trip.companyId) {
           this.gateway.server
@@ -421,6 +431,193 @@ export class TripsService {
             .emit('tripUnreadChanged', signal);
         }
       }
+    }
+
+    return updated;
+  }
+
+  /**
+   * Перецеп: рейс переїжджає на іншу машину разом з її поточним водієм.
+   *
+   * Менеджер лишається той самий — він тримає всю переписку по рейсу. Старий
+   * водій втрачає рейс повністю: його чат-сесію закрито, а список рейсів у
+   * застосунку фільтрується по поточному `Trip.driverId`.
+   */
+  async assignTruck(
+    id: string,
+    companyId: string | null,
+    dto: AssignTruckDto,
+    actor: { id: string; role: string },
+  ) {
+    // companyId приходить null для ADMIN (AdminInterceptor), тому далі всюди
+    // користуємось компанією самого рейсу.
+    const trip = await this.prisma.trip.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+        ...(companyId ? { companyId } : {}),
+      },
+      include: {
+        truck: { select: { id: true, plate: true, currentDriverId: true } },
+      },
+    });
+    if (!trip) throw new NotFoundException('errors.tripNotFound');
+
+    // Менеджер перецеплює лише рейси, які веде сам; тімлід і адмін — будь-які.
+    if (actor.role === 'MANAGER' && trip.managerId !== actor.id) {
+      throw new ForbiddenException('errors.cannotReassignTrip');
+    }
+    if (trip.truckId === dto.truckId) {
+      return this.findOne(id, trip.companyId);
+    }
+
+    const target = await this.prisma.truck.findFirst({
+      where: { id: dto.truckId, companyId: trip.companyId },
+      select: { id: true, plate: true, currentDriverId: true },
+    });
+    if (!target) throw new NotFoundException('errors.truckNotFound');
+    if (!target.currentDriverId) {
+      throw new BadRequestException('errors.truckHasNoDriver');
+    }
+
+    // Зустрічний активний рейс цільової машини. Без стратегії відмовляємо і
+    // віддаємо його опис — клієнт має показати вибір, а не мовчки перезаписати.
+    const blocking = await this.prisma.trip.findFirst({
+      where: {
+        truckId: target.id,
+        companyId: trip.companyId,
+        deletedAt: null,
+        id: { not: trip.id },
+        status: { in: [...ACTIVE_STATUSES] },
+      },
+      include: {
+        driver: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (blocking && !dto.onConflict) {
+      throw new ConflictException({
+        code: 'TARGET_TRUCK_BUSY',
+        message: 'errors.targetTruckBusy',
+        trip: {
+          id: blocking.id,
+          title: blocking.title,
+          orderNumber: blocking.orderNumber,
+          status: blocking.status,
+          driverName: fullName(blocking.driver),
+        },
+      });
+    }
+
+    // Водія вихідної машини читаємо ДО переносу: при обміні він стане водієм
+    // зустрічного рейсу.
+    const sourceTruckId = trip.truckId;
+    const sourceDriverId = trip.truck.currentDriverId;
+    if (blocking && dto.onConflict === 'SWAP' && !sourceDriverId) {
+      throw new BadRequestException('errors.truckHasNoDriver');
+    }
+
+    await this.moveTripToTruck(
+      trip.id,
+      target.id,
+      target.currentDriverId,
+      trip.driverId,
+      actor.id,
+      trip.companyId,
+    );
+
+    if (blocking && dto.onConflict === 'SWAP') {
+      await this.moveTripToTruck(
+        blocking.id,
+        sourceTruckId,
+        sourceDriverId as string,
+        blocking.driverId,
+        actor.id,
+        trip.companyId,
+      );
+    } else if (blocking && dto.onConflict === 'COMPLETE_OTHER') {
+      const done = await this.prisma.trip.update({
+        where: { id: blocking.id },
+        data: { status: 'DELIVERED' },
+      });
+      await this.sessions.closeActive(blocking.id, 'TRIP_COMPLETED');
+      this.emitTripUpdated(blocking.id, trip.companyId, done.driverId);
+    }
+
+    return this.findOne(id, trip.companyId);
+  }
+
+  /**
+   * Переносить один рейс на вказану машину: міняє машину й водія, скидає
+   * статус на ASSIGNED (новий водій підтверджує рейс так само, як новий),
+   * закриває чат-сесію попереднього водія і відкриває нову з системним рядком.
+   */
+  private async moveTripToTruck(
+    tripId: string,
+    truckId: string,
+    newDriverId: string,
+    previousDriverId: string,
+    triggeredById: string,
+    companyId: string,
+  ) {
+    const updated = await this.prisma.trip.update({
+      where: { id: tripId },
+      data: { truckId, driverId: newDriverId, status: 'ASSIGNED' },
+      include: tripInclude,
+    });
+
+    // Сесію чіпаємо ПІСЛЯ оновлення рейсу: системний рядок бере номер машини
+    // з бази, і він має бути вже новий.
+    const { systemMessage } = await this.sessions.closeAndOpenNew(
+      tripId,
+      'TRUCK_CHANGED',
+      newDriverId,
+      updated.managerId,
+      triggeredById,
+    );
+
+    // Пуш новому водієві. Тип NEW_TRIP навмисно: застосунок водія вже вміє
+    // показати його з кнопкою «ОК», яка переводить рейс в ACCEPTED.
+    const loadingStop = updated.stops.find((s) => s.type === 'LOADING');
+    const address = loadingStop?.address?.trim();
+    await this.push.sendLocalizedToUsers(
+      [newDriverId],
+      (lang) => ({
+        title: t(lang, 'push.newLoading'),
+        body: address ? address : updated.title,
+      }),
+      { data: { type: 'NEW_TRIP', tripId, truckId } },
+    );
+
+    this.emitTripUpdated(tripId, companyId, newDriverId);
+    // Старому водієві теж — щоб рейс зник з його списку без перезаходу, а
+    // лічильник непрочитаного по ньому перерахувався (рейс більше не його).
+    if (previousDriverId && previousDriverId !== newDriverId) {
+      this.gateway.server.to(previousDriverId).emit('tripUpdated', { tripId });
+      this.gateway.server
+        .to(previousDriverId)
+        .emit('tripUnreadChanged', { tripId, truckId });
+    }
+
+    if (systemMessage) {
+      this.gateway.server.to(tripId).emit('newMessage', systemMessage);
+      this.gateway.server
+        .to(`company-${companyId}`)
+        .emit('newMessage', systemMessage);
+
+      const signal = { tripId, truckId };
+      if (newDriverId !== triggeredById) {
+        this.gateway.server.to(newDriverId).emit('tripUnreadChanged', signal);
+      }
+      if (updated.managerId !== triggeredById) {
+        this.gateway.server
+          .to(updated.managerId)
+          .emit('tripUnreadChanged', signal);
+      }
+      this.gateway.server
+        .to(`company-admin-${companyId}`)
+        .emit('tripUnreadChanged', signal);
     }
 
     return updated;
@@ -550,7 +747,13 @@ export class TripsService {
               name: fullName(newManager) || t(lang, 'push.noName'),
             }),
           }),
-          { data: { type: 'MANAGER_ASSIGNED_TRIP', tripId: id, truckId: updated.truckId } },
+          {
+            data: {
+              type: 'MANAGER_ASSIGNED_TRIP',
+              tripId: id,
+              truckId: updated.truckId,
+            },
+          },
         );
       }
 
@@ -559,12 +762,20 @@ export class TripsService {
         await this.push.sendLocalizedToUsers(
           [trip.managerId],
           (lang) => ({
-            title: t(lang, 'push.tripUnassignedTitle', { title: updated.title }),
+            title: t(lang, 'push.tripUnassignedTitle', {
+              title: updated.title,
+            }),
             body: t(lang, 'push.unassignedNewManager', {
               manager: fullName(newManager) || t(lang, 'push.noName'),
             }),
           }),
-          { data: { type: 'MANAGER_REMOVED_TRIP', tripId: id, truckId: updated.truckId } },
+          {
+            data: {
+              type: 'MANAGER_REMOVED_TRIP',
+              tripId: id,
+              truckId: updated.truckId,
+            },
+          },
         );
       }
     }

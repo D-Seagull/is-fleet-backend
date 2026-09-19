@@ -18,7 +18,10 @@ import { fullName } from 'src/common/utils/full-name';
 export class TripChatSessionsService {
   constructor(private prisma: PrismaService) {}
 
-  async getActiveSession(tripId: string, tx: Prisma.TransactionClient = this.prisma) {
+  async getActiveSession(
+    tripId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
     return tx.tripChatSession.findFirst({
       where: { tripId, endedAt: null },
     });
@@ -78,7 +81,10 @@ export class TripChatSessionsService {
     return members.map((m) => m.id);
   }
 
-  async getActiveSessionOrThrow(tripId: string, tx: Prisma.TransactionClient = this.prisma) {
+  async getActiveSessionOrThrow(
+    tripId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
     const session = await this.getActiveSession(tripId, tx);
     if (!session) {
       throw new NotFoundException('errors.noActiveSession');
@@ -141,16 +147,26 @@ export class TripChatSessionsService {
       const sysToken = (k: string, p: Record<string, string>) =>
         `[[sys]]${JSON.stringify({ k, p })}`;
       let content = '';
-      if (reason === 'DRIVER_CHANGED') {
-        content = sysToken('sys.driverAssigned', {
-          plate,
-          name: fullName(driver) || '—',
-        });
-      } else if (reason === 'MANAGER_CHANGED') {
-        content = sysToken('sys.managerAssigned', {
-          plate,
-          name: fullName(manager) || '—',
-        });
+      switch (reason) {
+        case 'DRIVER_CHANGED':
+          content = sysToken('sys.driverAssigned', {
+            plate,
+            name: fullName(driver) || '—',
+          });
+          break;
+        case 'MANAGER_CHANGED':
+          content = sysToken('sys.managerAssigned', {
+            plate,
+            name: fullName(manager) || '—',
+          });
+          break;
+
+        case 'TRUCK_CHANGED':
+          content = sysToken('sys.truckAssigned', {
+            plate,
+            name: fullName(driver) || '-',
+          });
+          break;
       }
 
       // 1. Close the old session.
@@ -174,9 +190,8 @@ export class TripChatSessionsService {
       //    the new participant sees a notification badge. Returned so the
       //    caller can broadcast `newMessage` over sockets — clients add it
       //    to the chat instantly without waiting for a refetch poll.
-      let systemMessage: Awaited<
-        ReturnType<typeof tx.message.create>
-      > | null = null;
+      let systemMessage: Awaited<ReturnType<typeof tx.message.create>> | null =
+        null;
       if (content) {
         systemMessage = await tx.message.create({
           data: {
@@ -188,7 +203,17 @@ export class TripChatSessionsService {
             isRead: false,
           },
           include: {
-            sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+            sender: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+                status: true,
+                statusUntil: true,
+                role: true,
+              },
+            },
             session: { select: { driverId: true, managerId: true } },
           },
         });
@@ -217,10 +242,7 @@ export class TripChatSessionsService {
    * as getVisibleSessionIds — see that method's docstring — plus the
    * archived-only filter.
    */
-  async findArchived(
-    tripId: string,
-    requester: { id: string; role: string },
-  ) {
+  async findArchived(tripId: string, requester: { id: string; role: string }) {
     let extraWhere: Prisma.TripChatSessionWhereInput = {};
 
     if (requester.role !== 'ADMIN') {
@@ -244,8 +266,28 @@ export class TripChatSessionsService {
         ...extraWhere,
       },
       include: {
-        driver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
-        manager: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        driver: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            role: true,
+          },
+        },
+        manager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            role: true,
+          },
+        },
       },
       orderBy: { startedAt: 'desc' },
     });
@@ -265,15 +307,10 @@ export class TripChatSessionsService {
     if (!session) throw new NotFoundException('errors.sessionNotFound');
 
     const isParticipant =
-      session.driverId === requester.id ||
-      session.managerId === requester.id;
+      session.driverId === requester.id || session.managerId === requester.id;
 
     let isTeamManaged = false;
-    if (
-      !isParticipant &&
-      requester.role === 'TEAMLEAD' &&
-      session.managerId
-    ) {
+    if (!isParticipant && requester.role === 'TEAMLEAD' && session.managerId) {
       const sessionManager = await this.prisma.user.findUnique({
         where: { id: session.managerId },
         select: { teamleadId: true },
@@ -281,17 +318,25 @@ export class TripChatSessionsService {
       isTeamManaged = sessionManager?.teamleadId === requester.id;
     }
 
-    if (
-      requester.role !== 'ADMIN' &&
-      !isParticipant &&
-      !isTeamManaged
-    ) {
+    if (requester.role !== 'ADMIN' && !isParticipant && !isTeamManaged) {
       throw new ForbiddenException('errors.noAccessChatSession');
     }
 
     return this.prisma.message.findMany({
       where: { sessionId },
-      include: { sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } } },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            role: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
   }

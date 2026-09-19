@@ -1,5 +1,10 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MessagesGateway } from '../messages/messages.gateway';
@@ -22,11 +27,17 @@ describe('TripsService', () => {
   let service: TripsService;
   let prisma: {
     trip: Record<string, jest.Mock>;
+    truck: Record<string, jest.Mock>;
     tripStop: Record<string, jest.Mock>;
   };
-  let sessions: { openInitial: jest.Mock; closeAndOpenNew: jest.Mock };
+  let sessions: {
+    openInitial: jest.Mock;
+    closeAndOpenNew: jest.Mock;
+    closeActive: jest.Mock;
+  };
   let push: { sendLocalizedToUsers: jest.Mock };
   let emit: jest.Mock;
+  let toRoom: jest.Mock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -41,6 +52,7 @@ describe('TripsService', () => {
       },
       truck: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
       tripStop: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -50,10 +62,12 @@ describe('TripsService', () => {
     sessions = {
       openInitial: jest.fn().mockResolvedValue(undefined),
       closeAndOpenNew: jest.fn().mockResolvedValue({ systemMessage: null }),
+      closeActive: jest.fn().mockResolvedValue(null),
     };
     push = { sendLocalizedToUsers: jest.fn().mockResolvedValue(undefined) };
     emit = jest.fn();
-    const gateway = { server: { to: jest.fn().mockReturnValue({ emit }) } };
+    toRoom = jest.fn().mockReturnValue({ emit });
+    const gateway = { server: { to: toRoom } };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -239,9 +253,9 @@ describe('TripsService', () => {
 
     it('refuses to delete a trip outside the company', async () => {
       prisma.trip.findFirst.mockResolvedValue(null);
-      await expect(
-        service.remove('t1', 'c1', teamlead),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.remove('t1', 'c1', teamlead)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
       expect(prisma.trip.update).not.toHaveBeenCalled();
     });
 
@@ -276,6 +290,180 @@ describe('TripsService', () => {
         service.remove('t1', 'c1', { id: 'm1', role: 'MANAGER' }),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.trip.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── assignTruck (перепризначення рейсу на іншу машину) ────────────────────
+  describe('assignTruck', () => {
+    const admin = { id: 'a1', role: 'ADMIN' };
+    const tripRow = {
+      id: 't1',
+      companyId: 'c1',
+      truckId: 'truckA',
+      driverId: 'driverA',
+      managerId: 'm1',
+      truck: { id: 'truckA', plate: 'AAA111', currentDriverId: 'driverA' },
+    };
+    const targetTruck = {
+      id: 'truckB',
+      plate: 'BBB222',
+      currentDriverId: 'driverB',
+    };
+    const blockingTrip = {
+      id: 't2',
+      title: 'Load B',
+      orderNumber: null,
+      status: 'ON_WAY',
+      driverId: 'driverB',
+      driver: { id: 'driverB', firstName: 'Bob', lastName: null },
+    };
+    /** What trip.update returns — moveTripToTruck reads stops/title/managerId. */
+    const movedTrip = (over: Record<string, unknown> = {}) => ({
+      id: 't1',
+      title: 'Load A',
+      managerId: 'm1',
+      truckId: 'truckB',
+      driverId: 'driverB',
+      stops: [],
+      ...over,
+    });
+
+    it('refuses a manager who does not run the trip', async () => {
+      prisma.trip.findFirst.mockResolvedValue(tripRow);
+      await expect(
+        service.assignTruck(
+          't1',
+          'c1',
+          { truckId: 'truckB' },
+          { id: 'someoneElse', role: 'MANAGER' },
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.trip.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a truck with no driver — there would be nobody to push to', async () => {
+      prisma.trip.findFirst.mockResolvedValue(tripRow);
+      prisma.truck.findFirst.mockResolvedValue({
+        ...targetTruck,
+        currentDriverId: null,
+      });
+      await expect(
+        service.assignTruck('t1', 'c1', { truckId: 'truckB' }, admin),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.trip.update).not.toHaveBeenCalled();
+    });
+
+    it('reports a conflict instead of overwriting a truck that already runs a trip', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(blockingTrip);
+      prisma.truck.findFirst.mockResolvedValue(targetTruck);
+
+      await expect(
+        service.assignTruck('t1', 'c1', { truckId: 'truckB' }, admin),
+      ).rejects.toBeInstanceOf(ConflictException);
+      // Nothing moved — the caller has to pick a strategy first.
+      expect(prisma.trip.update).not.toHaveBeenCalled();
+      expect(sessions.closeAndOpenNew).not.toHaveBeenCalled();
+    });
+
+    it('moves the trip onto a free truck with its driver, and resets the status', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 't1' });
+      prisma.truck.findFirst.mockResolvedValue(targetTruck);
+      prisma.trip.update.mockResolvedValue(movedTrip());
+
+      await service.assignTruck('t1', 'c1', { truckId: 'truckB' }, admin);
+
+      expect(prisma.trip.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 't1' },
+          data: {
+            truckId: 'truckB',
+            driverId: 'driverB',
+            status: 'ASSIGNED',
+          },
+        }),
+      );
+      // A fresh chat session for the new driver, the old one closed as a truck
+      // change rather than a plain driver swap.
+      expect(sessions.closeAndOpenNew).toHaveBeenCalledWith(
+        't1',
+        'TRUCK_CHANGED',
+        'driverB',
+        'm1',
+        'a1',
+      );
+      expect(push.sendLocalizedToUsers).toHaveBeenCalledWith(
+        ['driverB'],
+        expect.any(Function),
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'NEW_TRIP', tripId: 't1' }),
+        }),
+      );
+      // The previous driver is told too, so the trip leaves their list at once.
+      expect(toRoom).toHaveBeenCalledWith('driverA');
+    });
+
+    it('swaps the two trips when asked, moving the blocking one to the freed truck', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(blockingTrip)
+        .mockResolvedValueOnce({ id: 't1' });
+      prisma.truck.findFirst.mockResolvedValue(targetTruck);
+      prisma.trip.update
+        .mockResolvedValueOnce(movedTrip())
+        .mockResolvedValueOnce(
+          movedTrip({ id: 't2', truckId: 'truckA', driverId: 'driverA' }),
+        );
+
+      await service.assignTruck(
+        't1',
+        'c1',
+        { truckId: 'truckB', onConflict: 'SWAP' },
+        admin,
+      );
+
+      expect(prisma.trip.update).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: { id: 't2' },
+          data: {
+            truckId: 'truckA',
+            driverId: 'driverA',
+            status: 'ASSIGNED',
+          },
+        }),
+      );
+      expect(sessions.closeAndOpenNew).toHaveBeenCalledTimes(2);
+    });
+
+    it('completes the blocking trip when asked, freeing the truck', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(blockingTrip)
+        .mockResolvedValueOnce({ id: 't1' });
+      prisma.truck.findFirst.mockResolvedValue(targetTruck);
+      prisma.trip.update
+        .mockResolvedValueOnce(movedTrip())
+        .mockResolvedValueOnce({ id: 't2', driverId: 'driverB' });
+
+      await service.assignTruck(
+        't1',
+        'c1',
+        { truckId: 'truckB', onConflict: 'COMPLETE_OTHER' },
+        admin,
+      );
+
+      expect(prisma.trip.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 't2' },
+        data: { status: 'DELIVERED' },
+      });
+      expect(sessions.closeActive).toHaveBeenCalledWith('t2', 'TRIP_COMPLETED');
+      // Only the moved trip gets a new session; the completed one just ends.
+      expect(sessions.closeAndOpenNew).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -1,4 +1,12 @@
-import { IsEnum, IsOptional, IsArray, ValidateNested, IsString, IsInt, Matches } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsString,
+  IsInt,
+  Matches,
+} from 'class-validator';
 import { TripStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 
@@ -10,6 +18,20 @@ export class AssignTripDto {
 export class AssignManagerDto {
   @IsString()
   managerId: string;
+}
+
+/** Що робити, якщо на цільовій машині вже є активний рейс. */
+export type TruckConflictStrategy = 'SWAP' | 'COMPLETE_OTHER';
+
+export class AssignTruckDto {
+  @IsString()
+  truckId: string;
+
+  // Без стратегії сервер відмовляє з 409 і описом конфлікту — клієнт показує
+  // вибір: помінятись рейсами чи завершити зустрічний.
+  @IsOptional()
+  @IsEnum(['SWAP', 'COMPLETE_OTHER'])
+  onConflict?: TruckConflictStrategy;
 }
 
 export class UpdateStopDto {
