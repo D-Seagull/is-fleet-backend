@@ -223,6 +223,48 @@ export class TripChatSessionsService {
     });
   }
 
+  /**
+   * Пише системний рядок у ПОТОЧНУ сесію, не закриваючи її — для подій, які
+   * міняють обставини рейсу, але не склад учасників чату (напр. вантажівку
+   * переписали на іншого менеджера, а рейс і далі веде той самий).
+   *
+   * Формат той самий `[[sys]]{k,p}`, що й у closeAndOpenNew: клієнт локалізує
+   * рядок під свою мову при рендері.
+   */
+  async postSystemMessage(
+    tripId: string,
+    key: string,
+    params: Record<string, string>,
+    triggeredById: string,
+  ) {
+    const active = await this.getActiveSession(tripId);
+    if (!active) return null;
+    return this.prisma.message.create({
+      data: {
+        tripId,
+        sessionId: active.id,
+        senderId: triggeredById,
+        content: `[[sys]]${JSON.stringify({ k: key, p: params })}`,
+        isSystem: true,
+        isRead: false,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            role: true,
+          },
+        },
+        session: { select: { driverId: true, managerId: true } },
+      },
+    });
+  }
+
   /** Close the active session without opening a replacement (e.g. trip completed). */
   async closeActive(
     tripId: string,

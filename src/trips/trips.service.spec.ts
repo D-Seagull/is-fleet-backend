@@ -28,12 +28,15 @@ describe('TripsService', () => {
   let prisma: {
     trip: Record<string, jest.Mock>;
     truck: Record<string, jest.Mock>;
+    user: Record<string, jest.Mock>;
     tripStop: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
   };
   let sessions: {
     openInitial: jest.Mock;
     closeAndOpenNew: jest.Mock;
     closeActive: jest.Mock;
+    postSystemMessage: jest.Mock;
   };
   let push: { sendLocalizedToUsers: jest.Mock };
   let emit: jest.Mock;
@@ -51,9 +54,16 @@ describe('TripsService', () => {
         delete: jest.fn().mockResolvedValue({}),
       },
       truck: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
       },
+      user: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      // Власність на машини міняється однією транзакцією зі списку промісів.
+      $transaction: jest.fn().mockResolvedValue([]),
       tripStop: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -63,6 +73,7 @@ describe('TripsService', () => {
       openInitial: jest.fn().mockResolvedValue(undefined),
       closeAndOpenNew: jest.fn().mockResolvedValue({ systemMessage: null }),
       closeActive: jest.fn().mockResolvedValue(null),
+      postSystemMessage: jest.fn().mockResolvedValue(null),
     };
     push = { sendLocalizedToUsers: jest.fn().mockResolvedValue(undefined) };
     emit = jest.fn();
@@ -304,10 +315,13 @@ describe('TripsService', () => {
       managerId: 'm1',
       truck: { id: 'truckA', plate: 'AAA111', currentDriverId: 'driverA' },
     };
+    // За замовчуванням цільова машина вже за тим самим менеджером, що веде
+    // рейс — тоді власність не чіпається і тести лишаються про переїзд.
     const targetTruck = {
       id: 'truckB',
       plate: 'BBB222',
       currentDriverId: 'driverB',
+      managerId: 'm1',
     };
     const blockingTrip = {
       id: 't2',
@@ -405,6 +419,105 @@ describe('TripsService', () => {
       );
       // The previous driver is told too, so the trip leaves their list at once.
       expect(toRoom).toHaveBeenCalledWith('driverA');
+    });
+
+    it('moves the truck to the trip manager and hands the freed one over', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 't1' });
+      // Цільова машина за іншим менеджером — саме цей випадок і міняє власність.
+      prisma.truck.findFirst.mockResolvedValue({
+        ...targetTruck,
+        managerId: 'm2',
+      });
+      prisma.trip.update.mockResolvedValue(movedTrip());
+      prisma.truck.findUnique.mockResolvedValue({
+        plate: 'BBB222',
+        currentDriverId: null,
+      });
+
+      await service.assignTruck('t1', 'c1', { truckId: 'truckB' }, admin);
+
+      const [ops] = prisma.$transaction.mock.calls[0] as [unknown[]];
+      expect(ops).toHaveLength(2);
+      expect(prisma.truck.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'truckB' },
+        data: { managerId: 'm1' },
+      });
+      // Менеджер, що втратив машину, отримує звільнену.
+      expect(prisma.truck.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'truckA' },
+        data: { managerId: 'm2' },
+      });
+    });
+
+    it('leaves the freed truck alone when the target had no manager', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 't1' });
+      prisma.truck.findFirst.mockResolvedValue({
+        ...targetTruck,
+        managerId: null,
+      });
+      prisma.trip.update.mockResolvedValue(movedTrip());
+      prisma.truck.findUnique.mockResolvedValue({
+        plate: 'BBB222',
+        currentDriverId: null,
+      });
+
+      await service.assignTruck('t1', 'c1', { truckId: 'truckB' }, admin);
+
+      // Нема кому віддати — інакше лишилась би машина без менеджера.
+      expect(prisma.truck.update).toHaveBeenCalledTimes(1);
+      expect(prisma.truck.update).toHaveBeenCalledWith({
+        where: { id: 'truckB' },
+        data: { managerId: 'm1' },
+      });
+    });
+
+    it('tells the drivers of both trucks who their manager is now', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(null)
+        // активний рейс цільової машини (наш, щойно переїхав)
+        .mockResolvedValueOnce({ id: 't1', managerId: 'm1' })
+        // активний рейс звільненої машини — його немає
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 't1' });
+      prisma.truck.findFirst.mockResolvedValue({
+        ...targetTruck,
+        managerId: 'm2',
+      });
+      prisma.trip.update.mockResolvedValue(movedTrip());
+      prisma.truck.findUnique
+        .mockResolvedValueOnce({ plate: 'BBB222', currentDriverId: 'driverB' })
+        .mockResolvedValueOnce({ plate: 'AAA111', currentDriverId: 'driverA' });
+      prisma.user.findUnique.mockResolvedValue({
+        firstName: 'Mike',
+        lastName: null,
+      });
+
+      await service.assignTruck('t1', 'c1', { truckId: 'truckB' }, admin);
+
+      // Системний рядок лягає в ЖИВУ сесію: чат менеджера не рветься.
+      expect(sessions.postSystemMessage).toHaveBeenCalledWith(
+        't1',
+        'sys.managerAssigned',
+        expect.objectContaining({ plate: 'BBB222' }),
+        'a1',
+      );
+      // Обидва водії отримують пуш про зміну менеджера машини.
+      const managerPushes = push.sendLocalizedToUsers.mock.calls.filter(
+        (call) =>
+          (call[2] as { data?: { type?: string } })?.data?.type ===
+          'MANAGER_CHANGED',
+      );
+      expect(managerPushes.map((call) => call[0])).toEqual([
+        ['driverB'],
+        ['driverA'],
+      ]);
     });
 
     it('swaps the two trips when asked, moving the blocking one to the freed truck', async () => {

@@ -473,7 +473,7 @@ export class TripsService {
 
     const target = await this.prisma.truck.findFirst({
       where: { id: dto.truckId, companyId: trip.companyId },
-      select: { id: true, plate: true, currentDriverId: true },
+      select: { id: true, plate: true, currentDriverId: true, managerId: true },
     });
     if (!target) throw new NotFoundException('errors.truckNotFound');
     if (!target.currentDriverId) {
@@ -545,7 +545,159 @@ export class TripsService {
       this.emitTripUpdated(blocking.id, trip.companyId, done.driverId);
     }
 
+    // Машина йде за завантаженням: цільова переписується на менеджера рейсу,
+    // звільнена — на того, чия була цільова.
+    await this.syncTruckOwnership({
+      companyId: trip.companyId,
+      tripManagerId: trip.managerId,
+      targetTruck: target,
+      sourceTruckId,
+      triggeredById: actor.id,
+    });
+
     return this.findOne(id, trip.companyId);
+  }
+
+  /**
+   * Обмін машинами між менеджерами. Рейс лишається за своїм менеджером —
+   * міняється лише те, за ким закріплена вантажівка: ту, на яку переїхало
+   * завантаження, забирає менеджер рейсу, а свою віддає попередньому
+   * власнику цільової машини. Водії обох машин дізнаються про це так само,
+   * як при звичайній зміні менеджера.
+   */
+  private async syncTruckOwnership({
+    companyId,
+    tripManagerId,
+    targetTruck,
+    sourceTruckId,
+    triggeredById,
+  }: {
+    companyId: string;
+    tripManagerId: string;
+    targetTruck: { id: string; plate: string; managerId: string | null };
+    sourceTruckId: string;
+    triggeredById: string;
+  }) {
+    if (targetTruck.managerId === tripManagerId) return;
+    const otherManagerId = targetTruck.managerId;
+
+    await this.prisma.$transaction([
+      this.prisma.truck.update({
+        where: { id: targetTruck.id },
+        data: { managerId: tripManagerId },
+      }),
+      // Нема кому віддавати — лишаємо звільнену машину як є, щоб не створити
+      // вантажівку без менеджера.
+      ...(otherManagerId
+        ? [
+            this.prisma.truck.update({
+              where: { id: sourceTruckId },
+              data: { managerId: otherManagerId },
+            }),
+          ]
+        : []),
+    ]);
+
+    await this.announceTruckManager(
+      targetTruck.id,
+      tripManagerId,
+      triggeredById,
+      companyId,
+    );
+    if (otherManagerId) {
+      await this.announceTruckManager(
+        sourceTruckId,
+        otherManagerId,
+        triggeredById,
+        companyId,
+      );
+    }
+
+    // Списки машин у всіх менеджерів компанії застаріли.
+    this.gateway.server.to(`company-${companyId}`).emit('truckChanged', {
+      truckId: targetTruck.id,
+      previousTruckId: sourceTruckId,
+      newDriverId: null,
+      previousDriverId: null,
+    });
+  }
+
+  /**
+   * Каже водієві машини, за ким вона тепер закріплена: системний рядок у
+   * поточний чат його активного рейсу (сесію не рвемо) плюс пуш — той самий,
+   * що й при зміні менеджера рейсу.
+   */
+  private async announceTruckManager(
+    truckId: string,
+    managerId: string,
+    triggeredById: string,
+    companyId: string,
+  ) {
+    const [truck, manager] = await Promise.all([
+      this.prisma.truck.findUnique({
+        where: { id: truckId },
+        select: { plate: true, currentDriverId: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: managerId },
+        select: { firstName: true, lastName: true },
+      }),
+    ]);
+    if (!truck?.currentDriverId) return;
+
+    const activeTrip = await this.prisma.trip.findFirst({
+      where: {
+        truckId,
+        companyId,
+        deletedAt: null,
+        status: { in: [...ACTIVE_STATUSES] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, managerId: true },
+    });
+
+    if (activeTrip) {
+      const systemMessage = await this.sessions.postSystemMessage(
+        activeTrip.id,
+        'sys.managerAssigned',
+        { plate: truck.plate, name: fullName(manager) || '—' },
+        triggeredById,
+      );
+      if (systemMessage) {
+        this.gateway.server.to(activeTrip.id).emit('newMessage', systemMessage);
+        this.gateway.server
+          .to(`company-${companyId}`)
+          .emit('newMessage', systemMessage);
+
+        const signal = { tripId: activeTrip.id, truckId };
+        if (truck.currentDriverId !== triggeredById) {
+          this.gateway.server
+            .to(truck.currentDriverId)
+            .emit('tripUnreadChanged', signal);
+        }
+        if (activeTrip.managerId !== triggeredById) {
+          this.gateway.server
+            .to(activeTrip.managerId)
+            .emit('tripUnreadChanged', signal);
+        }
+        this.gateway.server
+          .to(`company-admin-${companyId}`)
+          .emit('tripUnreadChanged', signal);
+      }
+    }
+
+    // Пуш іде навіть без активного рейсу — водій має знати, до кого тепер
+    // звертатись, ще до того як з'явиться завантаження.
+    await this.push.sendLocalizedToUsers(
+      [truck.currentDriverId],
+      (lang) => ({
+        title: t(lang, 'push.managerChanged'),
+        body: t(lang, 'push.newManager', {
+          name: fullName(manager) || t(lang, 'push.noName'),
+        }),
+      }),
+      { data: { type: 'MANAGER_CHANGED', truckId, managerId } },
+    );
   }
 
   /**
