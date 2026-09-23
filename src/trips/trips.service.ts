@@ -544,6 +544,32 @@ export class TripsService {
       this.emitTripUpdated(blocking.id, trip.companyId, done.driverId);
     }
 
+    // Другий менеджер нічого не натискав, а вантажівка під його рейсом щойно
+    // змінилась. Рейс лишається його — міняється тільки машина, тож шлемо йому
+    // рейс і нову машину, щоб клієнт показав вікно з переходом.
+    const notifyTruckSwapped = (
+      managerId: string,
+      payload: { tripId: string; truckId: string; plate: string; title: string },
+    ) => {
+      // Той, хто робив заміну, бачить результат у власному діалозі.
+      if (managerId === actor.id) return;
+      this.gateway.server.to(managerId).emit('tripTruckChanged', payload);
+    };
+    notifyTruckSwapped(trip.managerId, {
+      tripId: trip.id,
+      truckId: target.id,
+      plate: target.plate,
+      title: trip.title,
+    });
+    if (blocking && dto.onConflict === 'SWAP') {
+      notifyTruckSwapped(blocking.managerId, {
+        tripId: blocking.id,
+        truckId: sourceTruckId,
+        plate: trip.truck.plate,
+        title: blocking.title,
+      });
+    }
+
     // Машина йде за РЕЙСОМ, який на ній опинився: цільову забирає менеджер
     // цього рейсу, звільнену — менеджер зустрічного, якщо той туди переїхав.
     await this.syncTruckOwnership({
