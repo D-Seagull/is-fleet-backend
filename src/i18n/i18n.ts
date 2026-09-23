@@ -128,8 +128,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.recordNotFound': 'Запис не знайдений',
     'errors.cannotDeleteTrip':
       'Видалити рейс може лише менеджер цієї вантажівки або тімлід',
-    'errors.cannotReassignTrip':
-      'Перепризначити рейс може лише менеджер, який його веде, або тімлід',
     'errors.truckHasNoDriver': 'На цій вантажівці немає водія',
     'errors.targetTruckBusy': 'На цій вантажівці вже є активний рейс',
   },
@@ -232,8 +230,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.recordNotFound': 'Record not found',
     'errors.cannotDeleteTrip':
       'Only the assigned manager of this truck or a teamlead can delete this trip',
-    'errors.cannotReassignTrip':
-      'Only the manager running this trip or a teamlead can move it to another truck',
     'errors.truckHasNoDriver': 'This truck has no driver',
     'errors.targetTruckBusy': 'This truck already has an active trip',
   },
@@ -344,8 +340,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.recordNotFound': 'Nie znaleziono rekordu',
     'errors.cannotDeleteTrip':
       'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
-    'errors.cannotReassignTrip':
-      'Trasę może przenieść na inny pojazd tylko jej menedżer lub teamlead',
     'errors.truckHasNoDriver': 'Ten pojazd nie ma kierowcy',
     'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
   },
@@ -451,8 +445,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.recordNotFound': 'Įrašas nerastas',
     'errors.cannotDeleteTrip':
       'Reisą gali ištrinti tik dabartinis šios transporto priemonės vadybininkas arba komandos vadovas',
-    'errors.cannotReassignTrip':
-      'Perkelti reisą į kitą vilkiką gali tik jį valdantis vadybininkas arba komandos vadovas',
     'errors.truckHasNoDriver': 'Ši transporto priemonė neturi vairuotojo',
     'errors.targetTruckBusy': 'Ši transporto priemonė jau turi aktyvų reisą',
   },
@@ -563,8 +555,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.recordNotFound': 'Запись не найдена',
     'errors.cannotDeleteTrip':
       'Удалить рейс может только менеджер этой машины или тимлид',
-    'errors.cannotReassignTrip':
-      'Переназначить рейс может только ведущий его менеджер или тимлид',
     'errors.truckHasNoDriver': 'На этой машине нет водителя',
     'errors.targetTruckBusy': 'На этой машине уже есть активный рейс',
   },

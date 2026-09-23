@@ -342,17 +342,23 @@ describe('TripsService', () => {
       ...over,
     });
 
-    it('refuses a manager who does not run the trip', async () => {
-      prisma.trip.findFirst.mockResolvedValue(tripRow);
-      await expect(
-        service.assignTruck(
-          't1',
-          'c1',
-          { truckId: 'truckB' },
-          { id: 'someoneElse', role: 'MANAGER' },
-        ),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(prisma.trip.update).not.toHaveBeenCalled();
+    it('lets any manager of the company reassign, not just the trip owner', async () => {
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 't1' });
+      prisma.truck.findFirst.mockResolvedValue(targetTruck);
+      prisma.trip.update.mockResolvedValue(movedTrip());
+
+      await service.assignTruck(
+        't1',
+        'c1',
+        { truckId: 'truckB' },
+        // не менеджер цього рейсу — перецеп однаково дозволений
+        { id: 'someoneElse', role: 'MANAGER' },
+      );
+
+      expect(prisma.trip.update).toHaveBeenCalled();
     });
 
     it('refuses a truck with no driver — there would be nobody to push to', async () => {
@@ -551,6 +557,45 @@ describe('TripsService', () => {
         }),
       );
       expect(sessions.closeAndOpenNew).toHaveBeenCalledTimes(2);
+    });
+
+    it('gives each truck to the manager of the trip that lands on it', async () => {
+      // Зустрічний рейс веде НЕ менеджер цільової машини — саме тут стара
+      // логіка розʼїжджалась: звільнена машина йшла не тому, хто на неї переїхав.
+      prisma.trip.findFirst
+        .mockResolvedValueOnce(tripRow)
+        .mockResolvedValueOnce({ ...blockingTrip, managerId: 'm3' })
+        .mockResolvedValueOnce({ id: 't1' });
+      prisma.truck.findFirst.mockResolvedValue({
+        ...targetTruck,
+        managerId: 'm2',
+      });
+      prisma.trip.update
+        .mockResolvedValueOnce(movedTrip())
+        .mockResolvedValueOnce(
+          movedTrip({ id: 't2', truckId: 'truckA', driverId: 'driverA' }),
+        );
+      // без водіїв announceTruckManager нічого не шукає далі
+      prisma.truck.findUnique.mockResolvedValue({
+        plate: 'AAA111',
+        currentDriverId: null,
+      });
+
+      await service.assignTruck(
+        't1',
+        'c1',
+        { truckId: 'truckB', onConflict: 'SWAP' },
+        admin,
+      );
+
+      expect(prisma.truck.update).toHaveBeenCalledWith({
+        where: { id: 'truckB' },
+        data: { managerId: 'm1' },
+      });
+      expect(prisma.truck.update).toHaveBeenCalledWith({
+        where: { id: 'truckA' },
+        data: { managerId: 'm3' },
+      });
     });
 
     it('completes the blocking trip when asked, freeing the truck', async () => {

@@ -442,6 +442,9 @@ export class TripsService {
    * Менеджер лишається той самий — він тримає всю переписку по рейсу. Старий
    * водій втрачає рейс повністю: його чат-сесію закрито, а список рейсів у
    * застосунку фільтрується по поточному `Trip.driverId`.
+   *
+   * Доступна будь-якому менеджеру компанії, не лише тому, хто веде цей рейс:
+   * перецеп трапляється в дорозі, і чекати «свого» менеджера нема коли.
    */
   async assignTruck(
     id: string,
@@ -463,10 +466,6 @@ export class TripsService {
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
 
-    // Менеджер перецеплює лише рейси, які веде сам; тімлід і адмін — будь-які.
-    if (actor.role === 'MANAGER' && trip.managerId !== actor.id) {
-      throw new ForbiddenException('errors.cannotReassignTrip');
-    }
     if (trip.truckId === dto.truckId) {
       return this.findOne(id, trip.companyId);
     }
@@ -545,13 +544,20 @@ export class TripsService {
       this.emitTripUpdated(blocking.id, trip.companyId, done.driverId);
     }
 
-    // Машина йде за завантаженням: цільова переписується на менеджера рейсу,
-    // звільнена — на того, чия була цільова.
+    // Машина йде за РЕЙСОМ, який на ній опинився: цільову забирає менеджер
+    // цього рейсу, звільнену — менеджер зустрічного, якщо той туди переїхав.
     await this.syncTruckOwnership({
       companyId: trip.companyId,
-      tripManagerId: trip.managerId,
       targetTruck: target,
+      targetManagerId: trip.managerId,
       sourceTruckId,
+      // при обміні на звільнену машину стає зустрічний рейс, тож і господар у
+      // неї його; без обміну машина просто вільна — віддаємо її тому, хто
+      // щойно втратив цільову, щоб ніхто не лишився без машини
+      sourceManagerId:
+        blocking && dto.onConflict === 'SWAP'
+          ? blocking.managerId
+          : target.managerId,
       triggeredById: actor.id,
     });
 
@@ -559,67 +565,88 @@ export class TripsService {
   }
 
   /**
-   * Обмін машинами між менеджерами. Рейс лишається за своїм менеджером —
-   * міняється лише те, за ким закріплена вантажівка: ту, на яку переїхало
-   * завантаження, забирає менеджер рейсу, а свою віддає попередньому
-   * власнику цільової машини. Водії обох машин дізнаються про це так само,
-   * як при звичайній зміні менеджера.
+   * Обмін машинами між менеджерами: кожна вантажівка дістається менеджеру
+   * того рейсу, який на ній тепер стоїть. Менеджер А з машиною А і менеджер Б
+   * з машиною Б після обміну мають машини Б і А відповідно — кожен лишається
+   * при своєму рейсі й з машиною під ним.
+   *
+   * Раніше звільнена машина йшла попередньому власнику цільової, і це збігалось
+   * із правильним результатом лише поки зустрічний рейс вів саме він. Варто було
+   * рейсу на цільовій машині належати комусь третьому — і обмін розʼїжджався:
+   * менеджер бачив свій рейс на чужій машині й не міг писати в чат.
    */
   private async syncTruckOwnership({
     companyId,
-    tripManagerId,
     targetTruck,
+    targetManagerId,
     sourceTruckId,
+    sourceManagerId,
     triggeredById,
   }: {
     companyId: string;
-    tripManagerId: string;
     targetTruck: { id: string; plate: string; managerId: string | null };
+    targetManagerId: string;
     sourceTruckId: string;
+    sourceManagerId: string | null;
     triggeredById: string;
   }) {
-    if (targetTruck.managerId === tripManagerId) return;
-    const otherManagerId = targetTruck.managerId;
+    const targetChanged = targetTruck.managerId !== targetManagerId;
+    // Джерело чіпаємо, лише коли є кому його віддати.
+    if (!targetChanged && !sourceManagerId) return;
 
     await this.prisma.$transaction([
-      this.prisma.truck.update({
-        where: { id: targetTruck.id },
-        data: { managerId: tripManagerId },
-      }),
-      // Нема кому віддавати — лишаємо звільнену машину як є, щоб не створити
-      // вантажівку без менеджера.
-      ...(otherManagerId
+      ...(targetChanged
+        ? [
+            this.prisma.truck.update({
+              where: { id: targetTruck.id },
+              data: { managerId: targetManagerId },
+            }),
+          ]
+        : []),
+      ...(sourceManagerId
         ? [
             this.prisma.truck.update({
               where: { id: sourceTruckId },
-              data: { managerId: otherManagerId },
+              data: { managerId: sourceManagerId },
             }),
           ]
         : []),
     ]);
 
-    await this.announceTruckManager(
-      targetTruck.id,
-      tripManagerId,
-      triggeredById,
-      companyId,
-    );
-    if (otherManagerId) {
+    if (targetChanged) {
+      await this.announceTruckManager(
+        targetTruck.id,
+        targetManagerId,
+        triggeredById,
+        companyId,
+      );
+    }
+    if (sourceManagerId) {
       await this.announceTruckManager(
         sourceTruckId,
-        otherManagerId,
+        sourceManagerId,
         triggeredById,
         companyId,
       );
     }
 
-    // Списки машин у всіх менеджерів компанії застаріли.
-    this.gateway.server.to(`company-${companyId}`).emit('truckChanged', {
+    // Списки машин у всіх менеджерів компанії застаріли. Крім кімнати компанії
+    // б'ємо ще й персонально по обох менеджерах: саме в них міняється доступ
+    // до чату рейсу, і чекати на перезавантаження сторінки вони не мають.
+    const payload = {
       truckId: targetTruck.id,
       previousTruckId: sourceTruckId,
       newDriverId: null,
       previousDriverId: null,
-    });
+    };
+    this.gateway.server.to(`company-${companyId}`).emit('truckChanged', payload);
+    for (const managerId of new Set(
+      [targetManagerId, sourceManagerId, targetTruck.managerId].filter(
+        (x): x is string => !!x,
+      ),
+    )) {
+      this.gateway.server.to(managerId).emit('truckChanged', payload);
+    }
   }
 
   /**
@@ -743,6 +770,9 @@ export class TripsService {
     );
 
     this.emitTripUpdated(tripId, companyId, newDriverId);
+    // І менеджеру рейсу — у нього змінився трак під завантаженням, а разом з
+    // ним і те, що він бачить у панелі машини.
+    this.gateway.server.to(updated.managerId).emit('tripUpdated', { tripId });
     // Старому водієві теж — щоб рейс зник з його списку без перезаходу, а
     // лічильник непрочитаного по ньому перерахувався (рейс більше не його).
     if (previousDriverId && previousDriverId !== newDriverId) {
