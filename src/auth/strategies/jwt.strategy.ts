@@ -31,6 +31,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: true,
         companyId: true,
         language: true,
+        company: { select: { isActive: true } },
       },
     });
     if (!user || !user.isActive) {
@@ -46,6 +47,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // Drives per-request localization of error messages in the exception
       // filter (see AllExceptionsFilter).
       language: user.language,
+      companyIsActive: user.company.isActive,
     };
   }
 }

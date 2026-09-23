@@ -292,6 +292,7 @@ export class AuthService {
         avatar: true,
         status: true,
         statusUntil: true,
+        company: { select: { isActive: true } },
         // For driver routing: which truck am I on, who is my manager.
         // Null for non-drivers — safe to expose either way.
         currentTruck: {

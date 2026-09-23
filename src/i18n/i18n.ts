@@ -130,6 +130,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Видалити рейс може лише менеджер цієї вантажівки або тімлід',
     'errors.truckHasNoDriver': 'На цій вантажівці немає водія',
     'errors.targetTruckBusy': 'На цій вантажівці вже є активний рейс',
+    'errors.companyDeactivated':
+      'Компанію деактивовано — зміни тимчасово недоступні',
   },
   en: {
     'push.newMessage': 'New message',
@@ -232,6 +234,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Only the assigned manager of this truck or a teamlead can delete this trip',
     'errors.truckHasNoDriver': 'This truck has no driver',
     'errors.targetTruckBusy': 'This truck already has an active trip',
+    'errors.companyDeactivated':
+      'Company is deactivated — changes are temporarily unavailable',
   },
   pl: {
     'push.newMessage': 'Nowa wiadomość',
@@ -342,6 +346,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
     'errors.truckHasNoDriver': 'Ten pojazd nie ma kierowcy',
     'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
+    'errors.companyDeactivated':
+      'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
   },
   lt: {
     'push.newMessage': 'Nauja žinutė',
@@ -447,6 +453,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Reisą gali ištrinti tik dabartinis šios transporto priemonės vadybininkas arba komandos vadovas',
     'errors.truckHasNoDriver': 'Ši transporto priemonė neturi vairuotojo',
     'errors.targetTruckBusy': 'Ši transporto priemonė jau turi aktyvų reisą',
+    'errors.companyDeactivated':
+      'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
   },
   ru: {
     'push.newMessage': 'Новое сообщение',
@@ -557,6 +565,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Удалить рейс может только менеджер этой машины или тимлид',
     'errors.truckHasNoDriver': 'На этой машине нет водителя',
     'errors.targetTruckBusy': 'На этой машине уже есть активный рейс',
+    'errors.companyDeactivated':
+      'Компания деактивирована — изменения временно недоступны',
   },
 };
 

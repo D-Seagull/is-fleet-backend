@@ -14,6 +14,7 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { JoinTripDto } from './dto/join-trip.dto';
 import { JwtService } from '@nestjs/jwt';
 import { corsOrigin } from 'src/common/cors-origin';
+import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
 
 @WebSocketGateway({
   cors: {
@@ -245,6 +246,10 @@ export class MessagesGateway {
         `sendMessage REJECTED — no senderId on socket ${client.id}`,
       );
       return;
+    }
+
+    if (await isCompanyWriteBlocked(this.prisma, senderId)) {
+      return { error: 'errors.companyDeactivated' };
     }
 
     try {

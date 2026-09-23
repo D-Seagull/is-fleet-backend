@@ -4,4 +4,5 @@ export interface JwtUser {
   companyId: string;
   firstName: string;
   lastName: string | null;
+  companyIsActive: boolean;
 }

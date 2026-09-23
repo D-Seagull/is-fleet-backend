@@ -17,6 +17,7 @@ import { PushService } from 'src/push/push.service';
 import { corsOrigin } from 'src/common/cors-origin';
 import { fullName } from 'src/common/utils/full-name';
 import { t } from 'src/i18n/i18n';
+import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class DirectMessagesGateway
@@ -131,6 +132,9 @@ export class DirectMessagesGateway
       );
       return { error: 'unauthenticated' };
     }
+    if (await isCompanyWriteBlocked(this.prisma, senderId)) {
+      return { error: 'errors.companyDeactivated' };
+    }
     const message = await this.service.createMessage(
       senderId,
       data.receiverId,
@@ -243,6 +247,9 @@ export class DirectMessagesGateway
         `send_group_message rejected — no senderId on socket ${client.id}.`,
       );
       return { error: 'unauthenticated' };
+    }
+    if (await isCompanyWriteBlocked(this.prisma, senderId)) {
+      return { error: 'errors.companyDeactivated' };
     }
     const message = await this.groupService.createMessage(
       data.groupId,

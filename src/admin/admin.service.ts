@@ -354,17 +354,28 @@ export class AdminService {
   }
 
   async deactivateCompany(id: string) {
-    return this.prisma.company.update({
+    const company = await this.prisma.company.update({
       where: { id },
       data: { isActive: false },
     });
+    // Live-notify every connected session of this company so the write
+    // lockout (banner + blocked writes) applies immediately, without
+    // waiting for a reload / the next /auth/me poll.
+    this.gateway.server
+      .to(`company-${id}`)
+      .emit('companyStatusChanged', { companyId: id, isActive: false });
+    return company;
   }
 
   async reactivateCompany(id: string) {
-    return this.prisma.company.update({
+    const company = await this.prisma.company.update({
       where: { id },
       data: { isActive: true },
     });
+    this.gateway.server
+      .to(`company-${id}`)
+      .emit('companyStatusChanged', { companyId: id, isActive: true });
+    return company;
   }
 
   async resendInvite(id: string, email: string) {
