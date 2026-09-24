@@ -114,6 +114,7 @@ export class MessagesService {
             body: dto.content.slice(0, 200),
           }),
           {
+            sound: 'push_message.mp3',
             data: {
               type: 'MESSAGE',
               tripId: dto.tripId,

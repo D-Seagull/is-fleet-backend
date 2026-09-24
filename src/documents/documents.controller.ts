@@ -112,7 +112,13 @@ export class DocumentsController {
       select: { tripId: true },
     });
     if (doc) {
-      this.reactionsGateway.emit('TRIP_DOC', docId, reactions, [doc.tripId]);
+      this.reactionsGateway.emit(
+        'TRIP_DOC',
+        docId,
+        reactions,
+        [doc.tripId],
+        userId,
+      );
     }
     return reactions;
   }

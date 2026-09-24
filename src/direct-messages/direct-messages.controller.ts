@@ -114,10 +114,13 @@ export class DirectMessagesController {
       select: { senderId: true, receiverId: true },
     });
     if (message) {
-      this.reactionsGateway.emit('DM', messageId, reactions, [
-        `user:${message.senderId}`,
-        `user:${message.receiverId}`,
-      ]);
+      this.reactionsGateway.emit(
+        'DM',
+        messageId,
+        reactions,
+        [`user:${message.senderId}`, `user:${message.receiverId}`],
+        userId,
+      );
     }
     return reactions;
   }

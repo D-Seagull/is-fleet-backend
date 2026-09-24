@@ -92,9 +92,13 @@ export class MessagesController {
       select: { tripId: true },
     });
     if (message) {
-      this.reactionsGateway.emit('TRIP', messageId, reactions, [
-        message.tripId,
-      ]);
+      this.reactionsGateway.emit(
+        'TRIP',
+        messageId,
+        reactions,
+        [message.tripId],
+        userId,
+      );
     }
     return reactions;
   }

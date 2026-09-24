@@ -99,9 +99,13 @@ export class GroupMessagesController {
       select: { groupId: true },
     });
     if (message) {
-      this.reactionsGateway.emit('GROUP', messageId, reactions, [
-        `group:${message.groupId}`,
-      ]);
+      this.reactionsGateway.emit(
+        'GROUP',
+        messageId,
+        reactions,
+        [`group:${message.groupId}`],
+        userId,
+      );
     }
     return reactions;
   }

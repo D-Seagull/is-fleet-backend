@@ -99,10 +99,13 @@ export class DirectMessageDocumentsController {
       select: { uploadedBy: true, otherUserId: true },
     });
     if (doc) {
-      this.reactionsGateway.emit('DM_DOC', docId, reactions, [
-        `user:${doc.uploadedBy}`,
-        `user:${doc.otherUserId}`,
-      ]);
+      this.reactionsGateway.emit(
+        'DM_DOC',
+        docId,
+        reactions,
+        [`user:${doc.uploadedBy}`, `user:${doc.otherUserId}`],
+        userId,
+      );
     }
     return reactions;
   }

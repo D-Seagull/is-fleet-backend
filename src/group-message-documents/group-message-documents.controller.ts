@@ -96,9 +96,13 @@ export class GroupMessageDocumentsController {
       select: { groupId: true },
     });
     if (doc) {
-      this.reactionsGateway.emit('GROUP_DOC', docId, reactions, [
-        `group:${doc.groupId}`,
-      ]);
+      this.reactionsGateway.emit(
+        'GROUP_DOC',
+        docId,
+        reactions,
+        [`group:${doc.groupId}`],
+        userId,
+      );
     }
     return reactions;
   }

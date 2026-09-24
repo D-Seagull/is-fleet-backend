@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -33,4 +34,14 @@ export class CreateDriverDto {
   @IsEnum(Language as object)
   @IsOptional()
   language?: Language;
+
+  /**
+   * Set when the manager has already seen the "this driver exists in
+   * another company" prompt and confirmed the move. Without it, a phone
+   * match against a driver in a different company returns 409 with the
+   * existing driver's name instead of creating/transferring anything.
+   */
+  @IsBoolean()
+  @IsOptional()
+  confirmTransfer?: boolean;
 }

@@ -109,6 +109,49 @@ export class UsersService {
     dto: CreateDriverDto,
   ) {
     const phone = requireValidPhone(dto.phone);
+
+    // Phone is unique across the whole table (drivers move between
+    // companies, e.g. a new job) — look the number up first so we can
+    // tell "already a driver here" apart from "driver somewhere else"
+    // apart from "this number is a manager/admin account".
+    const existing = await this.prisma.user.findUnique({ where: { phone } });
+
+    if (existing) {
+      if (existing.role !== 'DRIVER') {
+        throw new ConflictException('errors.phoneUsedUser');
+      }
+      if (existing.companyId === companyId) {
+        throw new ConflictException('errors.phoneUsedDriver');
+      }
+      if (!dto.confirmTransfer) {
+        // Let the caller confirm the identity before we move anything —
+        // surfaces the existing driver's name in a "this driver already
+        // exists, move them here?" prompt.
+        throw new ConflictException({
+          message: 'errors.driverExistsElsewhere',
+          code: 'DRIVER_EXISTS_ELSEWHERE',
+          driver: {
+            id: existing.id,
+            firstName: existing.firstName,
+            lastName: existing.lastName,
+          },
+        });
+      }
+      // Confirmed — re-home the driver. Trip/message history stays put
+      // (it carries its own companyId), but detach them from their old
+      // company's truck and hand them to whoever is inviting them now.
+      await this.prisma.truck.updateMany({
+        where: { currentDriverId: existing.id },
+        data: { currentDriverId: null },
+      });
+      const moved = await this.prisma.user.update({
+        where: { id: existing.id },
+        data: { companyId, managerId: creatorId },
+      });
+      const { password, ...result } = moved;
+      return result;
+    }
+
     const hash = dto.password ? await bcrypt.hash(dto.password, 10) : null;
     try {
       const newDriver = await this.prisma.user.create({

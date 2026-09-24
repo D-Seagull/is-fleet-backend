@@ -8,7 +8,10 @@ export interface PushPayload {
   data?: Record<string, unknown>;
   /** iOS notification category — drives the action buttons. */
   categoryId?: string;
-  sound?: 'default' | null;
+  /** `'default'`/undefined for the OS default, a bundled filename (must be
+   *  registered in each app's app.json expo-notifications `sounds`) for a
+   *  custom chime, or `null` for silent. */
+  sound?: string | null;
   /** Bypass the BUSY/SLEEP/AWAY/VACATION do-not-disturb gate. Use for
    *  alarms — an alarm clock must ring regardless of presence status. */
   ignoreDnd?: boolean;
@@ -51,7 +54,7 @@ export class PushService {
     extra: {
       data?: Record<string, unknown>;
       categoryId?: string;
-      sound?: 'default' | null;
+      sound?: string | null;
       ignoreDnd?: boolean;
     } = {},
   ): Promise<void> {
@@ -115,7 +118,7 @@ export class PushService {
       validTokens.push(token);
       messages.push({
         to: token,
-        sound: extra.sound === null ? undefined : 'default',
+        sound: extra.sound === null ? undefined : (extra.sound ?? 'default'),
         title,
         body,
         data: extra.data,

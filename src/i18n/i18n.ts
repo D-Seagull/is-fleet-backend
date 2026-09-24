@@ -132,6 +132,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.targetTruckBusy': 'На цій вантажівці вже є активний рейс',
     'errors.companyDeactivated':
       'Компанію деактивовано — зміни тимчасово недоступні',
+    'errors.driverExistsElsewhere':
+      'Цей водій вже зареєстрований в іншій компанії',
   },
   en: {
     'push.newMessage': 'New message',
@@ -236,6 +238,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.targetTruckBusy': 'This truck already has an active trip',
     'errors.companyDeactivated':
       'Company is deactivated — changes are temporarily unavailable',
+    'errors.driverExistsElsewhere':
+      'This driver is already registered with another company',
   },
   pl: {
     'push.newMessage': 'Nowa wiadomość',
@@ -348,6 +352,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
     'errors.companyDeactivated':
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
+    'errors.driverExistsElsewhere':
+      'Ten kierowca jest już zarejestrowany w innej firmie',
   },
   lt: {
     'push.newMessage': 'Nauja žinutė',
@@ -455,6 +461,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.targetTruckBusy': 'Ši transporto priemonė jau turi aktyvų reisą',
     'errors.companyDeactivated':
       'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
+    'errors.driverExistsElsewhere':
+      'Šis vairuotojas jau užregistruotas kitoje įmonėje',
   },
   ru: {
     'push.newMessage': 'Новое сообщение',
@@ -567,6 +575,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.targetTruckBusy': 'На этой машине уже есть активный рейс',
     'errors.companyDeactivated':
       'Компания деактивирована — изменения временно недоступны',
+    'errors.driverExistsElsewhere':
+      'Этот водитель уже зарегистрирован в другой компании',
   },
 };
 

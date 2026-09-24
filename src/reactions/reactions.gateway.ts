@@ -14,15 +14,18 @@ export class ReactionsGateway {
   /**
    * Broadcast a reaction change to the relevant rooms. Caller picks the
    * recipients (user-rooms for DM, group-room for group, trip-room for
-   * trip chat).
+   * trip chat). `actorId` is whoever just toggled the reaction — carried
+   * along so recipients can play a chime while the actor (who already got
+   * instant local feedback on click) skips its own echo.
    */
   emit(
     targetType: ReactionTarget,
     targetId: string,
     reactions: ReactionRow[],
     rooms: string[],
+    actorId: string,
   ) {
-    const payload = { targetType, targetId, reactions };
+    const payload = { targetType, targetId, reactions, actorId };
     for (const room of rooms) {
       const clients = this.server.sockets.adapter.rooms.get(room);
       const size = clients?.size ?? 0;
