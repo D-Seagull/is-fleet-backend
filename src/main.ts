@@ -76,7 +76,12 @@ async function bootstrap() {
   logger.log(`Сервер летить на ${port}`);
 }
 bootstrap().catch((err) => {
-  new Logger('Bootstrap').error('Bootstrap failed', err);
+  // console.error, not Logger: once pino is installed the Nest Logger writes
+  // through it, and a pino transport (pino-pretty, whenever NODE_ENV isn't
+  // 'production') is async — process.exit below kills it before the line
+  // lands, so a boot crash (e.g. Prisma failing to connect in onModuleInit)
+  // would exit 1 with no trace in the Render logs.
+  console.error('Bootstrap failed:', err);
   Sentry.captureException(err);
   // exit() would kill the process before the event is sent.
   void Sentry.flush(2000).finally(() => process.exit(1));
