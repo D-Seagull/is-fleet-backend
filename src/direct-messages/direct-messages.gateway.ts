@@ -315,14 +315,45 @@ export class DirectMessagesGateway
     return message;
   }
 
+  /**
+   * The sender's name for typing indicators — looked up once per socket and
+   * cached on it (web emits on every keystroke). Taken from the DB rather than
+   * the client so nobody can "type" under someone else's name.
+   */
+  private async typingName(
+    client: Socket,
+  ): Promise<{ firstName: string | null; lastName: string | null }> {
+    const cached = client.data.typingName as
+      | { firstName: string | null; lastName: string | null }
+      | undefined;
+    if (cached) return cached;
+    const user = await this.prisma.user.findUnique({
+      where: { id: client.data.userId as string },
+      select: { firstName: true, lastName: true },
+    });
+    const name = {
+      firstName: user?.firstName ?? null,
+      lastName: user?.lastName ?? null,
+    };
+    client.data.typingName = name;
+    return name;
+  }
+
+  // Payloads carry `groupId` so a client showing one group ignores typing in
+  // another. Only a member — whose socket sits in the group room — may signal.
   @SubscribeMessage('group_typing')
-  handleGroupTyping(
+  async handleGroupTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { groupId: string; name: string },
+    @MessageBody() data: { groupId: string },
   ) {
-    client.to(`group:${data.groupId}`).emit('group_typing', {
+    const room = `group:${data?.groupId}`;
+    if (!data?.groupId || !client.data.userId || !client.rooms.has(room)) return;
+    const { firstName, lastName } = await this.typingName(client);
+    client.to(room).emit('group_typing', {
+      groupId: data.groupId,
       userId: client.data.userId,
-      name: data.name,
+      firstName,
+      lastName,
     });
   }
 
@@ -331,7 +362,10 @@ export class DirectMessagesGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { groupId: string },
   ) {
-    client.to(`group:${data.groupId}`).emit('group_stopped_typing', {
+    const room = `group:${data?.groupId}`;
+    if (!data?.groupId || !client.rooms.has(room)) return;
+    client.to(room).emit('group_stopped_typing', {
+      groupId: data.groupId,
       userId: client.data.userId,
     });
   }
