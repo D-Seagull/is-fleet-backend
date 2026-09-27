@@ -31,6 +31,29 @@ function requireValidPhone(input: string): string {
   return canonical;
 }
 
+/**
+ * The caller's own profile as every client keeps it in its auth store. Used
+ * for self-edit responses and the `profileUpdated` socket payload — never
+ * return a bare `prisma.user.update()` row, it carries the password hash.
+ */
+const SELF_PROFILE_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  phone: true,
+  avatar: true,
+  role: true,
+  language: true,
+  uiLocale: true,
+  timezone: true,
+  status: true,
+  statusUntil: true,
+  companyId: true,
+} satisfies Prisma.UserSelect;
+
+type ProfileField = keyof typeof SELF_PROFILE_SELECT;
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -326,6 +349,14 @@ export class UsersService {
       },
     });
 
+    // A manager edited the driver's own fields — repaint the driver's apps.
+    this.emitProfileUpdated(
+      updated,
+      (['firstName', 'lastName', 'phone', 'language'] as const).filter(
+        (k) => dto[k] !== undefined,
+      ),
+    );
+
     // Realtime + push side-effects mirror TrucksService.update so both entry
     // points (truck card and driver card) feel identical.
     if (truckChanged && user.companyId) {
@@ -418,22 +449,23 @@ export class UsersService {
           ...(dto.uiLocale !== undefined ? { uiLocale: dto.uiLocale } : {}),
           ...statusPatch,
         },
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          avatar: true,
-          role: true,
-          language: true,
-          uiLocale: true,
-          timezone: true,
-          status: true,
-          statusUntil: true,
-          companyId: true,
-        },
+        select: SELF_PROFILE_SELECT,
       });
+
+      this.emitProfileUpdated(
+        updated,
+        (
+          [
+            'firstName',
+            'lastName',
+            'phone',
+            'language',
+            'uiLocale',
+            'status',
+            'statusUntil',
+          ] as const
+        ).filter((k) => dto[k] !== undefined),
+      );
 
       // Broadcast status change so other sessions don't need a full reload
       // to pick up the new presence dot. Sent only when status or its
@@ -817,10 +849,13 @@ export class UsersService {
 
     const { url, storagePath } = await this.storage.uploadWithUrl(file, 'avatars');
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { avatar: url, avatarPublicId: storagePath },
+      select: SELF_PROFILE_SELECT,
     });
+    this.emitProfileUpdated(updated, ['avatar']);
+    return updated;
   }
 
   async deleteAvatar(userId: string) {
@@ -830,10 +865,33 @@ export class UsersService {
       await this.storage.deleteFile(user.avatarPublicId as string);
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { avatar: null, avatarPublicId: null },
+      select: SELF_PROFILE_SELECT,
     });
+    this.emitProfileUpdated(updated, ['avatar']);
+    return updated;
+  }
+
+  /**
+   * Push a profile edit to every open session of that user — web tab,
+   * desktop, phones — so they repaint without a reload (room = the bare
+   * userId joined in MessagesGateway). `changed` names the fields the edit
+   * touched: clients act on a language switch only when `uiLocale` /
+   * `language` is in it, not when an unrelated edit merely echoes the value.
+   */
+  private emitProfileUpdated(
+    user: { id: string } & Partial<Record<ProfileField, unknown>>,
+    changed: ProfileField[],
+  ) {
+    if (changed.length === 0) return;
+    const profile = Object.fromEntries(
+      (Object.keys(SELF_PROFILE_SELECT) as ProfileField[])
+        .filter((k) => k in user)
+        .map((k) => [k, user[k]]),
+    );
+    this.gateway.server.to(user.id).emit('profileUpdated', { user: profile, changed });
   }
 
   // ── Push tokens ───────────────────────────────────────────────────────
