@@ -39,18 +39,22 @@ export class AuthService {
   ) {}
 
   /**
-   * Reset presence to ONLINE every time someone signs in. Sessions are
-   * short-lived for managers (close tab → offline socket), so carrying
-   * a stale BUSY / SLEEP / VACATION across login boundaries leaves
-   * teammates seeing the wrong colour until the user remembers to
-   * flip it back manually. Drivers tend to keep the app open across
-   * shifts so this is fine for them too — they can re-flip after.
+   * On sign-in, lift an AWAY back to ONLINE — someone logging in is plainly
+   * at their device. Only AWAY, because only AWAY is set by the system (web
+   * auto-away after 15 min idle). BUSY / SLEEP / VACATION are the person's
+   * own choice: a manager may sign in on the desk precisely to work with
+   * "do not disturb" on, and timed statuses expire by themselves.
    *
    * Broadcasts `userStatusChanged` to the company room so already-
-   * connected sessions (e.g. the driver app holding a cached BUSY for
+   * connected sessions (e.g. the driver app holding a cached AWAY for
    * a manager) repaint without waiting for the next refresh.
    */
   private async markSessionStart(userId: string) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { status: true },
+    });
+    if (current?.status !== 'AWAY') return;
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { status: 'ONLINE', statusUntil: null },

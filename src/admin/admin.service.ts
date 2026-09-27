@@ -334,6 +334,11 @@ export class AdminService {
 
     const usersTotal = admins + teamleads + managers + drivers;
 
+    // Real presence = a live socket, not the stored `User.status` (which
+    // defaults to ONLINE and never flips to OFFLINE on disconnect). The client
+    // feeds `isOnline` into resolveDisplayStatus so the dots are truthful.
+    const onlineSet = new Set(onlineIds);
+
     return {
       ...company,
       counts: {
@@ -349,7 +354,7 @@ export class AdminService {
         trips: { active: activeTrips, thisMonth: tripsThisMonth },
         pushCoverage: { withToken: pushCoverage, outOf: usersTotal },
       },
-      users,
+      users: users.map((u) => ({ ...u, isOnline: onlineSet.has(u.id) })),
     };
   }
 
