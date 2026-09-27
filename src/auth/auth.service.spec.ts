@@ -150,15 +150,46 @@ describe('AuthService', () => {
       expect(res.access_token).toBe('access.jwt');
       expect(typeof res.refresh_token).toBe('string');
       expect(res.user.id).toBe('u1');
-      // markSessionStart flips presence + broadcasts.
-      expect(prisma.user.update).toHaveBeenCalled();
-      expect(emit).toHaveBeenCalledWith(
-        'userStatusChanged',
-        expect.objectContaining({ userId: 'u1' }),
-      );
+      // Already ONLINE → markSessionStart leaves the status alone.
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(emit).not.toHaveBeenCalled();
       // A refresh row was persisted.
       expect(prisma.refreshToken.create).toHaveBeenCalled();
     });
+
+    it('lifts a system-set AWAY back to ONLINE and broadcasts it', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        userRow({ role: 'MANAGER', status: 'AWAY' }),
+      );
+      mockedBcrypt.compare.mockResolvedValue(true as never);
+
+      await service.login(dto);
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { status: 'ONLINE', statusUntil: null },
+        }),
+      );
+      expect(emit).toHaveBeenCalledWith(
+        'userStatusChanged',
+        expect.objectContaining({ userId: 'u1', status: 'ONLINE' }),
+      );
+    });
+
+    it.each(['BUSY', 'SLEEP', 'VACATION'])(
+      'keeps a status the person chose (%s)',
+      async (status) => {
+        prisma.user.findUnique.mockResolvedValue(
+          userRow({ role: 'MANAGER', status }),
+        );
+        mockedBcrypt.compare.mockResolvedValue(true as never);
+
+        await service.login(dto);
+
+        expect(prisma.user.update).not.toHaveBeenCalled();
+        expect(emit).not.toHaveBeenCalled();
+      },
+    );
   });
 
   // ─── refresh (rotation) ─────────────────────────────────────────────────────
