@@ -847,7 +847,7 @@ export class UsersService {
       await this.storage.deleteFile(user.avatarPublicId as string);
     }
 
-    const { url, storagePath } = await this.storage.uploadWithUrl(file, 'avatars');
+    const { url, storagePath } = await this.storage.uploadWithUrl(file, 'avatars', 'avatar');
 
     const updated = await this.prisma.user.update({
       where: { id: userId },

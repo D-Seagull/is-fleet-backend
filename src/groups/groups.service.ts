@@ -62,6 +62,7 @@ export class GroupsService {
     const { url, storagePath } = await this.storage.uploadWithUrl(
       file,
       'group-avatars',
+      'avatar',
     );
     const updated = await this.prisma.group.update({
       where: { id: groupId },

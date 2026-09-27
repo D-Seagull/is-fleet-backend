@@ -4,8 +4,21 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import heicConvert from 'heic-convert';
+import sharp from 'sharp';
 
 const BUCKET = 'is-fleet';
+
+// Display images (avatars, group pictures, company logos) are shown at a few
+// dozen pixels, yet phones upload multi-megabyte camera shots. Every list and
+// chat would pull those full-size, which stalls on mobile data (avatars
+// "falling off") and burns Supabase egress. Shrink them once, on upload.
+const IMAGE_PRESETS = {
+  // Square crop — rendered at ≤ 96 px, so 256 covers 2–3× screens.
+  avatar: { size: 256, fit: 'cover' },
+  // Keep the aspect ratio (and transparency) — logos are not always square.
+  logo: { size: 512, fit: 'inside' },
+} as const;
+export type ImagePreset = keyof typeof IMAGE_PRESETS;
 
 // HEIC/HEIF is what iPhones shoot by default. Desktop browsers (Chrome/Edge/
 // Firefox on Windows) can't render it, so they download the file instead of
@@ -61,6 +74,36 @@ export class SupabaseStorageService {
     }
   }
 
+  // Downscale a display image to its preset. Mutates `file` like
+  // normaliseHeic (buffer, mimetype, extension). Best-effort: an image sharp
+  // can't read is stored as-is rather than failing the upload.
+  private async shrinkImage(
+    file: Express.Multer.File,
+    preset: ImagePreset,
+  ): Promise<void> {
+    if (!file.mimetype.startsWith('image/')) return;
+    const { size, fit } = IMAGE_PRESETS[preset];
+    try {
+      const { hasAlpha } = await sharp(file.buffer).metadata();
+      const pipeline = sharp(file.buffer)
+        .rotate() // apply EXIF orientation before the metadata is dropped
+        .resize(size, size, { fit, withoutEnlargement: true });
+      // PNG only when there is transparency to keep; JPEG is far smaller.
+      file.buffer = hasAlpha
+        ? await pipeline.png({ compressionLevel: 9 }).toBuffer()
+        : await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+      file.mimetype = hasAlpha ? 'image/png' : 'image/jpeg';
+      const ext = hasAlpha ? '.png' : '.jpg';
+      file.originalname = file.originalname.replace(/\.[^.]*$/, '') + ext;
+      file.size = file.buffer.length;
+    } catch (err) {
+      this.logger.error(
+        `Image shrink (${preset}) failed for "${file.originalname}", storing original`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+  }
+
   async uploadFile(
     file: Express.Multer.File,
     folder?: string,
@@ -86,10 +129,17 @@ export class SupabaseStorageService {
 
   // Upload and return a long-lived signed URL (10 years) for display in UI.
   // Used for avatars and logos where the URL is stored directly in the DB.
+  // `preset` downscales display images first (HEIC is converted before, since
+  // sharp can't decode it).
   async uploadWithUrl(
     file: Express.Multer.File,
     folder: string,
+    preset?: ImagePreset,
   ): Promise<{ url: string; storagePath: string }> {
+    if (preset) {
+      await this.normaliseHeic(file);
+      await this.shrinkImage(file, preset);
+    }
     const { storagePath } = await this.uploadFile(file, folder);
     const url = await this.getSignedUrl(storagePath, 315_360_000); // ~10 years
     return { url, storagePath };

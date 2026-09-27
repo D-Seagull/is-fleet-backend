@@ -26,7 +26,7 @@ export class CompaniesService {
       await this.storage.deleteFile(company.logoPublicId as string);
     }
 
-    const { url, storagePath } = await this.storage.uploadWithUrl(file, 'logos');
+    const { url, storagePath } = await this.storage.uploadWithUrl(file, 'logos', 'logo');
 
     return this.prisma.company.update({
       where: { id: companyId },
