@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TrucksService } from './trucks.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { TripChatSessionsService } from '../messages/trip-chat-sessions.service';
@@ -30,6 +30,8 @@ describe('TrucksService', () => {
     prisma = {
       truck: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({ id: 'new' }),
         update: jest.fn().mockResolvedValue({}),
       },
       truckNote: {
@@ -64,6 +66,50 @@ describe('TrucksService', () => {
           where: expect.objectContaining({ id: 'tr1', companyId: 'c1' }),
         }),
       );
+    });
+  });
+
+  // ─── create (one plate per company) ─────────────────────────────────────────
+  describe('create', () => {
+    it('refuses a plate the company already has (case/spaces/dashes ignored)', async () => {
+      prisma.truck.findMany.mockResolvedValue([
+        { id: 'tr1', plate: 'AB 1234-CD', isActive: true },
+      ]);
+      await expect(
+        service.create('c1', { plate: ' ab1234cd ' }),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'TRUCK_PLATE_EXISTS',
+          truck: { id: 'tr1', plate: 'AB 1234-CD', isActive: true },
+        },
+      });
+      expect(prisma.truck.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { companyId: 'c1' } }),
+      );
+      expect(prisma.truck.create).not.toHaveBeenCalled();
+    });
+
+    it('reports a deactivated twin so the UI can offer to activate it', async () => {
+      prisma.truck.findMany.mockResolvedValue([
+        { id: 'tr2', plate: 'XY999', isActive: false },
+      ]);
+      const err = await service
+        .create('c1', { plate: 'xy 999' })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        truck: { id: 'tr2', isActive: false },
+      });
+    });
+
+    it('creates a truck with a new plate, trimmed', async () => {
+      prisma.truck.findMany.mockResolvedValue([
+        { id: 'tr1', plate: 'AB1234CD', isActive: true },
+      ]);
+      await service.create('c1', { plate: '  ZZ111  ' });
+      expect(prisma.truck.create).toHaveBeenCalledWith({
+        data: { plate: 'ZZ111', companyId: 'c1' },
+      });
     });
   });
 
