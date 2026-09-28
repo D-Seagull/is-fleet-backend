@@ -130,6 +130,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Видалити рейс може лише менеджер цієї вантажівки або тімлід',
     'errors.truckHasNoDriver': 'На цій вантажівці немає водія',
     'errors.targetTruckBusy': 'На цій вантажівці вже є активний рейс',
+    'errors.truckPlateExists': 'Вантажівка з таким номером уже існує',
     'errors.companyDeactivated':
       'Компанію деактивовано — зміни тимчасово недоступні',
     'errors.driverExistsElsewhere':
@@ -236,6 +237,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Only the assigned manager of this truck or a teamlead can delete this trip',
     'errors.truckHasNoDriver': 'This truck has no driver',
     'errors.targetTruckBusy': 'This truck already has an active trip',
+    'errors.truckPlateExists': 'A truck with this plate already exists',
     'errors.companyDeactivated':
       'Company is deactivated — changes are temporarily unavailable',
     'errors.driverExistsElsewhere':
@@ -350,6 +352,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
     'errors.truckHasNoDriver': 'Ten pojazd nie ma kierowcy',
     'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
+    'errors.truckPlateExists': 'Pojazd o tym numerze rejestracyjnym już istnieje',
     'errors.companyDeactivated':
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
@@ -459,6 +462,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Reisą gali ištrinti tik dabartinis šios transporto priemonės vadybininkas arba komandos vadovas',
     'errors.truckHasNoDriver': 'Ši transporto priemonė neturi vairuotojo',
     'errors.targetTruckBusy': 'Ši transporto priemonė jau turi aktyvų reisą',
+    'errors.truckPlateExists': 'Transporto priemonė su šiuo numeriu jau yra',
     'errors.companyDeactivated':
       'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
     'errors.driverExistsElsewhere':
@@ -573,6 +577,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Удалить рейс может только менеджер этой машины или тимлид',
     'errors.truckHasNoDriver': 'На этой машине нет водителя',
     'errors.targetTruckBusy': 'На этой машине уже есть активный рейс',
+    'errors.truckPlateExists': 'Машина с таким номером уже существует',
     'errors.companyDeactivated':
       'Компания деактивирована — изменения временно недоступны',
     'errors.driverExistsElsewhere':

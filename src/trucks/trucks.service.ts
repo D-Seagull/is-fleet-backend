@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTruckDto } from './dto/create-truck.dto';
 import { UpdateTruckDto } from './dto/update-truck.dto';
@@ -17,6 +21,10 @@ const ACTIVE_TRIP_STATUSES = [
   'LOADED',
 ] as const;
 
+// "AB 1234-CD" and "ab1234cd" are the same plate.
+const normalizePlate = (plate: string) =>
+  plate.toUpperCase().replace(/[\s\-_.]/g, '');
+
 @Injectable()
 export class TrucksService {
   constructor(
@@ -27,12 +35,41 @@ export class TrucksService {
   ) {}
 
   async create(companyId: string, dto: CreateTruckDto) {
+    const plate = dto.plate.trim();
+    await this.assertPlateFree(companyId, plate);
     return this.prisma.truck.create({
       data: {
         ...dto,
+        plate,
         companyId,
       },
     });
+  }
+
+  /**
+   * One plate per company — deactivated trucks included, so re-adding a
+   * truck points the user to "activate" instead of creating a twin.
+   * Compared normalized (case / spaces / dashes ignored); a company has few
+   * enough trucks to do it in memory.
+   */
+  private async assertPlateFree(
+    companyId: string,
+    plate: string,
+    excludeTruckId?: string,
+  ) {
+    const wanted = normalizePlate(plate);
+    const trucks = await this.prisma.truck.findMany({
+      where: { companyId, ...(excludeTruckId && { id: { not: excludeTruckId } }) },
+      select: { id: true, plate: true, isActive: true },
+    });
+    const existing = trucks.find((t) => normalizePlate(t.plate) === wanted);
+    if (existing) {
+      throw new ConflictException({
+        code: 'TRUCK_PLATE_EXISTS',
+        message: 'errors.truckPlateExists',
+        truck: existing,
+      });
+    }
   }
 
   async findAll(companyId: string) {
@@ -98,6 +135,10 @@ export class TrucksService {
     triggeredById: string,
   ) {
     const oldTruck = await this.findOne(id, companyId);
+    if (dto.plate !== undefined) {
+      dto.plate = dto.plate.trim();
+      await this.assertPlateFree(companyId, dto.plate, id);
+    }
 
     // Якщо новий водій вже закріплений за іншою вантажівкою — спершу
     // звільнюємо стару (currentDriverId @unique забороняє два посилання
