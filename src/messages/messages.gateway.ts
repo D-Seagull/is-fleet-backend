@@ -295,21 +295,9 @@ export class MessagesGateway {
         content: message.content ?? '',
       };
 
-      if (companyId) {
-        // ADMIN / TEAMLEAD of the company.
-        this.server
-          .to(`company-admin-${companyId}`)
-          .emit('tripUnreadChanged', signal);
-      }
-      // Direct session participants — reached via their personal userId
-      // room. This is what makes the sidebar badge refresh when the user
-      // is on a different page. Skip the sender (no unread for self).
-      if (driverId && driverId !== senderId) {
-        this.server.to(driverId).emit('tripUnreadChanged', signal);
-      }
-      if (managerId && managerId !== senderId) {
-        this.server.to(managerId).emit('tripUnreadChanged', signal);
-      }
+      // Company ADMIN / TEAMLEAD + the session's driver and manager (their
+      // personal rooms — what refreshes the sidebar badge on other pages).
+      this.emitTripUnread(signal, { companyId, driverId, managerId });
       this.logger.debug(
         `newMessage emitted to room ${dto.tripId} id=${message.id}`,
       );
@@ -400,11 +388,11 @@ export class MessagesGateway {
     this.server.to(tripId).emit('newDocument', doc);
   }
 
-  // Attachments count toward the unread bell exactly like text messages, so a
-  // new trip document must fan out the same lightweight `tripUnreadChanged`
-  // signal to stakeholders who aren't sitting in the trip room (mirrors the
-  // Phase 2 fan-out in handleMessage). Skips the uploader — no unread for self.
-  emitTripUnreadForDocument(signal: {
+  // Lightweight `tripUnreadChanged` fan-out for a new trip message or
+  // document (attachments count toward the unread bell like text) to the
+  // stakeholders who aren't sitting in the trip room. Skips the sender /
+  // uploader — no unread for self.
+  emitTripUnread(signal: {
     tripId: string;
     truckId: string | null;
     senderId: string;
@@ -416,17 +404,14 @@ export class MessagesGateway {
     managerId?: string | null;
   }) {
     const { companyId, driverId, managerId } = opts;
-    if (companyId) {
-      this.server
-        .to(`company-admin-${companyId}`)
-        .emit('tripUnreadChanged', signal);
-    }
-    if (driverId && driverId !== signal.senderId) {
-      this.server.to(driverId).emit('tripUnreadChanged', signal);
-    }
-    if (managerId && managerId !== signal.senderId) {
-      this.server.to(managerId).emit('tripUnreadChanged', signal);
-    }
+    // ONE emit to all rooms: socket.io then delivers once per socket. Separate
+    // emits reached a teamlead/admin who is also the trip's manager twice
+    // (company-admin room + personal room) → two desktop notifications.
+    const rooms: string[] = [];
+    if (companyId) rooms.push(`company-admin-${companyId}`);
+    if (driverId && driverId !== signal.senderId) rooms.push(driverId);
+    if (managerId && managerId !== signal.senderId) rooms.push(managerId);
+    if (rooms.length) this.server.to(rooms).emit('tripUnreadChanged', signal);
   }
 
   emitDocumentDeleted(tripId: string, documentId: string) {
