@@ -32,7 +32,12 @@ const msgRow = (over: Record<string, unknown> = {}) => ({
 
 describe('MessagesService', () => {
   let service: MessagesService;
-  let prisma: { message: Record<string, jest.Mock> };
+  let prisma: {
+    message: Record<string, jest.Mock>;
+    tripChatSession: Record<string, jest.Mock>;
+    trip: Record<string, jest.Mock>;
+    $queryRaw: jest.Mock;
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -42,6 +47,9 @@ describe('MessagesService', () => {
         findUnique: jest.fn(),
         update: jest.fn().mockResolvedValue({ id: 'm1' }),
       },
+      tripChatSession: { findMany: jest.fn().mockResolvedValue([]) },
+      trip: { findFirst: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -56,6 +64,40 @@ describe('MessagesService', () => {
     }).compile();
 
     service = moduleRef.get(MessagesService);
+  });
+
+  // ─── markTripRead (only a participant sets ✓✓) ──────────────────────────────
+  describe('markTripRead', () => {
+    it('an admin just viewing the chat marks nothing read', async () => {
+      // Not the driver / manager of any session, not on the trip.
+      prisma.trip.findFirst.mockResolvedValue({ driverId: 'd1', managerId: 'm1' });
+
+      const res = await service.markTripRead('t1', 'admin1');
+
+      expect(prisma.tripChatSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            tripId: 't1',
+            OR: [{ driverId: 'admin1' }, { managerId: 'admin1' }],
+          },
+        }),
+      );
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(res).toEqual({ messageIds: [], documentIds: [] });
+    });
+
+    it("the trip's manager marks the driver's messages and documents read", async () => {
+      prisma.tripChatSession.findMany.mockResolvedValue([{ id: 's1' }]);
+      prisma.trip.findFirst.mockResolvedValue({ driverId: 'd1', managerId: 'm1' });
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ id: 'msg1' }])
+        .mockResolvedValueOnce([{ id: 'doc1' }]);
+
+      const res = await service.markTripRead('t1', 'm1');
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(res).toEqual({ messageIds: ['msg1'], documentIds: ['doc1'] });
+    });
   });
 
   // ─── editMessage ────────────────────────────────────────────────────────────

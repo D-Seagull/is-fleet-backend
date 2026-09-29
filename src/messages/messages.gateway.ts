@@ -314,12 +314,10 @@ export class MessagesGateway {
     @MessageBody() body: JoinTripDto,
   ) {
     const userId = client.data.userId as string | undefined;
-    const userRole = (client.data.role as string | undefined) ?? '';
     if (!userId || !body?.tripId) return;
     const result = await this.messagesService.markTripRead(
       body.tripId,
       userId,
-      userRole,
     );
     if (result.messageIds.length === 0 && result.documentIds.length === 0) return;
     // Notify everyone in the trip room (incl. the original sender) so their
