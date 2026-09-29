@@ -1,12 +1,14 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
 
-import { Prisma } from '@prisma/client';
+import { Cron } from '@nestjs/schedule';
+import { Prisma, TripStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { AssignTruckDto, UpdateTripDto } from './dto/update-trip.dto';
@@ -16,6 +18,11 @@ import { PushService } from '../push/push.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
+import { OPEN_TRIP_STATUSES, sortByProgress } from './trip-order';
+
+/** "Are we heading to loading?" — re-ask after this long, at most this often. */
+const DEPART_RETRY_MS = 20 * 60 * 1000;
+const DEPART_MAX_PROMPTS = 3;
 
 const tripInclude = {
   driver: {
@@ -39,16 +46,32 @@ const tripInclude = {
   documents: true,
 };
 
-const ACTIVE_STATUSES = [
-  'ASSIGNED',
-  'ACCEPTED',
-  'ON_WAY',
-  'ON_SITE',
-  'LOADED',
-] as const;
+const ACTIVE_STATUSES = OPEN_TRIP_STATUSES;
+
+/** Push body: trip title + first loading address (when there is one). */
+function tripSummary(trip: {
+  title: string;
+  stops?: { type: string; address: string | null }[];
+}): string {
+  const address = trip.stops
+    ?.find((s) => s.type === 'LOADING')
+    ?.address?.trim();
+  return address ? `${trip.title}\n${address}` : trip.title;
+}
+
+/** Leaving ACCEPTED (set off, delivered, …) ends any pending depart prompt;
+ *  going back to ASSIGNED makes it askable again from scratch. */
+function departResetFor(status?: TripStatus) {
+  if (!status || status === 'ACCEPTED') return {};
+  return status === 'ASSIGNED'
+    ? { departPromptAt: null, departPromptCount: 0 }
+    : { departPromptAt: null };
+}
 
 @Injectable()
 export class TripsService {
+  private readonly logger = new Logger(TripsService.name);
+
   constructor(
     private prisma: PrismaService,
     private gateway: MessagesGateway,
@@ -109,22 +132,23 @@ export class TripsService {
     });
     await this.sessions.openInitial(trip.id, trip.driverId, trip.managerId);
 
-    // Push: notify the assigned driver about the new trip — body shows the
-    // first loading address so they can act without opening the app. The
-    // mobile app turns "OK" on NEW_TRIP into a status → ACCEPTED transition.
-    const loadingStop = trip.stops.find((s) => s.type === 'LOADING');
-    const address = loadingStop?.address?.trim();
+    // Push: notify the assigned driver right away — even mid-trip: they
+    // accept it now (OK → ACCEPTED) and get "heading to loading?" once the
+    // current load is delivered. Body: trip title + first loading address.
+    // `NEW_TRIP` category = OK action on the system banner.
     await this.push.sendLocalizedToUsers(
       [trip.driverId],
       (lang) => ({
         title: t(lang, 'push.newLoading'),
-        body: address ? address : trip.title,
+        body: tripSummary(trip),
       }),
       {
+        categoryId: 'NEW_TRIP',
         data: {
           type: 'NEW_TRIP',
           tripId: trip.id,
           truckId: trip.truckId,
+          title: trip.title,
         },
       },
     );
@@ -183,24 +207,9 @@ export class TripsService {
       },
       include: tripInclude,
     });
-    if (candidates.length === 0) return null;
-    // A trip that's actually in progress must win over one merely just
-    // assigned — otherwise a freshly ASSIGNED trip (newest createdAt) would
-    // hide the ON_WAY one the driver is really doing. Rank by status
-    // progression first, then most recent within the same tier.
-    const rank: Record<string, number> = {
-      LOADED: 5,
-      ON_SITE: 4,
-      ON_WAY: 3,
-      ACCEPTED: 2,
-      ASSIGNED: 1,
-    };
-    candidates.sort((a, b) => {
-      const byStatus = (rank[b.status] ?? 0) - (rank[a.status] ?? 0);
-      if (byStatus !== 0) return byStatus;
-      return b.createdAt.getTime() - a.createdAt.getTime();
-    });
-    return candidates[0];
+    // In progress beats merely assigned; same status → the older load first,
+    // so a queued order never jumps ahead of the one on the road.
+    return sortByProgress(candidates)[0] ?? null;
   }
 
   // load message history for a trip.
@@ -331,9 +340,10 @@ export class TripsService {
     await this.findOne(id, companyId);
     const updated = await this.prisma.trip.update({
       where: { id },
-      data: { status: dto.status },
+      data: { status: dto.status, ...departResetFor(dto.status) },
     });
     this.emitTripUpdated(id, companyId, updated.driverId);
+    if (dto.status) await this.afterStatusChange(updated.driverId, dto.status);
     return updated;
   }
 
@@ -1016,31 +1026,230 @@ export class TripsService {
     if (!trip) throw new ForbiddenException('errors.noAccessTrip');
     const updated = await this.prisma.trip.update({
       where: { id },
-      data: { status: dto.status },
-      include: { truck: { select: { plate: true } } },
+      data: { status: dto.status, ...departResetFor(dto.status) },
+      include: {
+        truck: { select: { plate: true } },
+        driver: { select: { firstName: true, lastName: true } },
+      },
     });
     // Driver changed it themselves (their app updates optimistically); push
     // to the company room + trip room so web managers see it live.
     this.emitTripUpdated(id, trip.companyId, null);
 
-    // Push the trip's manager so they learn the driver advanced the trip even
-    // when the app is closed. Body reads e.g. "AB1234: On Way".
+    // Tell the trip's manager — push for the phone, socket for web/desktop
+    // (colored by status there). Reads e.g. "AB1234 · NL → DE: On Way".
     if (trip.managerId && dto.status) {
-      const status = dto.status;
-      const plate = updated.truck?.plate ?? '';
-      void this.push.sendLocalizedToUsers(
-        [trip.managerId],
-        (lang) => ({
-          title: t(lang, 'push.tripStatusTitle'),
-          body: t(lang, 'push.tripStatusBody', {
-            plate,
-            status: t(lang, `tripStatus.${status}`),
-          }),
-        }),
-        { data: { type: 'TRIP_STATUS', tripId: id, truckId: trip.truckId } },
-      );
+      this.notifyManager(trip.managerId, {
+        kind: 'STATUS',
+        tripId: id,
+        truckId: trip.truckId,
+        title: trip.title,
+        plate: updated.truck?.plate ?? '',
+        driverName: fullName(updated.driver),
+        status: dto.status,
+      });
     }
+    if (dto.status) await this.afterStatusChange(driverId, dto.status);
     return updated;
+  }
+
+  // ─── "Are we heading to loading?" ────────────────────────────────────────
+  //
+  // Once a driver has accepted a trip and has nothing else in progress, ask
+  // them to set off: Yes → ON_WAY; No (or no answer) → ask again in 20 min;
+  // after the 3rd unanswered / "No" the manager is told and we stop.
+  // Triggered when a trip becomes ACCEPTED (driver idle) or when the load in
+  // progress is DELIVERED (the next accepted one is up).
+
+  private async afterStatusChange(driverId: string, status: TripStatus) {
+    if (status !== 'ACCEPTED' && status !== 'DELIVERED') return;
+    try {
+      const current = await this.findMyActiveTrip(driverId);
+      if (
+        current &&
+        current.status === 'ACCEPTED' &&
+        current.departPromptCount === 0 &&
+        !current.departPromptAt
+      ) {
+        await this.sendDepartPrompt(current);
+      }
+    } catch (e) {
+      this.logger.warn(`depart prompt failed: ${(e as Error).message}`);
+    }
+  }
+
+  private async sendDepartPrompt(trip: {
+    id: string;
+    title: string;
+    driverId: string;
+    truckId: string;
+    departPromptCount: number;
+    stops?: { type: string; address: string | null }[];
+  }) {
+    await this.prisma.trip.update({
+      where: { id: trip.id },
+      data: {
+        departPromptCount: trip.departPromptCount + 1,
+        // Next check: re-ask (or give up) if there's no "Yes" by then.
+        departPromptAt: new Date(Date.now() + DEPART_RETRY_MS),
+      },
+    });
+    const summary = tripSummary(trip);
+    // Socket → in-app modal when the app is open (push may be DND-silenced).
+    this.gateway.server.to(trip.driverId).emit('departPrompt', {
+      tripId: trip.id,
+      title: trip.title,
+      body: summary,
+    });
+    await this.push.sendLocalizedToUsers(
+      [trip.driverId],
+      (lang) => ({ title: t(lang, 'push.departTitle'), body: summary }),
+      {
+        categoryId: 'DEPART',
+        data: {
+          type: 'DEPART_PROMPT',
+          tripId: trip.id,
+          truckId: trip.truckId,
+          title: trip.title,
+        },
+      },
+    );
+  }
+
+  async answerDepart(id: string, driverId: string, depart: boolean) {
+    const trip = await this.prisma.trip.findFirst({
+      where: { id, driverId, deletedAt: null },
+      include: { truck: { select: { plate: true } } },
+    });
+    if (!trip) throw new ForbiddenException('errors.noAccessTrip');
+    // Already on the way (answered on another device, or manager moved it).
+    if (trip.status !== 'ACCEPTED') return { status: trip.status };
+
+    if (depart) {
+      return this.driverUpdateStatus(id, driverId, { status: 'ON_WAY' });
+    }
+    if (trip.departPromptCount >= DEPART_MAX_PROMPTS) {
+      await this.giveUpDepartPrompt(trip);
+    } else {
+      await this.prisma.trip.update({
+        where: { id },
+        data: { departPromptAt: new Date(Date.now() + DEPART_RETRY_MS) },
+      });
+    }
+    return { status: trip.status };
+  }
+
+  private async giveUpDepartPrompt(trip: {
+    id: string;
+    title: string;
+    truckId: string;
+    managerId: string;
+    driverId: string;
+    truck?: { plate: string } | null;
+  }) {
+    await this.prisma.trip.update({
+      where: { id: trip.id },
+      data: { departPromptAt: null },
+    });
+    const driver = await this.prisma.user.findUnique({
+      where: { id: trip.driverId },
+      select: { firstName: true, lastName: true },
+    });
+    this.notifyManager(trip.managerId, {
+      kind: 'NOT_DEPARTED',
+      tripId: trip.id,
+      truckId: trip.truckId,
+      title: trip.title,
+      plate: trip.truck?.plate ?? '',
+      driverName: fullName(driver),
+      status: 'ACCEPTED',
+    });
+  }
+
+  /** Once a minute: re-ask drivers who haven't said "Yes" within 20 min. */
+  @Cron('* * * * *')
+  async checkDepartPrompts() {
+    const due = await this.prisma.trip.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACCEPTED',
+        departPromptAt: { lte: new Date() },
+      },
+      include: {
+        truck: { select: { plate: true } },
+        stops: { orderBy: { order: 'asc' } },
+      },
+    });
+    for (const trip of due) {
+      try {
+        // Another load became current meanwhile (e.g. the manager moved
+        // things around) — stand down; it's asked again when it's up.
+        const current = await this.findMyActiveTrip(trip.driverId);
+        if (current?.id !== trip.id) {
+          await this.prisma.trip.update({
+            where: { id: trip.id },
+            data: { departPromptAt: null, departPromptCount: 0 },
+          });
+          continue;
+        }
+        if (trip.departPromptCount >= DEPART_MAX_PROMPTS) {
+          await this.giveUpDepartPrompt(trip);
+        } else {
+          await this.sendDepartPrompt(trip);
+        }
+      } catch (e) {
+        this.logger.error(`depart re-prompt failed for ${trip.id}`, e as Error);
+      }
+    }
+  }
+
+  /**
+   * Trip news for its manager: push (phone) + socket `tripStatusNotice`
+   * (web / desktop banner, colored by status). `NOT_DEPARTED` = the driver
+   * did not confirm setting off after the last reminder.
+   */
+  private notifyManager(
+    managerId: string,
+    n: {
+      kind: 'STATUS' | 'NOT_DEPARTED';
+      tripId: string;
+      truckId: string;
+      title: string;
+      plate: string;
+      driverName: string;
+      status: TripStatus;
+    },
+  ) {
+    this.gateway.server.to(managerId).emit('tripStatusNotice', n);
+    void this.push.sendLocalizedToUsers(
+      [managerId],
+      (lang) =>
+        n.kind === 'NOT_DEPARTED'
+          ? {
+              title: t(lang, 'push.notDepartedTitle'),
+              body: t(lang, 'push.notDepartedBody', {
+                plate: n.plate,
+                title: n.title,
+              }),
+            }
+          : {
+              title: t(lang, 'push.tripStatusTitle'),
+              body: t(lang, 'push.tripStatusBody', {
+                plate: n.plate,
+                title: n.title,
+                status: t(lang, `tripStatus.${n.status}`),
+              }),
+            },
+      {
+        data: {
+          type: n.kind === 'NOT_DEPARTED' ? 'TRIP_NOT_DEPARTED' : 'TRIP_STATUS',
+          tripId: n.tripId,
+          truckId: n.truckId,
+          status: n.status,
+          title: n.title,
+        },
+      },
+    );
   }
 
   /**
