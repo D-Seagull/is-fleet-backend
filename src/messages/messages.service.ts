@@ -104,7 +104,7 @@ export class MessagesService {
       senderId === trip.driverId ? trip.managerId : trip.driverId;
     if (recipientId) {
       void (async () => {
-        const online = await this.gateway.isUserOnline(recipientId);
+        const online = await this.gateway.isMobileAppOpen(recipientId);
         if (online) return;
         const senderName = fullName(message.sender);
         await this.push.sendLocalizedToUsers(
@@ -115,6 +115,7 @@ export class MessagesService {
           }),
           {
             sound: 'push_message.mp3',
+            channelId: 'messages',
             data: {
               type: 'MESSAGE',
               tripId: dto.tripId,

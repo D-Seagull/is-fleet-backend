@@ -12,7 +12,10 @@ export interface PushPayload {
    *  registered in each app's app.json expo-notifications `sounds`) for a
    *  custom chime, or `null` for silent. */
   sound?: string | null;
-  /** Bypass the BUSY/SLEEP/AWAY/VACATION do-not-disturb gate. Use for
+  /** Android notification channel. On Android 8+ the SOUND comes from the
+   *  channel (created by the app), not from `sound` — e.g. `messages`. */
+  channelId?: string;
+  /** Bypass the SLEEP/VACATION do-not-disturb gate. Use for
    *  alarms — an alarm clock must ring regardless of presence status. */
   ignoreDnd?: boolean;
 }
@@ -37,6 +40,7 @@ export class PushService {
         data: payload.data,
         categoryId: payload.categoryId,
         sound: payload.sound,
+        channelId: payload.channelId,
         ignoreDnd: payload.ignoreDnd,
       },
     );
@@ -55,15 +59,16 @@ export class PushService {
       data?: Record<string, unknown>;
       categoryId?: string;
       sound?: string | null;
+      channelId?: string;
       ignoreDnd?: boolean;
     } = {},
   ): Promise<void> {
     if (userIds.length === 0) return;
 
-    // Skip recipients whose status is BUSY/SLEEP (with a still-valid
+    // Skip recipients who are SLEEP / VACATION (with a still-valid
     // statusUntil, or no timer at all). This is the do-not-disturb gate
     // — the message itself still lands via socket; we only silence the
-    // banner. ONLINE recipients and recipients whose timer already
+    // banner. ONLINE / AWAY / BUSY recipients and those whose timer already
     // expired stay in the list. `language` drives per-recipient text.
     const recipients = await this.prisma.user.findMany({
       where: { id: { in: userIds } },
@@ -71,12 +76,20 @@ export class PushService {
     });
     const now = Date.now();
     // Alarms bypass do-not-disturb entirely — an alarm clock must ring in
-    // every status (incl. VACATION/SLEEP/BUSY). Otherwise apply the DND gate.
+    // every status (incl. VACATION/SLEEP). Otherwise apply the DND gate.
     const deliver = extra.ignoreDnd
       ? recipients
       : recipients.filter((u) => {
-          if (u.status === 'ONLINE') return true;
-          // BUSY/SLEEP: deliver only if the timer already expired.
+          // AWAY is presence (web sets it after 15 min idle — exactly when the
+          // phone must ring) and BUSY still wants work pushes (user decision
+          // 2026-09-29). Only SLEEP / VACATION silence the banner.
+          if (
+            u.status === 'ONLINE' ||
+            u.status === 'AWAY' ||
+            u.status === 'BUSY'
+          )
+            return true;
+          // SLEEP / VACATION: deliver only if the timer already expired.
           return !!u.statusUntil && u.statusUntil.getTime() <= now;
         });
     const langById = new Map<string, string>(
@@ -87,7 +100,7 @@ export class PushService {
     const label = build('uk').title;
     if (deliverIds.length === 0) {
       this.logger.log(
-        `Push "${label}" suppressed for all ${userIds.length} recipient(s) (BUSY/SLEEP/VACATION)`,
+        `Push "${label}" suppressed for all ${userIds.length} recipient(s) (SLEEP/VACATION)`,
       );
       return;
     }
@@ -123,6 +136,7 @@ export class PushService {
         body,
         data: extra.data,
         categoryId: extra.categoryId,
+        ...(extra.channelId && { channelId: extra.channelId }),
       });
     }
 

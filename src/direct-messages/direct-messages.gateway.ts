@@ -37,14 +37,17 @@ export class DirectMessagesGateway
   ) {}
 
   /**
-   * True when the user has the app in the FOREGROUND — a live socket whose
-   * `data.active` flag is set (clients flip it via appActive/appBackground).
-   * Matches MessagesGateway.isUserOnline so chat push suppression is consistent:
-   * suppress only while the app is open, push when it's backgrounded/closed.
+   * True when the user's PHONE app is in the foreground — a mobile socket
+   * (`data.mobile`, set from the handshake) whose `data.active` flag is on
+   * (apps flip it via appActive/appBackground). Web / desktop don't count.
+   * Matches MessagesGateway.isMobileAppOpen so chat push suppression is
+   * consistent: suppress only while the phone app is open.
    */
-  private async isUserOnline(userId: string): Promise<boolean> {
+  private async isMobileAppOpen(userId: string): Promise<boolean> {
     const socks = await this.server.in(`user:${userId}`).fetchSockets();
-    return socks.some((s) => s.data?.active === true);
+    return socks.some(
+      (s) => s.data?.active === true && s.data?.mobile === true,
+    );
   }
 
   handleConnection(client: Socket) {
@@ -152,7 +155,7 @@ export class DirectMessagesGateway
     // Push the recipient when their app isn't in the foreground — online users
     // already received it over the socket. Never push the sender.
     void (async () => {
-      if (await this.isUserOnline(data.receiverId)) return;
+      if (await this.isMobileAppOpen(data.receiverId)) return;
       const senderName = fullName(message.sender);
       await this.push.sendLocalizedToUsers(
         [data.receiverId],
@@ -162,6 +165,7 @@ export class DirectMessagesGateway
         }),
         {
           sound: 'push_message.mp3',
+          channelId: 'messages',
           data: {
             type: 'DM_MESSAGE',
             userId: senderId,
@@ -292,7 +296,7 @@ export class DirectMessagesGateway
         const offlineIds: string[] = [];
         for (const memberId of memberIds) {
           if (memberId === senderId) continue;
-          if (!(await this.isUserOnline(memberId))) offlineIds.push(memberId);
+          if (!(await this.isMobileAppOpen(memberId))) offlineIds.push(memberId);
         }
         if (offlineIds.length === 0) return;
         await this.push.sendLocalizedToUsers(
@@ -303,6 +307,7 @@ export class DirectMessagesGateway
           }),
           {
             sound: 'push_message.mp3',
+            channelId: 'messages',
             data: {
               type: 'GROUP_MESSAGE',
               groupId: data.groupId,

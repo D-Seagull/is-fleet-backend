@@ -84,6 +84,10 @@ export class MessagesGateway {
       // Defaults to true on fresh connect (clients connect when they open
       // the app); mobile flips it back to false in onBackground.
       client.data.active = true;
+      // Phone apps say so in the handshake — only THEIR foreground state may
+      // hold back a push (pushes only ever reach phones; an open web tab or
+      // the desktop app must not silence the manager's phone).
+      client.data.mobile = client.handshake.auth?.client === 'mobile';
       void client.join(userId);
       // Global admins room — cross-company presence nudges for the admin
       // dashboard's live "online now" list (admins oversee every company, so
@@ -441,10 +445,18 @@ export class MessagesGateway {
    *  *foreground*. iOS keeps the socket alive a while after the app moves to
    *  background, so we can't rely on socket existence alone — clients flip
    *  `data.active` via appActive / appBackground events below. */
-  async isUserOnline(userId: string): Promise<boolean> {
+  /**
+   * Is the user's phone app open on screen right now? Then a chat message
+   * already shows in-app and a push would only blink — skip it. Web / desktop
+   * sockets don't count: the phone should still ring while the manager has
+   * the desktop app open.
+   */
+  async isMobileAppOpen(userId: string): Promise<boolean> {
     if (!this.server) return false;
     const sockets = await this.server.in(userId).fetchSockets();
-    return sockets.some((s) => s.data?.active === true);
+    return sockets.some(
+      (s) => s.data?.active === true && s.data?.mobile === true,
+    );
   }
 
   @SubscribeMessage('appActive')

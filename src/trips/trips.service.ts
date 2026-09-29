@@ -1352,11 +1352,11 @@ export class TripsService {
             .emit('tripUnreadChanged', { tripId: trip.id });
         }
 
-        // Push only when the driver is not online (socket would otherwise
-        // already deliver the message in real time).
+        // Push unless the driver's phone app is open on screen (then the
+        // socket already shows the message in real time).
         if (trip.driverId && trip.driverId !== userId) {
           void (async () => {
-            const online = await this.gateway.isUserOnline(trip.driverId);
+            const online = await this.gateway.isMobileAppOpen(trip.driverId);
             if (online) return;
             const senderName = fullName(message.sender);
             await this.push.sendLocalizedToUsers(
@@ -1366,6 +1366,8 @@ export class TripsService {
                 body: content.slice(0, 200),
               }),
               {
+                sound: 'push_message.mp3',
+                channelId: 'messages',
                 data: {
                   type: 'MESSAGE',
                   tripId: trip.id,
