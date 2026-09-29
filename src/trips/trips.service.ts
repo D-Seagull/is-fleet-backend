@@ -1086,10 +1086,13 @@ export class TripsService {
     departPromptCount: number;
     stops?: { type: string; address: string | null }[];
   }) {
+    // Numbers each ask, so the app can drop copies of the SAME question
+    // (push + socket, answered on the banner …) but still show a re-ask.
+    const promptNo = trip.departPromptCount + 1;
     await this.prisma.trip.update({
       where: { id: trip.id },
       data: {
-        departPromptCount: trip.departPromptCount + 1,
+        departPromptCount: promptNo,
         // Next check: re-ask (or give up) if there's no "Yes" by then.
         departPromptAt: new Date(Date.now() + DEPART_RETRY_MS),
       },
@@ -1100,6 +1103,7 @@ export class TripsService {
       tripId: trip.id,
       title: trip.title,
       body: summary,
+      promptNo,
     });
     await this.push.sendLocalizedToUsers(
       [trip.driverId],
@@ -1111,6 +1115,7 @@ export class TripsService {
           tripId: trip.id,
           truckId: trip.truckId,
           title: trip.title,
+          promptNo,
         },
       },
     );
