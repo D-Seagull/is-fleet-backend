@@ -16,6 +16,7 @@ import {
   AssignManagerDto,
   AssignTripDto,
   AssignTruckDto,
+  DepartAnswerDto,
   UpdateTripDto,
 } from './dto/update-trip.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -212,6 +213,17 @@ export class TripsController {
     @Body() dto: UpdateTripDto,
   ) {
     return this.tripsService.driverUpdateStatus(id, driverId, dto);
+  }
+
+  // Driver's Yes / No to "Are we heading to loading?" (push action or modal).
+  @Roles('ADMIN', 'DRIVER')
+  @Patch(':id/depart-answer')
+  answerDepart(
+    @Param('id') id: string,
+    @GetUser('id') driverId: string,
+    @Body() dto: DepartAnswerDto,
+  ) {
+    return this.tripsService.answerDepart(id, driverId, dto.depart);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

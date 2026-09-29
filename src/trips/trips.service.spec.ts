@@ -137,7 +137,8 @@ describe('TripsService', () => {
       expect(prisma.trip.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 't1' },
-          data: { status: 'ON_WAY' },
+          // Leaving ACCEPTED also ends any pending "heading to loading?".
+          data: { status: 'ON_WAY', departPromptAt: null },
         }),
       );
       expect(emit).toHaveBeenCalledWith('tripUpdated', { tripId: 't1' });
@@ -247,13 +248,142 @@ describe('TripsService', () => {
       expect(res?.id).toBe('onWay');
     });
 
-    it('breaks ties within the same status by most recent', async () => {
+    it('breaks ties within the same status by the OLDEST (queue order)', async () => {
+      // Two accepted loads: the one given first is done first — a queued
+      // order must never jump ahead of the current one.
       prisma.trip.findMany.mockResolvedValue([
-        { id: 'older', status: 'ON_WAY', createdAt: new Date(1000) },
-        { id: 'newer', status: 'ON_WAY', createdAt: new Date(5000) },
+        { id: 'older', status: 'ACCEPTED', createdAt: new Date(1000) },
+        { id: 'newer', status: 'ACCEPTED', createdAt: new Date(5000) },
       ]);
       const res = await service.findMyActiveTrip('d1');
-      expect(res?.id).toBe('newer');
+      expect(res?.id).toBe('older');
+    });
+  });
+
+  // ─── "Are we heading to loading?" ───────────────────────────────────────────
+  describe('depart prompt', () => {
+    const accepted = {
+      id: 't1',
+      title: 'NL → DE',
+      status: 'ACCEPTED',
+      driverId: 'd1',
+      managerId: 'm1',
+      truckId: 'tr1',
+      companyId: 'c1',
+      createdAt: new Date(1000),
+      departPromptCount: 0,
+      departPromptAt: null,
+      stops: [{ type: 'LOADING', address: 'Venlo' }],
+      truck: { plate: 'AB123' },
+    };
+    const pushTypes = () =>
+      push.sendLocalizedToUsers.mock.calls.map(
+        (c) => (c[2] as { data: { type: string } }).data.type,
+      );
+
+    it('asks right after OK when the driver has nothing else in progress', async () => {
+      prisma.trip.findFirst.mockResolvedValue(accepted);
+      prisma.trip.update.mockResolvedValue({ ...accepted, driver: null });
+      prisma.trip.findMany.mockResolvedValue([accepted]);
+
+      await service.driverUpdateStatus('t1', 'd1', { status: 'ACCEPTED' } as never);
+
+      expect(prisma.trip.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 't1' },
+          data: expect.objectContaining({ departPromptCount: 1 }),
+        }),
+      );
+      expect(pushTypes()).toEqual(['TRIP_STATUS', 'DEPART_PROMPT']);
+      expect(emit).toHaveBeenCalledWith(
+        'departPrompt',
+        expect.objectContaining({ tripId: 't1', body: 'NL → DE\nVenlo' }),
+      );
+    });
+
+    it('does not ask for a queued load while another one is on the road', async () => {
+      prisma.trip.findFirst.mockResolvedValue(accepted);
+      prisma.trip.update.mockResolvedValue({ ...accepted, driver: null });
+      prisma.trip.findMany.mockResolvedValue([
+        accepted,
+        { ...accepted, id: 'cur', status: 'ON_WAY', createdAt: new Date(10) },
+      ]);
+
+      await service.driverUpdateStatus('t1', 'd1', { status: 'ACCEPTED' } as never);
+
+      expect(pushTypes()).toEqual(['TRIP_STATUS']);
+    });
+
+    it('asks about the next accepted load once the current one is delivered', async () => {
+      prisma.trip.findFirst.mockResolvedValue({ ...accepted, id: 'cur' });
+      prisma.trip.update.mockResolvedValue({ ...accepted, driver: null });
+      // After delivery only the queued, already-accepted load is open.
+      prisma.trip.findMany.mockResolvedValue([accepted]);
+
+      await service.driverUpdateStatus('cur', 'd1', { status: 'DELIVERED' } as never);
+
+      expect(pushTypes()).toContain('DEPART_PROMPT');
+    });
+
+    it('"No" re-schedules the question in 20 minutes', async () => {
+      prisma.trip.findFirst.mockResolvedValue({ ...accepted, departPromptCount: 1 });
+      const before = Date.now();
+
+      await service.answerDepart('t1', 'd1', false);
+
+      const data = prisma.trip.update.mock.calls[0][0].data as {
+        departPromptAt: Date;
+      };
+      expect(data.departPromptAt.getTime()).toBeGreaterThanOrEqual(
+        before + 20 * 60 * 1000,
+      );
+      expect(push.sendLocalizedToUsers).not.toHaveBeenCalled();
+    });
+
+    it('"No" to the 3rd question tells the manager and stops asking', async () => {
+      prisma.trip.findFirst.mockResolvedValue({ ...accepted, departPromptCount: 3 });
+
+      await service.answerDepart('t1', 'd1', false);
+
+      expect(prisma.trip.update).toHaveBeenCalledWith({
+        where: { id: 't1' },
+        data: { departPromptAt: null },
+      });
+      expect(pushTypes()).toEqual(['TRIP_NOT_DEPARTED']);
+      expect(push.sendLocalizedToUsers.mock.calls[0][0]).toEqual(['m1']);
+      expect(emit).toHaveBeenCalledWith(
+        'tripStatusNotice',
+        expect.objectContaining({ kind: 'NOT_DEPARTED', title: 'NL → DE' }),
+      );
+    });
+
+    it('"Yes" sets the trip on its way', async () => {
+      prisma.trip.findFirst.mockResolvedValue(accepted);
+      prisma.trip.update.mockResolvedValue({ ...accepted, status: 'ON_WAY', driver: null });
+      prisma.trip.findMany.mockResolvedValue([]);
+
+      await service.answerDepart('t1', 'd1', true);
+
+      expect(prisma.trip.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { status: 'ON_WAY', departPromptAt: null },
+        }),
+      );
+    });
+
+    it('cron re-asks an unanswered question, then gives up after the 3rd', async () => {
+      prisma.trip.findMany
+        .mockResolvedValueOnce([{ ...accepted, departPromptCount: 1 }]) // due
+        .mockResolvedValueOnce([accepted]); // findMyActiveTrip
+      await service.checkDepartPrompts();
+      expect(pushTypes()).toEqual(['DEPART_PROMPT']);
+
+      push.sendLocalizedToUsers.mockClear();
+      prisma.trip.findMany
+        .mockResolvedValueOnce([{ ...accepted, departPromptCount: 3 }])
+        .mockResolvedValueOnce([accepted]);
+      await service.checkDepartPrompts();
+      expect(pushTypes()).toEqual(['TRIP_NOT_DEPARTED']);
     });
   });
 

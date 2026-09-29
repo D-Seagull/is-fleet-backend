@@ -12,6 +12,7 @@ import { MessagesGateway } from '../messages/messages.gateway';
 import { PushService } from '../push/push.service';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
+import { withCurrentTripOnly } from '../trips/trip-order';
 
 const ACTIVE_TRIP_STATUSES = [
   'ASSIGNED',
@@ -73,7 +74,7 @@ export class TrucksService {
   }
 
   async findAll(companyId: string) {
-    return this.prisma.truck.findMany({
+    const trucks = await this.prisma.truck.findMany({
       where: { companyId, isActive: true },
       include: {
         currentDriver: {
@@ -94,12 +95,12 @@ export class TrucksService {
             deletedAt: null,
             status: { in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'] },
           },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { id: true, status: true },
+          // All open trips; withCurrentTripOnly keeps the one in progress.
+          select: { id: true, status: true, createdAt: true },
         },
       },
     });
+    return trucks.map(withCurrentTripOnly);
   }
 
   async findOne(id: string, companyId: string) {
@@ -118,14 +119,13 @@ export class TrucksService {
             deletedAt: null,
             status: { in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'] },
           },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { id: true, status: true },
+          // All open trips; withCurrentTripOnly keeps the one in progress.
+          select: { id: true, status: true, createdAt: true },
         },
       },
     });
     if (!truck) throw new NotFoundException('errors.truckNotFound');
-    return truck;
+    return withCurrentTripOnly(truck);
   }
 
   async update(
@@ -400,7 +400,7 @@ export class TrucksService {
   }
 
   async findMyTrucks(userId: string, companyId: string) {
-    return this.prisma.truck.findMany({
+    const trucks = await this.prisma.truck.findMany({
       where: { companyId, isActive: true, managerId: userId },
       include: {
         currentDriver: {
@@ -420,12 +420,12 @@ export class TrucksService {
               in: ['ASSIGNED', 'ACCEPTED', 'ON_WAY', 'ON_SITE', 'LOADED'],
             },
           },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { id: true, status: true },
+          // All open trips; withCurrentTripOnly keeps the one in progress.
+          select: { id: true, status: true, createdAt: true },
         },
       },
     });
+    return trucks.map(withCurrentTripOnly);
   }
 
   async findDeactivated(companyId: string) {

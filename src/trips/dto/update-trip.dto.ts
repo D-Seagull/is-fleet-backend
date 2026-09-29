@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsArray,
@@ -9,6 +10,12 @@ import {
 } from 'class-validator';
 import { TripStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
+
+/** Driver's answer to "Are we heading to loading?". */
+export class DepartAnswerDto {
+  @IsBoolean()
+  depart: boolean;
+}
 
 export class AssignTripDto {
   @IsString()
