@@ -107,7 +107,7 @@ export class DocumentsService {
       const senderName = uploader
         ? `${uploader.firstName} ${uploader.lastName ?? ''}`.trim()
         : '';
-      this.gateway.emitTripUnreadForDocument(
+      this.gateway.emitTripUnread(
         {
           tripId,
           truckId: trip?.truck?.id ?? null,
