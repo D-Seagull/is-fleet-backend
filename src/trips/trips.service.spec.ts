@@ -297,7 +297,11 @@ describe('TripsService', () => {
       expect(pushTypes()).toEqual(['TRIP_STATUS', 'DEPART_PROMPT']);
       expect(emit).toHaveBeenCalledWith(
         'departPrompt',
-        expect.objectContaining({ tripId: 't1', body: 'NL → DE\nVenlo' }),
+        expect.objectContaining({
+          tripId: 't1',
+          body: 'NL → DE\nVenlo',
+          promptNo: 1,
+        }),
       );
     });
 
