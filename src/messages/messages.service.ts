@@ -474,12 +474,29 @@ export class MessagesService {
   async markTripRead(
     tripId: string,
     readerId: string,
-    readerRole: string,
   ): Promise<{ messageIds: string[]; documentIds: string[] }> {
-    const sessionIds = await this.sessions.getVisibleSessionIds(tripId, {
-      id: readerId,
-      role: readerRole,
+    // ✓✓ means "the recipient read it", so only a PARTICIPANT of the
+    // conversation may set it — the session's driver or manager, whatever
+    // their role. An admin / teamlead / other manager merely viewing the chat
+    // (admins can see every session) used to flip the driver's messages to
+    // read although the trip's manager never saw them.
+    const sessionIds = (
+      await this.prisma.tripChatSession.findMany({
+        where: {
+          tripId,
+          OR: [{ driverId: readerId }, { managerId: readerId }],
+        },
+        select: { id: true },
+      })
+    ).map((s) => s.id);
+    // Trip documents have no session — only the trip's current driver or
+    // manager may mark them read.
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: tripId },
+      select: { driverId: true, managerId: true },
     });
+    const canReadDocs =
+      !!trip && (trip.driverId === readerId || trip.managerId === readerId);
 
     const messagesPromise: Promise<Array<{ id: string }>> =
       sessionIds.length === 0
@@ -493,16 +510,18 @@ export class MessagesService {
             RETURNING id
           `);
 
-    const documentsPromise = this.prisma.$queryRaw<Array<{ id: string }>>(
-      Prisma.sql`
-        UPDATE "TripDocument"
-        SET "isRead" = true
-        WHERE "tripId" = ${tripId}
-          AND "isRead" = false
-          AND "uploadedBy" != ${readerId}
-        RETURNING id
-      `,
-    );
+    const documentsPromise: Promise<Array<{ id: string }>> = !canReadDocs
+      ? Promise.resolve([])
+      : this.prisma.$queryRaw<Array<{ id: string }>>(
+          Prisma.sql`
+            UPDATE "TripDocument"
+            SET "isRead" = true
+            WHERE "tripId" = ${tripId}
+              AND "isRead" = false
+              AND "uploadedBy" != ${readerId}
+            RETURNING id
+          `,
+        );
 
     const [updatedMessages, updatedDocs] = await Promise.all([
       messagesPromise,

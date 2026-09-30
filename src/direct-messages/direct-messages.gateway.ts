@@ -229,7 +229,36 @@ export class DirectMessagesGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { groupId: string },
   ) {
+    // Clients send this when a group chat screen closes. A MEMBER must stay
+    // in the room — it was joined on connect and is what delivers
+    // `new_group_message` app-wide (global chime / desktop notification).
+    // Leaving it silenced the group until the next reconnect; only the
+    // unread counter kept working. Non-members who just looked still leave.
+    if (!data?.groupId) return;
+    if (await this.isGroupMember(client, data.groupId)) return;
     await client.leave(`group:${data.groupId}`);
+  }
+
+  /** Same membership rule as the auto-join on connect. */
+  private async isGroupMember(client: Socket, groupId: string) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return false;
+    const group = await this.prisma.group.findFirst({
+      where: { id: groupId, deletedAt: null },
+      select: {
+        type: true,
+        companyId: true,
+        createdBy: true,
+        managers: { where: { managerId: userId }, select: { managerId: true } },
+      },
+    });
+    if (!group) return false;
+    if (group.type === 'DRIVERS') {
+      return (
+        client.data.role === 'DRIVER' && client.data.companyId === group.companyId
+      );
+    }
+    return group.createdBy === userId || group.managers.length > 0;
   }
 
   @SubscribeMessage('send_group_message')
