@@ -6,7 +6,8 @@
  * front of the one already on the road. Rule, shared by every client:
  *   1. furthest along wins (LOADED > ON_SITE > ON_WAY > ACCEPTED > ASSIGNED);
  *   2. same status → the OLDEST first (loads are done in the order given).
- * Every other open trip is "queued" — hidden from chat until it's current.
+ * Every other open trip is "queued": listed under В черзі; the manager can
+ * already write in its chat, the driver only reads it until it's current.
  */
 export const OPEN_TRIP_STATUSES = [
   'ASSIGNED',
