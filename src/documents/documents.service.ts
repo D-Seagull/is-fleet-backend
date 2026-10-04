@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   ForbiddenException,
   Injectable,
@@ -34,6 +35,10 @@ export class DocumentsService {
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
 
+    // Several files in one message form an album: they share a batchId so
+    // clients draw them as one bubble. A single file stays a plain one.
+    const batchId = files.length > 1 ? randomUUID() : null;
+
     const created = await Promise.all(
       files.map(async (file) => {
         const isImage = file.mimetype.startsWith('image/');
@@ -48,6 +53,7 @@ export class DocumentsService {
             fileUrl: storagePath,
             publicId: storagePath,
             thumbPath,
+            batchId,
             fileName: file.originalname,
             uploadedBy,
             fileType,
@@ -81,6 +87,7 @@ export class DocumentsService {
                 id: true,
                 fileName: true,
                 fileType: true,
+                batchId: true,
                 deletedAt: true,
                 uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
               },
@@ -129,6 +136,30 @@ export class DocumentsService {
     }
 
     return created;
+  }
+
+  /**
+   * Delete a whole album — every file sharing `id`'s batchId — with the same
+   * rules and events as deleting each file. A file outside an album is just
+   * deleted on its own. Only the uploader's files of the batch are touched.
+   */
+  async removeAlbum(id: string, userId: string, userRole: string) {
+    const doc = await this.prisma.tripDocument.findUnique({
+      where: { id },
+      select: { batchId: true, uploadedBy: true },
+    });
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
+    if (!doc.batchId) return [await this.remove(id, userId, userRole)];
+
+    const album = await this.prisma.tripDocument.findMany({
+      where: { batchId: doc.batchId, uploadedBy: doc.uploadedBy },
+      select: { id: true },
+    });
+    const removed: { id: string }[] = [];
+    for (const d of album) {
+      removed.push(await this.remove(d.id, userId, userRole));
+    }
+    return removed;
   }
 
   async remove(id: string, userId: string, userRole: string) {
@@ -254,6 +285,7 @@ export class DocumentsService {
               id: true,
               fileName: true,
               fileType: true,
+              batchId: true,
               deletedAt: true,
               uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
             },

@@ -360,6 +360,9 @@ model TripDocument {
   // Small WebP preview of a PHOTO for chat bubbles / grids; null for
   // documents and for photos uploaded before previews existed.
   thumbPath         String?
+  // Files sent together in one message (an album) share this id; null
+  // for a single file and for uploads made before albums existed.
+  batchId           String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -373,6 +376,8 @@ model TripDocument {
   docRepliedFrom TripDocument[] @relation("TripDocToDocReplies")
 
   @@index([tripId, isRead])
+
+  @@index([batchId])
 }
 
 model DirectMessageDocument {
@@ -389,6 +394,9 @@ model DirectMessageDocument {
   // Small WebP preview of a PHOTO for chat bubbles / grids; null for
   // documents and for photos uploaded before previews existed.
   thumbPath         String?
+  // Files sent together in one message (an album) share this id; null
+  // for a single file and for uploads made before albums existed.
+  batchId           String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -404,6 +412,8 @@ model DirectMessageDocument {
 
   @@index([uploadedBy, otherUserId])
   @@index([otherUserId, uploadedBy])
+
+  @@index([batchId])
 }
 
 model GroupMessageDocument {
@@ -420,6 +430,9 @@ model GroupMessageDocument {
   // Small WebP preview of a PHOTO for chat bubbles / grids; null for
   // documents and for photos uploaded before previews existed.
   thumbPath         String?
+  // Files sent together in one message (an album) share this id; null
+  // for a single file and for uploads made before albums existed.
+  batchId           String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -435,6 +448,7 @@ model GroupMessageDocument {
 
   @@index([groupId])
   @@index([uploadedBy])
+  @@index([batchId])
 }
 
 model DirectMessage {

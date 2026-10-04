@@ -286,6 +286,7 @@ export class TripsService {
               id: true,
               fileName: true,
               fileType: true,
+              batchId: true,
               deletedAt: true,
               uploader: {
                 select: {

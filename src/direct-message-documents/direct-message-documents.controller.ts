@@ -76,6 +76,12 @@ export class DirectMessageDocumentsController {
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Delete(':id/album')
+  removeAlbum(@Param('id') id: string, @GetUser('id') userId: string) {
+    return this.service.removeAlbum(id, userId);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
   remove(@Param('id') id: string, @GetUser('id') userId: string) {
     return this.service.remove(id, userId);

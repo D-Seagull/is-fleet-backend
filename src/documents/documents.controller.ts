@@ -85,6 +85,16 @@ export class DocumentsController {
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Delete(':id/album')
+  removeAlbum(
+    @Param('id') id: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.documentsService.removeAlbum(id, userId, role);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
   remove(
     @Param('id') id: string,
