@@ -23,6 +23,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -153,7 +154,7 @@ export class UsersController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('avatar')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', UPLOAD_OPTIONS))
   uploadAvatar(
     @GetUser('id') userId: string,
     @UploadedFile() file: Express.Multer.File,

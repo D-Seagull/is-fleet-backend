@@ -16,8 +16,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { memoryStorage } from 'multer';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
 @ApiTags('companies')
 @ApiBearerAuth()
@@ -34,7 +34,7 @@ export class CompaniesController {
 
   @Roles('ADMIN', 'TEAMLEAD')
   @Post('logo')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file', UPLOAD_OPTIONS))
   uploadLogo(
     @GetUser('companyId') companyId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -44,7 +44,7 @@ export class CompaniesController {
 
   @Roles('ADMIN', 'TEAMLEAD')
   @Patch('logo')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file', UPLOAD_OPTIONS))
   updateLogo(
     @GetUser('companyId') companyId: string,
     @UploadedFile() file: Express.Multer.File,
