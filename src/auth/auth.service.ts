@@ -58,7 +58,7 @@ export class AuthService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { status: 'ONLINE', statusUntil: null },
-      select: { id: true, status: true, statusUntil: true, companyId: true },
+      select: { id: true, status: true, statusUntil: true, lastSeenAt: true, companyId: true },
     });
     this.gateway.server
       .to(`company-${updated.companyId}`)
@@ -295,7 +295,7 @@ export class AuthService {
         timezone: true,
         avatar: true,
         status: true,
-        statusUntil: true,
+        statusUntil: true, lastSeenAt: true,
         company: { select: { isActive: true } },
         // For driver routing: which truck am I on, who is my manager.
         // Null for non-drivers — safe to expose either way.
@@ -314,7 +314,7 @@ export class AuthService {
             phone: true,
             avatar: true,
             status: true,
-            statusUntil: true,
+            statusUntil: true, lastSeenAt: true,
           },
         },
       },

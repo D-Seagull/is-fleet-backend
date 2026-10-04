@@ -62,7 +62,7 @@ export class DocumentsService {
             caption: caption?.trim() ? caption.trim() : null,
           },
           include: {
-            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+            uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
             trip: {
               select: {
                 id: true,
@@ -271,7 +271,7 @@ export class DocumentsService {
       this.prisma.tripDocument.findMany({
         where: { tripId },
         include: {
-          uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
           replyTo: {
             select: {
               id: true,
@@ -328,7 +328,7 @@ export class DocumentsService {
     const docs = await this.prisma.tripDocument.findMany({
       where: { trip: { truckId, deletedAt: null } },
       include: {
-        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
         // createdAt + stop addresses let the driver Documents screen search
         // by trip date and by postcode (postcode lives inside the address).
         trip: {
@@ -352,7 +352,7 @@ export class DocumentsService {
     const docs = await this.prisma.tripDocument.findMany({
       where: { trip: { companyId, deletedAt: null } },
       include: {
-        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
         trip: {
           select: {
             id: true,

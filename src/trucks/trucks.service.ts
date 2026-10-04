@@ -78,7 +78,7 @@ export class TrucksService {
       where: { companyId, isActive: true },
       include: {
         currentDriver: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true },
+          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, phone: true },
         },
         manager: {
           select: { id: true, firstName: true, lastName: true, avatar: true },
@@ -108,7 +108,7 @@ export class TrucksService {
       where: { id, companyId },
       include: {
         currentDriver: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true },
+          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, phone: true },
         },
         manager: {
           select: { id: true, firstName: true, lastName: true, avatar: true },
@@ -387,12 +387,12 @@ export class TrucksService {
       where: { currentDriverId: driverId, isActive: true },
       include: {
         manager: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true,  },
+          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, phone: true,  },
         },
         truckNotes: {
           orderBy: { createdAt: 'desc' },
           include: {
-            user: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+            user: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
           },
         },
       },
@@ -433,7 +433,7 @@ export class TrucksService {
     return this.prisma.truck.findMany({
       where: { companyId, isActive: false },
       include: {
-        currentDriver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true } },
+        currentDriver: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, phone: true } },
       },
     });
   }
@@ -474,7 +474,7 @@ export class TrucksService {
         content: dto.content,
       },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        user: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
       },
     });
   }
@@ -483,7 +483,7 @@ export class TrucksService {
     return this.prisma.truckNote.findMany({
       where: { truckId },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        user: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
