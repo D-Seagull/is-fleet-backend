@@ -59,6 +59,21 @@ const SIGN_CACHE_MAX = 20_000;
 const OPTIMISE_CONCURRENCY = 2;
 sharp.cache(false);
 
+/**
+ * React Native's FormData percent-encodes the file name it sends
+ * (`encodeURIComponent`), so phone uploads arrived as
+ * "Loading%20Order%20FT26090265.pdf". Browsers send the name as is.
+ * Decode it when it looks encoded; a name that isn't valid encoding is kept.
+ */
+function readableName(name: string): string {
+  if (!/%[0-9a-f]{2}/i.test(name)) return name;
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
 @Injectable()
 export class SupabaseStorageService {
   private client: SupabaseClient;
@@ -261,6 +276,7 @@ export class SupabaseStorageService {
   async uploadAttachment(
     file: Express.Multer.File,
   ): Promise<{ storagePath: string; thumbPath: string | null }> {
+    file.originalname = readableName(file.originalname);
     await this.normaliseHeic(file);
     const thumb = await this.optimisePhoto(file);
     const { storagePath } = await this.uploadFile(file);
