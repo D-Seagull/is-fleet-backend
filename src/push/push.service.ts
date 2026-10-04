@@ -131,6 +131,11 @@ export class PushService {
       validTokens.push(token);
       messages.push({
         to: token,
+        // Every push we send is something a person should see now (a chat
+        // message, a trip change, an alarm). Without this Expo sends normal
+        // priority, which Android holds back in Doze — pushes to a locked
+        // phone arrived minutes late and batched, often silently.
+        priority: 'high',
         sound: extra.sound === null ? undefined : (extra.sound ?? 'default'),
         title,
         body,

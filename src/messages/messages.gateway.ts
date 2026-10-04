@@ -15,6 +15,10 @@ import { JoinTripDto } from './dto/join-trip.dto';
 import { JwtService } from '@nestjs/jwt';
 import { corsOrigin } from 'src/common/cors-origin';
 import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
+import {
+  isPhoneOnScreen,
+  type PhoneSocketData,
+} from 'src/common/utils/phone-on-screen';
 
 @WebSocketGateway({
   cors: {
@@ -88,6 +92,12 @@ export class MessagesGateway {
       // hold back a push (pushes only ever reach phones; an open web tab or
       // the desktop app must not silence the manager's phone).
       client.data.mobile = client.handshake.auth?.client === 'mobile';
+      // Pulsing apps start their foreground clock now: a socket that
+      // reconnects while the phone is locked stops counting as "on screen"
+      // after PULSE_TTL_MS unless the app really pulses.
+      if (client.data.mobile && client.handshake.auth?.pulse === true) {
+        client.data.pulseAt = Date.now();
+      }
       void client.join(userId);
       // Global admins room — cross-company presence nudges for the admin
       // dashboard's live "online now" list (admins oversee every company, so
@@ -437,14 +447,18 @@ export class MessagesGateway {
   async isMobileAppOpen(userId: string): Promise<boolean> {
     if (!this.server) return false;
     const sockets = await this.server.in(userId).fetchSockets();
-    return sockets.some(
-      (s) => s.data?.active === true && s.data?.mobile === true,
-    );
+    return sockets.some((s) => isPhoneOnScreen(s.data as PhoneSocketData));
   }
 
+  // `{ pulse: true }` — sent every 15 s by apps on screen (see
+  // isPhoneOnScreen); older builds send it bare on each foreground switch.
   @SubscribeMessage('appActive')
-  handleAppActive(@ConnectedSocket() client: Socket) {
+  handleAppActive(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body?: { pulse?: boolean },
+  ) {
     client.data.active = true;
+    if (body?.pulse === true) client.data.pulseAt = Date.now();
   }
 
   @SubscribeMessage('appBackground')

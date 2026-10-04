@@ -83,4 +83,14 @@ describe('PushService', () => {
       }),
     );
   });
+
+  it('sends high priority, so a locked Android phone shows it at once', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'u1', status: 'ONLINE', statusUntil: null, language: 'uk' },
+    ]);
+
+    await service.sendToUsers(['u1'], { title: 't', body: 'b' });
+
+    expect(sent[0]).toEqual(expect.objectContaining({ priority: 'high' }));
+  });
 });
