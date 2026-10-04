@@ -243,6 +243,9 @@ export class AlarmsService {
           body: alarm.note ?? '',
           // An alarm clock must ring in every presence status (incl. VACATION).
           ignoreDnd: true,
+          // Not the IS Fleet chat chime — the alarm keeps the system sound.
+          channelId: 'default',
+          sound: 'default',
           data: {
             type: 'ALARM',
             alarmId: alarm.id,
