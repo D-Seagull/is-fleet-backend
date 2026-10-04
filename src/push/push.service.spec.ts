@@ -93,4 +93,14 @@ describe('PushService', () => {
 
     expect(sent[0]).toEqual(expect.objectContaining({ priority: 'high' }));
   });
+
+  it('puts non-chat pushes on the app-created `default` Android channel', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'u1', status: 'ONLINE', statusUntil: null, language: 'uk' },
+    ]);
+
+    await service.sendToUsers(['u1'], { title: 't', body: 'b' });
+
+    expect(sent[0]).toEqual(expect.objectContaining({ channelId: 'default' }));
+  });
 });

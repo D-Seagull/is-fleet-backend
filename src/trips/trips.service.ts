@@ -1092,14 +1092,24 @@ export class TripsService {
     // Numbers each ask, so the app can drop copies of the SAME question
     // (push + socket, answered on the banner …) but still show a re-ask.
     const promptNo = trip.departPromptCount + 1;
-    await this.prisma.trip.update({
-      where: { id: trip.id },
+    // Claim this ask atomically: only the caller that moves the counter from
+    // N to N+1 sends it. Two "accepted" requests at once (banner button +
+    // in-app OK, a retried request) or the cron on two instances during a
+    // deploy each read N and both asked — the driver got the question twice.
+    const claimed = await this.prisma.trip.updateMany({
+      where: {
+        id: trip.id,
+        departPromptCount: trip.departPromptCount,
+        status: 'ACCEPTED',
+        deletedAt: null,
+      },
       data: {
         departPromptCount: promptNo,
         // Next check: re-ask (or give up) if there's no "Yes" by then.
         departPromptAt: new Date(Date.now() + DEPART_RETRY_MS),
       },
     });
+    if (claimed.count === 0) return;
     const summary = tripSummary(trip);
     // Socket → in-app modal when the app is open (push may be DND-silenced).
     this.gateway.server.to(trip.driverId).emit('departPrompt', {

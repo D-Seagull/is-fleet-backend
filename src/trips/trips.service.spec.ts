@@ -51,6 +51,8 @@ describe('TripsService', () => {
         findFirst: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
+        // The depart prompt claims its ask atomically (count 1 = won the claim).
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         delete: jest.fn().mockResolvedValue({}),
       },
       truck: {
@@ -288,9 +290,9 @@ describe('TripsService', () => {
 
       await service.driverUpdateStatus('t1', 'd1', { status: 'ACCEPTED' } as never);
 
-      expect(prisma.trip.update).toHaveBeenCalledWith(
+      expect(prisma.trip.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 't1' },
+          where: expect.objectContaining({ id: 't1', departPromptCount: 0 }),
           data: expect.objectContaining({ departPromptCount: 1 }),
         }),
       );
@@ -373,6 +375,17 @@ describe('TripsService', () => {
           data: { status: 'ON_WAY', departPromptAt: null },
         }),
       );
+    });
+
+    it('asks once when another request already claimed the same question', async () => {
+      prisma.trip.findMany
+        .mockResolvedValueOnce([{ ...accepted, departPromptCount: 1 }]) // due
+        .mockResolvedValueOnce([accepted]); // findMyActiveTrip
+      // e.g. a second instance's cron got there first
+      prisma.trip.updateMany.mockResolvedValueOnce({ count: 0 });
+      await service.checkDepartPrompts();
+      expect(pushTypes()).toEqual([]);
+      expect(emit).not.toHaveBeenCalledWith('departPrompt', expect.anything());
     });
 
     it('cron re-asks an unanswered question, then gives up after the 3rd', async () => {
