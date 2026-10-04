@@ -404,7 +404,8 @@ export class TrucksService {
       where: { companyId, isActive: true, managerId: userId },
       include: {
         currentDriver: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true },
+          // lastSeenAt → "last in the app 2 h ago" next to the driver's status.
+          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, phone: true, lastSeenAt: true },
         },
         truckNotes: {
           orderBy: { createdAt: 'desc' },
