@@ -325,7 +325,7 @@ export class AdminService {
           phone: true,
           role: true,
           status: true,
-          statusUntil: true,
+          statusUntil: true, lastSeenAt: true,
           avatar: true,
           createdAt: true,
         },

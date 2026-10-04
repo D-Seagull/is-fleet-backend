@@ -72,7 +72,7 @@ export class PushService {
     // expired stay in the list. `language` drives per-recipient text.
     const recipients = await this.prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: { id: true, status: true, statusUntil: true, language: true },
+      select: { id: true, status: true, statusUntil: true, lastSeenAt: true, language: true },
     });
     const now = Date.now();
     // Alarms bypass do-not-disturb entirely — an alarm clock must ring in

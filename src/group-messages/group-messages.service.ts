@@ -33,7 +33,7 @@ export class GroupMessagesService {
           ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
         },
         include: {
-          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+          sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
           replyTo: {
             select: {
               id: true,
@@ -109,7 +109,7 @@ export class GroupMessagesService {
         replyToDocumentId: replyToDocumentId ?? null,
       },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
         replyTo: {
           select: {
             id: true,
@@ -171,7 +171,7 @@ export class GroupMessagesService {
       where: { id: messageId },
       data: { content: trimmed, editedAt: new Date() },
       include: {
-        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, role: true } },
+        sender: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
         replyTo: {
           select: {
             id: true,
