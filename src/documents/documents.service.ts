@@ -39,13 +39,15 @@ export class DocumentsService {
         const isImage = file.mimetype.startsWith('image/');
         const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
 
-        const { storagePath } = await this.storage.uploadFile(file);
+        const { storagePath, thumbPath } =
+          await this.storage.uploadAttachment(file);
 
         const doc = await this.prisma.tripDocument.create({
           data: {
             tripId,
             fileUrl: storagePath,
             publicId: storagePath,
+            thumbPath,
             fileName: file.originalname,
             uploadedBy,
             fileType,
@@ -86,8 +88,11 @@ export class DocumentsService {
           },
         });
 
-        const signedUrl = await this.storage.getSignedUrl(storagePath, 3600);
-        return { ...doc, signedUrl };
+        const [signedUrl, thumbUrl] = await Promise.all([
+          this.storage.getSignedUrl(storagePath, 3600),
+          this.storage.getThumbUrl(thumbPath),
+        ]);
+        return { ...doc, signedUrl, thumbUrl };
       }),
     );
 
@@ -145,7 +150,7 @@ export class DocumentsService {
     // tombstone (mirrors message soft-delete behaviour).
     if (document.fileUrl) {
       try {
-        await this.storage.deleteFile(document.fileUrl);
+        await this.storage.deleteFile(document.fileUrl, document.thumbPath);
       } catch {
         // ignore — proceed with soft delete
       }
@@ -195,12 +200,21 @@ export class DocumentsService {
   private async signOrHeal(doc: {
     id: string;
     fileUrl: string;
+    thumbPath?: string | null;
     deletedAt?: Date | null;
-  }): Promise<{ deletedAt: Date | null; signedUrl: string }> {
-    if (doc.deletedAt) return { deletedAt: doc.deletedAt, signedUrl: '' };
+  }): Promise<{
+    deletedAt: Date | null;
+    signedUrl: string;
+    thumbUrl: string | null;
+  }> {
+    if (doc.deletedAt)
+      return { deletedAt: doc.deletedAt, signedUrl: '', thumbUrl: null };
 
-    const url = await this.storage.getSignedUrlOrNull(doc.fileUrl, 3600);
-    if (url) return { deletedAt: null, signedUrl: url };
+    const [url, thumbUrl] = await Promise.all([
+      this.storage.getSignedUrlOrNull(doc.fileUrl, 3600),
+      this.storage.getThumbUrl(doc.thumbPath),
+    ]);
+    if (url) return { deletedAt: null, signedUrl: url, thumbUrl };
 
     const deletedAt = new Date();
     this.logger.warn(
@@ -209,7 +223,7 @@ export class DocumentsService {
     void this.prisma.tripDocument
       .update({ where: { id: doc.id }, data: { deletedAt } })
       .catch(() => undefined);
-    return { deletedAt, signedUrl: '' };
+    return { deletedAt, signedUrl: '', thumbUrl: null };
   }
 
   private async withSignedUrl<

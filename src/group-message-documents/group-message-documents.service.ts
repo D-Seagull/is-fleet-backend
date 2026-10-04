@@ -58,7 +58,8 @@ export class GroupMessageDocumentsService {
         const isImage = file.mimetype.startsWith('image/');
         const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
 
-        const { storagePath } = await this.storage.uploadFile(file);
+        const { storagePath, thumbPath } =
+          await this.storage.uploadAttachment(file);
 
         const doc = await this.prisma.groupMessageDocument.create({
           data: {
@@ -66,6 +67,7 @@ export class GroupMessageDocumentsService {
             uploadedBy,
             fileUrl: storagePath,
             publicId: storagePath,
+            thumbPath,
             fileName: file.originalname,
             fileType,
             replyToMessageId: replyToMessageId ?? null,
@@ -119,8 +121,11 @@ export class GroupMessageDocumentsService {
           },
         });
 
-        const signedUrl = await this.storage.getSignedUrl(storagePath, 3600);
-        return { ...doc, signedUrl };
+        const [signedUrl, thumbUrl] = await Promise.all([
+          this.storage.getSignedUrl(storagePath, 3600),
+          this.storage.getThumbUrl(thumbPath),
+        ]);
+        return { ...doc, signedUrl, thumbUrl };
       }),
     );
 
@@ -237,12 +242,21 @@ export class GroupMessageDocumentsService {
   private async signOrHeal(doc: {
     id: string;
     fileUrl: string;
+    thumbPath?: string | null;
     deletedAt?: Date | null;
-  }): Promise<{ deletedAt: Date | null; signedUrl: string }> {
-    if (doc.deletedAt) return { deletedAt: doc.deletedAt, signedUrl: '' };
+  }): Promise<{
+    deletedAt: Date | null;
+    signedUrl: string;
+    thumbUrl: string | null;
+  }> {
+    if (doc.deletedAt)
+      return { deletedAt: doc.deletedAt, signedUrl: '', thumbUrl: null };
 
-    const url = await this.storage.getSignedUrlOrNull(doc.fileUrl, 3600);
-    if (url) return { deletedAt: null, signedUrl: url };
+    const [url, thumbUrl] = await Promise.all([
+      this.storage.getSignedUrlOrNull(doc.fileUrl, 3600),
+      this.storage.getThumbUrl(doc.thumbPath),
+    ]);
+    if (url) return { deletedAt: null, signedUrl: url, thumbUrl };
 
     const deletedAt = new Date();
     this.logger.warn(
@@ -251,7 +265,7 @@ export class GroupMessageDocumentsService {
     void this.prisma.groupMessageDocument
       .update({ where: { id: doc.id }, data: { deletedAt } })
       .catch(() => undefined);
-    return { deletedAt, signedUrl: '' };
+    return { deletedAt, signedUrl: '', thumbUrl: null };
   }
 
   async view(id: string): Promise<{ url: string }> {
@@ -292,7 +306,7 @@ export class GroupMessageDocumentsService {
 
     if (doc.fileUrl) {
       try {
-        await this.storage.deleteFile(doc.fileUrl);
+        await this.storage.deleteFile(doc.fileUrl, doc.thumbPath);
       } catch {
         // ignore — proceed with soft delete
       }

@@ -357,6 +357,9 @@ model TripDocument {
   createdAt         DateTime    @default(now())
   deletedAt         DateTime?
   publicId          String?
+  // Small WebP preview of a PHOTO for chat bubbles / grids; null for
+  // documents and for photos uploaded before previews existed.
+  thumbPath         String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -383,6 +386,9 @@ model DirectMessageDocument {
   createdAt         DateTime    @default(now())
   deletedAt         DateTime?
   publicId          String?
+  // Small WebP preview of a PHOTO for chat bubbles / grids; null for
+  // documents and for photos uploaded before previews existed.
+  thumbPath         String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -411,6 +417,9 @@ model GroupMessageDocument {
   createdAt         DateTime    @default(now())
   deletedAt         DateTime?
   publicId          String?
+  // Small WebP preview of a PHOTO for chat bubbles / grids; null for
+  // documents and for photos uploaded before previews existed.
+  thumbPath         String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?

@@ -29,6 +29,36 @@ export type ImagePreset = keyof typeof IMAGE_PRESETS;
 const HEIC_MIME = /^image\/(heic|heif|heic-sequence|heif-sequence)$/i;
 const HEIC_EXT = /\.(heic|heif)$/i;
 
+// Photo attachments (chat, trip documents). A phone shot is 3–8 MB at 12–48 MP,
+// far beyond any screen. We keep ONE full copy at 2560 px on the long edge —
+// sharp on a 4K monitor and when zoomed in the gallery, with no visible loss
+// at MozJPEG q85 — and a small WebP preview that chat bubbles and grids load
+// instead. EXIF (GPS included) is dropped; orientation is baked in first.
+const PHOTO_MAX = 2560;
+const PHOTO_QUALITY = 85;
+const THUMB_MAX = 800; // ~280 css px bubble × 3 dpr phones
+const THUMB_QUALITY = 75;
+// Animated GIFs would lose their frames, SVG is not raster — store as-is.
+const SKIP_OPTIMISE = /^image\/(gif|svg\+xml)$/i;
+
+// Paths are random UUIDs and never overwritten, so the bytes behind a path
+// never change: let browsers and phones cache them for a year.
+const IMMUTABLE_CACHE = '31536000';
+
+// Signed URLs are cached so the same file gets the SAME URL on every request —
+// otherwise each refetch hands out a new token and every client cache misses,
+// re-downloading photos the user has already seen. Signed for a day, reused
+// while at least half of that is left, so a client always holds ≥ 12 h.
+const SIGN_TTL = 24 * 3600;
+const SIGN_REUSE_MIN_LEFT = 12 * 3600;
+const SIGN_CACHE_MAX = 20_000;
+
+// sharp holds the decoded image in memory (~150 MB for a 48 MP shot). A
+// 10-photo upload processed all at once could exhaust a small Render
+// instance, so photos are optimised a couple at a time.
+const OPTIMISE_CONCURRENCY = 2;
+sharp.cache(false);
+
 @Injectable()
 export class SupabaseStorageService {
   private client: SupabaseClient;
@@ -104,6 +134,97 @@ export class SupabaseStorageService {
     }
   }
 
+  // Run `task` once fewer than OPTIMISE_CONCURRENCY optimisations are active.
+  private optimiseActive = 0;
+  private optimiseQueue: Array<() => void> = [];
+  private async withOptimiseSlot<T>(task: () => Promise<T>): Promise<T> {
+    if (this.optimiseActive >= OPTIMISE_CONCURRENCY) {
+      await new Promise<void>((resolve) => this.optimiseQueue.push(resolve));
+    }
+    this.optimiseActive++;
+    try {
+      return await task();
+    } finally {
+      this.optimiseActive--;
+      this.optimiseQueue.shift()?.();
+    }
+  }
+
+  /**
+   * Shrink a photo attachment to PHOTO_MAX and build its preview. Mutates
+   * `file` like normaliseHeic (buffer, mimetype, extension, size) and returns
+   * the preview bytes, or null when the file is not a photo we can process.
+   *
+   * The full copy replaces the upload only when it actually comes out
+   * smaller — an already-small, well-compressed image is kept untouched
+   * rather than re-encoded for nothing. Best-effort throughout: an image
+   * sharp can't read is stored as-is, without a preview.
+   */
+  async optimisePhoto(file: Express.Multer.File): Promise<Buffer | null> {
+    if (!file.mimetype.startsWith('image/')) return null;
+    if (SKIP_OPTIMISE.test(file.mimetype)) return null;
+
+    return this.withOptimiseSlot(async () => {
+      try {
+        const { hasAlpha } = await sharp(file.buffer).metadata();
+        // .rotate() applies EXIF orientation before metadata is dropped.
+        const base = () => sharp(file.buffer, { failOn: 'none' }).rotate();
+
+        const full = base().resize(PHOTO_MAX, PHOTO_MAX, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+        // PNG only when there is transparency to keep; JPEG is far smaller.
+        const fullBuf = hasAlpha
+          ? await full.png({ compressionLevel: 9, palette: false }).toBuffer()
+          : await full
+              .jpeg({ quality: PHOTO_QUALITY, mozjpeg: true })
+              .toBuffer();
+
+        const thumb = await base()
+          .resize(THUMB_MAX, THUMB_MAX, {
+            fit: 'inside',
+            withoutEnlargement: true,
+          })
+          .webp({ quality: THUMB_QUALITY, alphaQuality: 80 })
+          .toBuffer();
+
+        if (fullBuf.length < file.buffer.length) {
+          file.buffer = fullBuf;
+          file.mimetype = hasAlpha ? 'image/png' : 'image/jpeg';
+          const ext = hasAlpha ? '.png' : '.jpg';
+          if (path.extname(file.originalname).toLowerCase() !== ext) {
+            file.originalname =
+              file.originalname.replace(/\.[^.]*$/, '') + ext;
+          }
+          file.size = fullBuf.length;
+        }
+        return thumb;
+      } catch (err) {
+        this.logger.error(
+          `Photo optimise failed for "${file.originalname}", storing original`,
+          err instanceof Error ? err.stack : String(err),
+        );
+        return null;
+      }
+    });
+  }
+
+  private async put(
+    storagePath: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<void> {
+    const { error } = await this.client.storage
+      .from(BUCKET)
+      .upload(storagePath, body, {
+        contentType,
+        upsert: false,
+        cacheControl: IMMUTABLE_CACHE,
+      });
+    if (error) throw new Error(`Supabase upload failed: ${error.message}`);
+  }
+
   async uploadFile(
     file: Express.Multer.File,
     folder?: string,
@@ -115,16 +236,35 @@ export class SupabaseStorageService {
     const ext = path.extname(file.originalname) || '';
     const storagePath = `${resolvedFolder}/${randomUUID()}${ext}`;
 
-    const { error } = await this.client.storage
-      .from(BUCKET)
-      .upload(storagePath, file.buffer, {
-        contentType: file.mimetype,
-        upsert: false,
-      });
-
-    if (error) throw new Error(`Supabase upload failed: ${error.message}`);
-
+    await this.put(storagePath, file.buffer, file.mimetype);
     return { storagePath };
+  }
+
+  /**
+   * Chat / trip attachment upload. Photos are optimised and get a preview
+   * stored next to them (`<uuid>.thumb.webp`); other files go up untouched.
+   * `file` reflects what was stored (name, type) once this resolves.
+   */
+  async uploadAttachment(
+    file: Express.Multer.File,
+  ): Promise<{ storagePath: string; thumbPath: string | null }> {
+    await this.normaliseHeic(file);
+    const thumb = await this.optimisePhoto(file);
+    const { storagePath } = await this.uploadFile(file);
+    if (!thumb) return { storagePath, thumbPath: null };
+
+    const thumbPath = storagePath.replace(/(\.[^./]*)?$/, '.thumb.webp');
+    try {
+      await this.put(thumbPath, thumb, 'image/webp');
+      return { storagePath, thumbPath };
+    } catch (err) {
+      // The photo itself is stored — clients fall back to it without a preview.
+      this.logger.error(
+        `Preview upload failed for ${storagePath}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      return { storagePath, thumbPath: null };
+    }
   }
 
   // Upload and return a long-lived signed URL (10 years) for display in UI.
@@ -145,9 +285,18 @@ export class SupabaseStorageService {
     return { url, storagePath };
   }
 
-  async deleteFile(storagePath: string): Promise<void> {
-    await this.client.storage.from(BUCKET).remove([storagePath]);
+  // Extra paths (a photo's preview) go in the same request; nulls are skipped.
+  async deleteFile(
+    storagePath: string,
+    ...more: Array<string | null | undefined>
+  ): Promise<void> {
+    const paths = [storagePath, ...more].filter((p): p is string => !!p);
+    for (const p of paths) this.signCache.delete(p);
+    await this.client.storage.from(BUCKET).remove(paths);
   }
+
+  // storagePath → signed URL, for display URLs only (no `download` variant).
+  private signCache = new Map<string, { url: string; expiresAt: number }>();
 
   // Підписаний URL дійсний expiresIn секунд (default 1 година)
   /**
@@ -164,12 +313,37 @@ export class SupabaseStorageService {
     expiresIn: number,
     download?: string,
   ): Promise<{ url: string } | { missing: true }> {
+    // Display URLs (no download name, standard 1 h ask) come from the cache
+    // and are signed for SIGN_TTL instead — see the note on SIGN_TTL. Long
+    // custom lifetimes (avatars) and downloads are signed as asked.
+    const cacheable = !download && expiresIn <= SIGN_TTL;
+    if (cacheable) {
+      const hit = this.signCache.get(storagePath);
+      if (hit && hit.expiresAt - Date.now() > SIGN_REUSE_MIN_LEFT * 1000) {
+        return { url: hit.url };
+      }
+      expiresIn = SIGN_TTL;
+    }
+
     const options = download ? { download } : undefined;
     const { data, error } = await this.client.storage
       .from(BUCKET)
       .createSignedUrl(storagePath, expiresIn, options);
 
-    if (data?.signedUrl) return { url: data.signedUrl };
+    if (data?.signedUrl) {
+      if (cacheable) {
+        // Plain size cap: dropping the oldest entry only costs a re-sign.
+        if (this.signCache.size >= SIGN_CACHE_MAX) {
+          const oldest = this.signCache.keys().next().value;
+          if (oldest !== undefined) this.signCache.delete(oldest);
+        }
+        this.signCache.set(storagePath, {
+          url: data.signedUrl,
+          expiresAt: Date.now() + expiresIn * 1000,
+        });
+      }
+      return { url: data.signedUrl };
+    }
 
     // Supabase reports an absent object as "Object not found", sometimes with
     // a 404 status attached. Match on either — the message wording is not a
@@ -218,5 +392,20 @@ export class SupabaseStorageService {
       return null;
     }
     return result.url;
+  }
+
+  /**
+   * Preview URL for a photo, or null — for no preview, a missing one, or any
+   * signing error. A preview is an optimisation: the client falls back to the
+   * full photo, so it must never fail a request or heal a row.
+   */
+  async getThumbUrl(thumbPath: string | null | undefined): Promise<string | null> {
+    if (!thumbPath) return null;
+    try {
+      const result = await this.sign(thumbPath, 3600);
+      return 'url' in result ? result.url : null;
+    } catch {
+      return null;
+    }
   }
 }
