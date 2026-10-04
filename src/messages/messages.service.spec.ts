@@ -6,6 +6,7 @@ import { TranslationService } from '../translation/translation.service';
 import { TripChatSessionsService } from './trip-chat-sessions.service';
 import { PushService } from '../push/push.service';
 import { MessagesGateway } from './messages.gateway';
+import { EDIT_WINDOW_MS } from 'src/common/constants';
 
 // expo-server-sdk is ESM-only, pulled in transitively via the push / gateway
 // import chain; the real deps are useValue mocks, so this stub just keeps the
@@ -142,9 +143,11 @@ describe('MessagesService', () => {
       );
     });
 
-    it('forbids editing after the 15-minute window', async () => {
+    it('forbids editing once the edit window has passed', async () => {
+      // Tied to the constant (24 h today, it used to be 15 min) so the test
+      // follows the rule instead of a hard-coded number.
       prisma.message.findUnique.mockResolvedValue(
-        msgRow({ createdAt: new Date(Date.now() - 16 * 60 * 1000) }),
+        msgRow({ createdAt: new Date(Date.now() - EDIT_WINDOW_MS - 60 * 1000) }),
       );
       await expect(service.editMessage('m1', 'u1', 'hi')).rejects.toThrow(
         /editWindowPassed/,

@@ -43,7 +43,9 @@ const tripInclude = {
     select: { id: true, firstName: true, lastName: true, avatar: true },
   },
   stops: { orderBy: { order: 'asc' as const } },
-  documents: true,
+  // Deleted files are gone for everyone — keep them out of every trip
+  // payload, so attachment counts / lists never show them.
+  documents: { where: { deletedAt: null } },
 };
 
 const ACTIVE_STATUSES = OPEN_TRIP_STATUSES;
@@ -284,6 +286,7 @@ export class TripsService {
               id: true,
               fileName: true,
               fileType: true,
+              batchId: true,
               deletedAt: true,
               uploader: {
                 select: {

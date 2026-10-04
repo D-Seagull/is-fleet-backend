@@ -10,7 +10,6 @@ import {
   UploadedFiles,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from 'multer';
 import { GroupMessageDocumentsService } from './group-message-documents.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { ReactionsGateway } from '../reactions/reactions.gateway';
@@ -20,6 +19,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
 @ApiTags('group-message-documents')
 @ApiBearerAuth()
@@ -35,7 +35,7 @@ export class GroupMessageDocumentsController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('upload-many')
-  @UseInterceptors(FilesInterceptor('files', 10, { storage: memoryStorage() }))
+  @UseInterceptors(FilesInterceptor('files', 10, UPLOAD_OPTIONS))
   uploadMany(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('groupId') groupId: string,
@@ -70,6 +70,12 @@ export class GroupMessageDocumentsController {
   @Get(':id/download')
   download(@Param('id') id: string) {
     return this.service.download(id);
+  }
+
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Delete(':id/album')
+  removeAlbum(@Param('id') id: string, @GetUser('id') userId: string) {
+    return this.service.removeAlbum(id, userId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')

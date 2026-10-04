@@ -36,7 +36,7 @@ describe('TrucksService', () => {
       },
       truckNote: {
         create: jest.fn().mockResolvedValue({ id: 'n1' }),
-        findFirst: jest.fn(),
+        findUnique: jest.fn(),
         delete: jest.fn().mockResolvedValue({}),
       },
     };
@@ -180,29 +180,48 @@ describe('TrucksService', () => {
     });
   });
 
-  // ─── removeNote (author-ownership guard) ────────────────────────────────────
+  // ─── removeNote (company-scoped) ────────────────────────────────────────────
+  // Anyone in the company may delete a truck note, not only its author; a
+  // note of another company looks "not found". ADMIN (companyId null) may
+  // delete any.
   describe('removeNote', () => {
-    it('forbids deleting a note the user did not author', async () => {
-      prisma.truckNote.findFirst.mockResolvedValue(null);
-      await expect(service.removeNote('n1', 'u1')).rejects.toBeInstanceOf(
+    const note = (companyId: string) => ({
+      id: 'n1',
+      userId: 'author',
+      truck: { companyId },
+    });
+
+    it('404s when the note does not exist', async () => {
+      prisma.truckNote.findUnique.mockResolvedValue(null);
+      await expect(service.removeNote('n1', 'c1')).rejects.toBeInstanceOf(
         NotFoundException,
       );
       expect(prisma.truckNote.delete).not.toHaveBeenCalled();
-      // Ownership is enforced in the lookup (id + userId).
-      expect(prisma.truckNote.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ id: 'n1', userId: 'u1' }),
-        }),
-      );
     });
 
-    it('deletes the note when the user is the author', async () => {
-      prisma.truckNote.findFirst.mockResolvedValue({ id: 'n1', userId: 'u1' });
-      const res = await service.removeNote('n1', 'u1');
+    it("404s for another company's note and deletes nothing", async () => {
+      prisma.truckNote.findUnique.mockResolvedValue(note('c2'));
+      await expect(service.removeNote('n1', 'c1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.truckNote.delete).not.toHaveBeenCalled();
+    });
+
+    it('lets a colleague delete a note of the same company', async () => {
+      prisma.truckNote.findUnique.mockResolvedValue(note('c1'));
+      const res = await service.removeNote('n1', 'c1');
       expect(prisma.truckNote.delete).toHaveBeenCalledWith({
         where: { id: 'n1' },
       });
       expect(res.message).toBe('Note deleted');
+    });
+
+    it('lets an admin (no company) delete any note', async () => {
+      prisma.truckNote.findUnique.mockResolvedValue(note('c2'));
+      await service.removeNote('n1', null);
+      expect(prisma.truckNote.delete).toHaveBeenCalledWith({
+        where: { id: 'n1' },
+      });
     });
   });
 });

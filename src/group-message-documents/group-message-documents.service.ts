@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   ForbiddenException,
   Injectable,
@@ -53,12 +54,17 @@ export class GroupMessageDocumentsService {
       throw new ForbiddenException('errors.notGroupMember');
     }
 
+    // Several files in one message form an album: they share a batchId so
+    // clients draw them as one bubble. A single file stays a plain one.
+    const batchId = files.length > 1 ? randomUUID() : null;
+
     const created = await Promise.all(
       files.map(async (file) => {
         const isImage = file.mimetype.startsWith('image/');
         const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
 
-        const { storagePath } = await this.storage.uploadFile(file);
+        const { storagePath, thumbPath } =
+          await this.storage.uploadAttachment(file);
 
         const doc = await this.prisma.groupMessageDocument.create({
           data: {
@@ -66,6 +72,8 @@ export class GroupMessageDocumentsService {
             uploadedBy,
             fileUrl: storagePath,
             publicId: storagePath,
+            thumbPath,
+            batchId,
             fileName: file.originalname,
             fileType,
             replyToMessageId: replyToMessageId ?? null,
@@ -105,6 +113,7 @@ export class GroupMessageDocumentsService {
                 id: true,
                 fileName: true,
                 fileType: true,
+                batchId: true,
                 deletedAt: true,
                 uploader: {
                   select: {
@@ -119,8 +128,11 @@ export class GroupMessageDocumentsService {
           },
         });
 
-        const signedUrl = await this.storage.getSignedUrl(storagePath, 3600);
-        return { ...doc, signedUrl };
+        const [signedUrl, thumbUrl] = await Promise.all([
+          this.storage.getSignedUrl(storagePath, 3600),
+          this.storage.getThumbUrl(thumbPath),
+        ]);
+        return { ...doc, signedUrl, thumbUrl };
       }),
     );
 
@@ -169,6 +181,7 @@ export class GroupMessageDocumentsService {
               id: true,
               fileName: true,
               fileType: true,
+              batchId: true,
               deletedAt: true,
               uploader: {
                 select: {
@@ -237,12 +250,21 @@ export class GroupMessageDocumentsService {
   private async signOrHeal(doc: {
     id: string;
     fileUrl: string;
+    thumbPath?: string | null;
     deletedAt?: Date | null;
-  }): Promise<{ deletedAt: Date | null; signedUrl: string }> {
-    if (doc.deletedAt) return { deletedAt: doc.deletedAt, signedUrl: '' };
+  }): Promise<{
+    deletedAt: Date | null;
+    signedUrl: string;
+    thumbUrl: string | null;
+  }> {
+    if (doc.deletedAt)
+      return { deletedAt: doc.deletedAt, signedUrl: '', thumbUrl: null };
 
-    const url = await this.storage.getSignedUrlOrNull(doc.fileUrl, 3600);
-    if (url) return { deletedAt: null, signedUrl: url };
+    const [url, thumbUrl] = await Promise.all([
+      this.storage.getSignedUrlOrNull(doc.fileUrl, 3600),
+      this.storage.getThumbUrl(doc.thumbPath),
+    ]);
+    if (url) return { deletedAt: null, signedUrl: url, thumbUrl };
 
     const deletedAt = new Date();
     this.logger.warn(
@@ -251,7 +273,7 @@ export class GroupMessageDocumentsService {
     void this.prisma.groupMessageDocument
       .update({ where: { id: doc.id }, data: { deletedAt } })
       .catch(() => undefined);
-    return { deletedAt, signedUrl: '' };
+    return { deletedAt, signedUrl: '', thumbUrl: null };
   }
 
   async view(id: string): Promise<{ url: string }> {
@@ -276,6 +298,30 @@ export class GroupMessageDocumentsService {
     return { url };
   }
 
+  /**
+   * Delete a whole album — every file sharing `id`'s batchId — with the same
+   * rules and events as deleting each file. A file outside an album is just
+   * deleted on its own. Only the uploader's files of the batch are touched.
+   */
+  async removeAlbum(id: string, userId: string) {
+    const doc = await this.prisma.groupMessageDocument.findUnique({
+      where: { id },
+      select: { batchId: true, uploadedBy: true },
+    });
+    if (!doc) throw new NotFoundException('errors.documentNotFound');
+    if (!doc.batchId) return [await this.remove(id, userId)];
+
+    const album = await this.prisma.groupMessageDocument.findMany({
+      where: { batchId: doc.batchId, uploadedBy: doc.uploadedBy },
+      select: { id: true },
+    });
+    const removed: { id: string }[] = [];
+    for (const d of album) {
+      removed.push(await this.remove(d.id, userId));
+    }
+    return removed;
+  }
+
   async remove(id: string, userId: string) {
     const doc = await this.prisma.groupMessageDocument.findUnique({
       where: { id },
@@ -292,7 +338,7 @@ export class GroupMessageDocumentsService {
 
     if (doc.fileUrl) {
       try {
-        await this.storage.deleteFile(doc.fileUrl);
+        await this.storage.deleteFile(doc.fileUrl, doc.thumbPath);
       } catch {
         // ignore — proceed with soft delete
       }

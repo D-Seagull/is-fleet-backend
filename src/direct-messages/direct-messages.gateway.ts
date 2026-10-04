@@ -18,6 +18,10 @@ import { corsOrigin } from 'src/common/cors-origin';
 import { fullName } from 'src/common/utils/full-name';
 import { t } from 'src/i18n/i18n';
 import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
+import {
+  isPhoneOnScreen,
+  type PhoneSocketData,
+} from 'src/common/utils/phone-on-screen';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class DirectMessagesGateway
@@ -45,9 +49,7 @@ export class DirectMessagesGateway
    */
   private async isMobileAppOpen(userId: string): Promise<boolean> {
     const socks = await this.server.in(`user:${userId}`).fetchSockets();
-    return socks.some(
-      (s) => s.data?.active === true && s.data?.mobile === true,
-    );
+    return socks.some((s) => isPhoneOnScreen(s.data as PhoneSocketData));
   }
 
   handleConnection(client: Socket) {
