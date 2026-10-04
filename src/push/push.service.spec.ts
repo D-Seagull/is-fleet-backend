@@ -94,13 +94,24 @@ describe('PushService', () => {
     expect(sent[0]).toEqual(expect.objectContaining({ priority: 'high' }));
   });
 
-  it('puts non-chat pushes on the app-created `default` Android channel', async () => {
+  it('rings with the IS Fleet chime unless told otherwise', async () => {
     prisma.user.findMany.mockResolvedValue([
       { id: 'u1', status: 'ONLINE', statusUntil: null, language: 'uk' },
     ]);
 
     await service.sendToUsers(['u1'], { title: 't', body: 'b' });
+    await service.sendToUsers(['u1'], {
+      title: 'alarm',
+      body: 'b',
+      channelId: 'default',
+      sound: 'default',
+    });
 
-    expect(sent[0]).toEqual(expect.objectContaining({ channelId: 'default' }));
+    expect(sent[0]).toEqual(
+      expect.objectContaining({ channelId: 'messages', sound: 'push_message.mp3' }),
+    );
+    expect(sent[1]).toEqual(
+      expect.objectContaining({ channelId: 'default', sound: 'default' }),
+    );
   });
 });

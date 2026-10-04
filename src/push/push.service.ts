@@ -25,6 +25,13 @@ export interface PushPayload {
  * Invalid tokens (DeviceNotRegistered) are pruned from the DB so we don't
  * keep retrying them.
  */
+// On Android the SOUND belongs to the channel, not to the push. `messages`
+// is created by both apps (HIGH importance, push_message.mp3 — lib/push.ts),
+// so pushes about trips and statuses use it too, to sound like IS Fleet.
+// `sound` covers iOS, where the push itself names the file.
+const BRAND_CHANNEL = 'messages';
+const BRAND_SOUND = 'push_message.mp3';
+
 // Receipts are ready a few seconds to minutes after sending.
 const RECEIPT_DELAY_MS = 60_000;
 
@@ -139,17 +146,17 @@ export class PushService {
         // priority, which Android holds back in Doze — pushes to a locked
         // phone arrived minutes late and batched, often silently.
         priority: 'high',
-        sound: extra.sound === null ? undefined : (extra.sound ?? 'default'),
+        sound: extra.sound === null ? undefined : (extra.sound ?? BRAND_SOUND),
         title,
         body,
         data: extra.data,
         categoryId: extra.categoryId,
         // Always name an Android channel. Without one Expo falls back to its
         // own "Default" channel, which the apps never configured — trip and
-        // status pushes landed there and stayed silent on a locked phone,
-        // while chat (channel `messages`) rang. `default` is created by both
-        // apps with HIGH importance (lib/push.ts).
-        channelId: extra.channelId ?? 'default',
+        // status pushes landed there and stayed silent on a locked phone.
+        // Everything rings with the IS Fleet chime unless the caller says
+        // otherwise (alarms keep `default`).
+        channelId: extra.channelId ?? BRAND_CHANNEL,
       });
     }
 
