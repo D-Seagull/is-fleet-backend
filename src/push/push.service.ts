@@ -25,6 +25,9 @@ export interface PushPayload {
  * Invalid tokens (DeviceNotRegistered) are pruned from the DB so we don't
  * keep retrying them.
  */
+// Receipts are ready a few seconds to minutes after sending.
+const RECEIPT_DELAY_MS = 60_000;
+
 @Injectable()
 export class PushService {
   private readonly logger = new Logger(PushService.name);
@@ -141,7 +144,12 @@ export class PushService {
         body,
         data: extra.data,
         categoryId: extra.categoryId,
-        ...(extra.channelId && { channelId: extra.channelId }),
+        // Always name an Android channel. Without one Expo falls back to its
+        // own "Default" channel, which the apps never configured — trip and
+        // status pushes landed there and stayed silent on a locked phone,
+        // while chat (channel `messages`) rang. `default` is created by both
+        // apps with HIGH importance (lib/push.ts).
+        channelId: extra.channelId ?? 'default',
       });
     }
 
@@ -159,6 +167,20 @@ export class PushService {
     this.logger.log(
       `Push "${label}" → ${okCount}/${tickets.length} accepted by Expo`,
     );
+
+    // "ok" only means Expo accepted the push. Whether FCM / APNs delivered it
+    // shows up in the receipt a little later — log failures so a push that
+    // never reached the phone is visible in the server logs.
+    const receiptIds = tickets
+      .map((tk) => (tk.status === 'ok' ? tk.id : null))
+      .filter((id): id is string => !!id);
+    if (receiptIds.length > 0) {
+      // unref: a pending check must never keep the process (or a test) alive.
+      setTimeout(
+        () => void this.checkReceipts(label, receiptIds),
+        RECEIPT_DELAY_MS,
+      ).unref();
+    }
 
     // Prune tokens that Expo rejected outright (e.g. uninstalled app).
     await Promise.all(
@@ -179,5 +201,22 @@ export class PushService {
         }
       }),
     );
+  }
+
+  /** Log delivery failures from Expo receipts (FCM / APNs errors). */
+  private async checkReceipts(label: string, ids: string[]): Promise<void> {
+    try {
+      for (const chunk of this.expo.chunkPushNotificationReceiptIds(ids)) {
+        const receipts = await this.expo.getPushNotificationReceiptsAsync(chunk);
+        for (const [id, r] of Object.entries(receipts)) {
+          if (r.status === 'ok') continue;
+          this.logger.warn(
+            `Push "${label}" NOT delivered (receipt ${id}): ${r.message ?? '?'} (code=${r.details?.error ?? '?'})`,
+          );
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`Push receipts check failed: ${(e as Error).message}`);
+    }
   }
 }

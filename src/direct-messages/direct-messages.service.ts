@@ -156,6 +156,7 @@ export class DirectMessagesService {
         avatar: string | null;
         status: string | null;
         statusUntil: string | null;
+        lastSeenAt: string | null;
         role: string;
         phone: string | null;
         // Plate of the truck this peer is currently assigned to (drivers only;
@@ -238,6 +239,9 @@ export class DirectMessagesService {
           'avatar', peer.avatar,
           'status', peer.status,
           'statusUntil', peer."statusUntil",
+          -- Stored as UTC without a zone; spell the Z out so clients don't
+          -- read it as local time ("last in the app 12:30" in the header).
+          'lastSeenAt', to_char(peer."lastSeenAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
           'role', peer.role,
           'phone', peer.phone,
           'truckPlate', pt.plate
