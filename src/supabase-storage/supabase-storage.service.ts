@@ -166,20 +166,33 @@ export class SupabaseStorageService {
 
     return this.withOptimiseSlot(async () => {
       try {
-        const { hasAlpha } = await sharp(file.buffer).metadata();
+        const { hasAlpha, format, width, height, exif } = await sharp(
+          file.buffer,
+        ).metadata();
         // .rotate() applies EXIF orientation before metadata is dropped.
         const base = () => sharp(file.buffer, { failOn: 'none' }).rotate();
+
+        // The phone apps already resize to PHOTO_MAX and encode once at high
+        // quality (lib/compress-photo.ts), which also drops EXIF. Encoding
+        // that again would only add a second generation of loss — on
+        // photographed documents that is the small print — so keep it as is.
+        const alreadyOptimised =
+          format === 'jpeg' &&
+          !exif &&
+          Math.max(width ?? Infinity, height ?? Infinity) <= PHOTO_MAX;
 
         const full = base().resize(PHOTO_MAX, PHOTO_MAX, {
           fit: 'inside',
           withoutEnlargement: true,
         });
         // PNG only when there is transparency to keep; JPEG is far smaller.
-        const fullBuf = hasAlpha
-          ? await full.png({ compressionLevel: 9, palette: false }).toBuffer()
-          : await full
-              .jpeg({ quality: PHOTO_QUALITY, mozjpeg: true })
-              .toBuffer();
+        const fullBuf = alreadyOptimised
+          ? file.buffer
+          : hasAlpha
+            ? await full.png({ compressionLevel: 9, palette: false }).toBuffer()
+            : await full
+                .jpeg({ quality: PHOTO_QUALITY, mozjpeg: true })
+                .toBuffer();
 
         const thumb = await base()
           .resize(THUMB_MAX, THUMB_MAX, {
