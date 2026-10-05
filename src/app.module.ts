@@ -42,7 +42,14 @@ import { HealthController } from './health/health.controller';
     // Global rate-limit baseline; the auth controller tightens per-route
     // via @Throttle for endpoints that are bruteforce or SMS/email cost
     // sensitive (login, OTP, forgot-password).
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
+    // Limit/ttl are env-overridable so a load test can measure raw capacity
+    // past the rate limiter; prod leaves them unset → the 300/min baseline.
+    ThrottlerModule.forRoot([
+      {
+        ttl: Number(process.env.THROTTLE_TTL_MS ?? 60_000),
+        limit: Number(process.env.THROTTLE_LIMIT ?? 300),
+      },
+    ]),
     AuthModule,
     UsersModule,
     PrismaModule,
