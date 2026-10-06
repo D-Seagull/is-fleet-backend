@@ -38,6 +38,11 @@ const PHOTO_MAX = 2560;
 const PHOTO_QUALITY = 85;
 const THUMB_MAX = 800; // ~280 css px bubble × 3 dpr phones
 const THUMB_QUALITY = 75;
+// PNGs are mostly screenshots (pasted / dropped into the web chat, or taken
+// on a phone): small print, tables, plate numbers. JPEG would smear the edges
+// of that text, so they stay lossless PNG — only shrunk when wider than a 4K
+// screen, and re-packed at max lossless compression when that's smaller.
+const SCREENSHOT_MAX = 3840;
 // Animated GIFs would lose their frames, SVG is not raster — store as-is.
 const SKIP_OPTIMISE = /^image\/(gif|svg\+xml)$/i;
 
@@ -196,18 +201,29 @@ export class SupabaseStorageService {
           !exif &&
           Math.max(width ?? Infinity, height ?? Infinity) <= PHOTO_MAX;
 
-        const full = base().resize(PHOTO_MAX, PHOTO_MAX, {
-          fit: 'inside',
-          withoutEnlargement: true,
-        });
-        // PNG only when there is transparency to keep; JPEG is far smaller.
-        const fullBuf = alreadyOptimised
-          ? file.buffer
-          : hasAlpha
-            ? await full.png({ compressionLevel: 9, palette: false }).toBuffer()
-            : await full
-                .jpeg({ quality: PHOTO_QUALITY, mozjpeg: true })
-                .toBuffer();
+        // Screenshots (PNG) stay lossless — see SCREENSHOT_MAX. Re-packing a
+        // PNG that already fits wins ~1% for ~100 ms, so it's kept as is.
+        const lossless = format === 'png';
+        const pngFits =
+          lossless &&
+          Math.max(width ?? Infinity, height ?? Infinity) <= SCREENSHOT_MAX;
+        const full = base().resize(
+          lossless ? SCREENSHOT_MAX : PHOTO_MAX,
+          lossless ? SCREENSHOT_MAX : PHOTO_MAX,
+          { fit: 'inside', withoutEnlargement: true },
+        );
+        // Photos: JPEG (far smaller) unless there's transparency to keep.
+        const keepPng = lossless || hasAlpha;
+        const fullBuf =
+          alreadyOptimised || pngFits
+            ? file.buffer
+            : keepPng
+              ? await full
+                  .png({ compressionLevel: 9, palette: false })
+                  .toBuffer()
+              : await full
+                  .jpeg({ quality: PHOTO_QUALITY, mozjpeg: true })
+                  .toBuffer();
 
         const thumb = await base()
           .resize(THUMB_MAX, THUMB_MAX, {
@@ -219,11 +235,10 @@ export class SupabaseStorageService {
 
         if (fullBuf.length < file.buffer.length) {
           file.buffer = fullBuf;
-          file.mimetype = hasAlpha ? 'image/png' : 'image/jpeg';
-          const ext = hasAlpha ? '.png' : '.jpg';
+          file.mimetype = keepPng ? 'image/png' : 'image/jpeg';
+          const ext = keepPng ? '.png' : '.jpg';
           if (path.extname(file.originalname).toLowerCase() !== ext) {
-            file.originalname =
-              file.originalname.replace(/\.[^.]*$/, '') + ext;
+            file.originalname = file.originalname.replace(/\.[^.]*$/, '') + ext;
           }
           file.size = fullBuf.length;
         }
@@ -279,21 +294,35 @@ export class SupabaseStorageService {
     file.originalname = readableName(file.originalname);
     await this.normaliseHeic(file);
     const thumb = await this.optimisePhoto(file);
-    const { storagePath } = await this.uploadFile(file);
-    if (!thumb) return { storagePath, thumbPath: null };
+    const isImage = file.mimetype.startsWith('image/');
+    const ext = path.extname(file.originalname) || '';
+    const storagePath = `${isImage ? 'photos' : 'documents'}/${randomUUID()}${ext}`;
+    const thumbPath = thumb
+      ? storagePath.replace(/(\.[^./]*)?$/, '.thumb.webp')
+      : null;
 
-    const thumbPath = storagePath.replace(/(\.[^./]*)?$/, '.thumb.webp');
-    try {
-      await this.put(thumbPath, thumb, 'image/webp');
-      return { storagePath, thumbPath };
-    } catch (err) {
-      // The photo itself is stored — clients fall back to it without a preview.
-      this.logger.error(
-        `Preview upload failed for ${storagePath}`,
-        err instanceof Error ? err.stack : String(err),
-      );
-      return { storagePath, thumbPath: null };
+    // Photo and preview go up side by side — the sender waits for both.
+    const [full, preview] = await Promise.allSettled([
+      this.put(storagePath, file.buffer, file.mimetype),
+      thumb && thumbPath
+        ? this.put(thumbPath, thumb, 'image/webp')
+        : Promise.resolve(),
+    ]);
+    if (full.status === 'rejected') {
+      if (thumbPath && preview.status === 'fulfilled') {
+        await this.deleteFile(thumbPath).catch(() => undefined);
+      }
+      throw full.reason;
     }
+    if (!thumbPath) return { storagePath, thumbPath: null };
+    if (preview.status === 'fulfilled') return { storagePath, thumbPath };
+    // The photo itself is stored — clients fall back to it without a preview.
+    const err: unknown = preview.reason;
+    this.logger.error(
+      `Preview upload failed for ${storagePath}`,
+      err instanceof Error ? err.stack : String(err),
+    );
+    return { storagePath, thumbPath: null };
   }
 
   // Upload and return a long-lived signed URL (10 years) for display in UI.
@@ -380,8 +409,7 @@ export class SupabaseStorageService {
     const status = Number(
       (error as { statusCode?: string | number } | null)?.statusCode,
     );
-    const missing =
-      status === 404 || /not\s*found/i.test(error?.message ?? '');
+    const missing = status === 404 || /not\s*found/i.test(error?.message ?? '');
     if (missing) return { missing: true };
 
     throw new Error(`Cannot create signed URL: ${error?.message}`);
@@ -428,7 +456,9 @@ export class SupabaseStorageService {
    * signing error. A preview is an optimisation: the client falls back to the
    * full photo, so it must never fail a request or heal a row.
    */
-  async getThumbUrl(thumbPath: string | null | undefined): Promise<string | null> {
+  async getThumbUrl(
+    thumbPath: string | null | undefined,
+  ): Promise<string | null> {
     if (!thumbPath) return null;
     try {
       const result = await this.sign(thumbPath, 3600);

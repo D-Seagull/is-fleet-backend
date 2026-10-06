@@ -39,8 +39,12 @@ export class DocumentsService {
     // clients draw them as one bubble. A single file stays a plain one.
     const batchId = files.length > 1 ? randomUUID() : null;
 
+    // Files upload in parallel and finish in any order; stamp createdAt by
+    // position so the album keeps the order they were sent in (the sender's
+    // instant preview already shows them that way).
+    const sentAt = Date.now();
     const created = await Promise.all(
-      files.map(async (file) => {
+      files.map(async (file, index) => {
         const isImage = file.mimetype.startsWith('image/');
         const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
 
@@ -54,6 +58,7 @@ export class DocumentsService {
             publicId: storagePath,
             thumbPath,
             batchId,
+            createdAt: new Date(sentAt + index),
             fileName: file.originalname,
             uploadedBy,
             fileType,
