@@ -3,6 +3,7 @@
 import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { AdminInterceptor } from './common/interceptors/admin.interceptor';
@@ -31,8 +32,32 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   // bufferLogs holds startup logs until the pino logger is installed below,
   // so even bootstrap output is structured.
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
   app.useLogger(app.get(PinoLogger));
+  // Render puts one proxy in front of us: take the client address it adds to
+  // X-Forwarded-For. Without this req.ip is the proxy, and rate limits keyed
+  // by IP would lump every user together (common/throttle.ts).
+  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+  // TEMP (2026-10-09) — check the hop count above on Render: req.ip must be
+  // the phone's / browser's address, not the same 10.x proxy for everyone.
+  // Logs each new address once (first 50). Remove once confirmed.
+  const seenIps = new Set<string>();
+  app.use(
+    (
+      req: import('express').Request,
+      _res: import('express').Response,
+      next: () => void,
+    ) => {
+      const ip = req.ip ?? '?';
+      if (seenIps.size < 50 && !seenIps.has(ip)) {
+        seenIps.add(ip);
+        console.log('[client-ip]', ip, 'xff=', req.headers['x-forwarded-for']);
+      }
+      next();
+    },
+  );
   // Security headers. Two deliberate relaxations:
   //  - CSP off: this process serves JSON plus the Swagger UI at /api, and the
   //    default policy blocks Swagger's inline bootstrap scripts.
@@ -67,11 +92,23 @@ async function bootstrap() {
         console.log(tag, 'ABORTED by client after', Date.now() - started, 'ms'),
       );
       res.on('finish', () =>
-        console.log(tag, 'answered', res.statusCode, 'in', Date.now() - started, 'ms'),
+        console.log(
+          tag,
+          'answered',
+          res.statusCode,
+          'in',
+          Date.now() - started,
+          'ms',
+        ),
       );
       res.on('close', () => {
         if (!res.writableFinished)
-          console.log(tag, 'connection closed before answer', Date.now() - started, 'ms');
+          console.log(
+            tag,
+            'connection closed before answer',
+            Date.now() - started,
+            'ms',
+          );
       });
       next();
     },

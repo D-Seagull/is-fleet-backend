@@ -26,6 +26,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { authThrottle } from '../common/throttle';
 import { JwtGuard } from './guards/jwt.guard';
 import { GetUser } from './decorators/get-user.decorator';
 import type { JwtUser } from './interfaces/jwt-user.interface';
@@ -34,7 +35,9 @@ import type { JwtUser } from './interfaces/jwt-user.interface';
 export class AuthController {
   constructor(private AuthService: AuthService) {}
 
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  // Auth limits: per phone / email / token tried, plus per IP — sized so a
+  // shipload of drivers behind one NAT can all sign in. common/throttle.ts.
+  @Throttle(authThrottle('email', 5, 30))
   @Post('register')
   async register(
     @Body() dto: RegisterDto,
@@ -47,7 +50,7 @@ export class AuthController {
     return result;
   }
 
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(authThrottle('email', 10, 100))
   @Post('login')
   async login(
     @Body() dto: LoginDto,
@@ -72,8 +75,8 @@ export class AuthController {
     return this.AuthService.checkInvite(token);
   }
 
-  // Falls under the global 300/min baseline; polled by the client on
-  // every mount so a tight throttle would spuriously log people out.
+  // Polled by the client on every mount — a per-user throttle could log
+  // people out spuriously. Still under the per-IP flood backstop.
   @SkipThrottle()
   @Get('me')
   @UseGuards(JwtGuard)
@@ -81,30 +84,30 @@ export class AuthController {
     return this.AuthService.getMe(user.id);
   }
 
-  // Twilio SMS is billed — keep this stricter than login. Per-IP; a
-  // per-phone throttle would need custom tracker (future hardening).
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  // Twilio SMS is billed: 3/min per phone, and 30/min per IP so one address
+  // can't pump SMS to many numbers (still room for a ship's crew at once).
+  @Throttle(authThrottle('phone', 3, 30))
   @Post('driver/request-otp')
   @HttpCode(HttpStatus.OK)
   requestDriverOtp(@Body() dto: RequestOtpDto) {
     return this.AuthService.requestDriverOtp(dto.phone);
   }
 
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(authThrottle('phone', 10, 100))
   @Post('driver/verify-otp')
   @HttpCode(HttpStatus.OK)
   verifyDriverOtp(@Body() dto: VerifyOtpDto) {
     return this.AuthService.verifyDriverOtp(dto.phone, dto.code);
   }
 
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle(authThrottle('email', 5, 30))
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.AuthService.requestPasswordReset(dto.email);
   }
 
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(authThrottle('token', 10, 30))
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto) {

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from './common/logging';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { THROTTLERS } from './common/throttle';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -39,17 +40,9 @@ import { HealthController } from './health/health.controller';
     // Structured request-scoped logging (JSON in prod, pretty in dev) with
     // per-request ids. See src/common/logging.ts.
     LoggerModule.forRoot(loggerConfig),
-    // Global rate-limit baseline; the auth controller tightens per-route
-    // via @Throttle for endpoints that are bruteforce or SMS/email cost
-    // sensitive (login, OTP, forgot-password).
-    // Limit/ttl are env-overridable so a load test can measure raw capacity
-    // past the rate limiter; prod leaves them unset → the 300/min baseline.
-    ThrottlerModule.forRoot([
-      {
-        ttl: Number(process.env.THROTTLE_TTL_MS ?? 60_000),
-        limit: Number(process.env.THROTTLE_LIMIT ?? 300),
-      },
-    ]),
+    // Rate limits: per user (300/min) + per IP backstop (3000/min), so many
+    // devices behind one NAT don't throttle each other. See common/throttle.
+    ThrottlerModule.forRoot(THROTTLERS),
     AuthModule,
     UsersModule,
     PrismaModule,
