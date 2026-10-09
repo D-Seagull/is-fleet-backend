@@ -207,10 +207,10 @@ describe('AuthService', () => {
       );
     });
 
-    it('rejects a revoked token', async () => {
+    it('rejects a token rotated more than a minute ago (reuse)', async () => {
       prisma.refreshToken.findUnique.mockResolvedValue({
         id: 'r1',
-        revokedAt: new Date(),
+        revokedAt: new Date(Date.now() - 61_000),
         expiresAt: new Date(Date.now() + 1000),
         user: userRow(),
       });
@@ -218,6 +218,36 @@ describe('AuthService', () => {
         UnauthorizedException,
       );
       expect(prisma.refreshToken.update).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a token rotated seconds ago (second tab / retried request)', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 'r1',
+        revokedAt: new Date(Date.now() - 5_000),
+        expiresAt: new Date(Date.now() + 1000),
+        user: userRow({ role: 'MANAGER' }),
+      });
+
+      const res = await service.refresh('raw');
+
+      expect(res.access_token).toBe('access.jwt');
+      expect(prisma.refreshToken.create).toHaveBeenCalled();
+      // Already revoked — not touched again.
+      expect(prisma.refreshToken.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a logged-out token even within the grace window', async () => {
+      // revokeRefresh expires the row as it revokes it.
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 'r1',
+        revokedAt: new Date(Date.now() - 1_000),
+        expiresAt: new Date(Date.now() - 1_000),
+        user: userRow(),
+      });
+      await expect(service.refresh('raw')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
 
     it('rejects an expired token', async () => {
@@ -266,7 +296,14 @@ describe('AuthService', () => {
 
     it('revokes the presented token', async () => {
       await expect(service.revokeRefresh('raw')).resolves.toEqual({ ok: true });
-      expect(prisma.refreshToken.updateMany).toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            revokedAt: expect.any(Date),
+            expiresAt: expect.any(Date),
+          }),
+        }),
+      );
     });
   });
 
