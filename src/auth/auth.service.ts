@@ -24,6 +24,8 @@ const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
 const OTP_MAX_ATTEMPTS = 5;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// A token rotated this recently is still accepted once more — see refresh().
+const REFRESH_REUSE_GRACE_MS = 60_000;
 
 @Injectable()
 export class AuthService {
@@ -244,6 +246,14 @@ export class AuthService {
    * access+refresh pair. A revoked / expired / unknown token is rejected — that
    * is what makes a stolen or logged-out session stop working (unlike a bare
    * long-lived JWT, which can't be revoked).
+   *
+   * Grace: a token rotated less than REFRESH_REUSE_GRACE_MS ago gets a fresh
+   * pair too instead of a 401. That is a race, not theft — two browser tabs
+   * sharing the refresh cookie both refreshing on the same expired access
+   * token, or a response lost on a flaky mobile link and retried. A strict
+   * 401 there logged the user out (and the losing tab's logout then revoked
+   * the winner's new token too). Logout makes a token unusable at once by
+   * also expiring it (revokeRefresh), so it never falls in the grace window.
    */
   async refresh(rawRefresh: string | undefined) {
     if (!rawRefresh) throw new UnauthorizedException('errors.noAccess');
@@ -251,13 +261,20 @@ export class AuthService {
       where: { tokenHash: this.hashToken(rawRefresh) },
       include: { user: true },
     });
-    if (!record || record.revokedAt || record.expiresAt < new Date()) {
+    const now = Date.now();
+    if (!record || record.expiresAt.getTime() < now) {
       throw new UnauthorizedException('errors.noAccess');
     }
-    await this.prisma.refreshToken.update({
-      where: { id: record.id },
-      data: { revokedAt: new Date() },
-    });
+    if (record.revokedAt) {
+      if (now - record.revokedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
+        throw new UnauthorizedException('errors.noAccess');
+      }
+    } else {
+      await this.prisma.refreshToken.update({
+        where: { id: record.id },
+        data: { revokedAt: new Date(now) },
+      });
+    }
     const u = record.user;
     return this.signToken(
       u.id,
@@ -273,8 +290,10 @@ export class AuthService {
   async revokeRefresh(rawRefresh: string | undefined) {
     if (rawRefresh) {
       await this.prisma.refreshToken.updateMany({
-        where: { tokenHash: this.hashToken(rawRefresh), revokedAt: null },
-        data: { revokedAt: new Date() },
+        where: { tokenHash: this.hashToken(rawRefresh) },
+        // Expired as well as revoked: a logged-out token must not be honoured
+        // by refresh()'s rotation grace window.
+        data: { revokedAt: new Date(), expiresAt: new Date() },
       });
     }
     return { ok: true };
