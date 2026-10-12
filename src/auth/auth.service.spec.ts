@@ -57,6 +57,7 @@ describe('AuthService', () => {
   };
   let jwt: { sign: jest.Mock };
   let sms: { send: jest.Mock };
+  let config: { get: jest.Mock };
   let mail: { sendPasswordReset: jest.Mock };
   let emit: jest.Mock;
 
@@ -67,14 +68,12 @@ describe('AuthService', () => {
       user: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
-        update: jest
-          .fn()
-          .mockResolvedValue({
-            id: 'u1',
-            status: 'ONLINE',
-            statusUntil: null,
-            companyId: 'c1',
-          }),
+        update: jest.fn().mockResolvedValue({
+          id: 'u1',
+          status: 'ONLINE',
+          statusUntil: null,
+          companyId: 'c1',
+        }),
         create: jest.fn(),
       },
       company: { findFirst: jest.fn(), update: jest.fn() },
@@ -101,6 +100,7 @@ describe('AuthService', () => {
 
     jwt = { sign: jest.fn().mockReturnValue('access.jwt') };
     sms = { send: jest.fn().mockResolvedValue(undefined) };
+    config = { get: jest.fn() };
     mail = { sendPasswordReset: jest.fn().mockResolvedValue(undefined) };
     emit = jest.fn();
     const gateway = { server: { to: jest.fn().mockReturnValue({ emit }) } };
@@ -113,7 +113,7 @@ describe('AuthService', () => {
         { provide: SmsService, useValue: sms },
         { provide: MessagesGateway, useValue: gateway },
         { provide: MailService, useValue: mail },
-        { provide: ConfigService, useValue: { get: jest.fn() } },
+        { provide: ConfigService, useValue: config },
       ],
     }).compile();
 
@@ -426,6 +426,40 @@ describe('AuthService', () => {
         VALID_PHONE,
         expect.stringContaining('IS Fleet'),
       );
+    });
+
+    describe('store-review phone', () => {
+      const env = (vars: Record<string, string>) =>
+        config.get.mockImplementation((k: string) => vars[k]);
+
+      beforeEach(() => {
+        prisma.user.findUnique.mockResolvedValue(userRow());
+        prisma.otpCode.findFirst.mockResolvedValue(null);
+      });
+
+      it('stores the fixed code and sends no SMS', async () => {
+        env({ REVIEW_PHONE: VALID_PHONE, REVIEW_OTP: '424242' });
+        await service.requestDriverOtp(VALID_PHONE);
+        expect(prisma.otpCode.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ phone: VALID_PHONE, code: '424242' }),
+        });
+        expect(sms.send).not.toHaveBeenCalled();
+      });
+
+      it('leaves other phones on the normal SMS flow', async () => {
+        env({ REVIEW_PHONE: '+48500000000', REVIEW_OTP: '424242' });
+        await service.requestDriverOtp(VALID_PHONE);
+        expect(sms.send).toHaveBeenCalled();
+        expect(prisma.otpCode.create.mock.calls[0][0].data.code).not.toBe(
+          '424242',
+        );
+      });
+
+      it('stays off when REVIEW_OTP is not 6 digits', async () => {
+        env({ REVIEW_PHONE: VALID_PHONE, REVIEW_OTP: '1234' });
+        await service.requestDriverOtp(VALID_PHONE);
+        expect(sms.send).toHaveBeenCalled();
+      });
     });
   });
 
