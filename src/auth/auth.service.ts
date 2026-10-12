@@ -60,7 +60,13 @@ export class AuthService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { status: 'ONLINE', statusUntil: null },
-      select: { id: true, status: true, statusUntil: true, lastSeenAt: true, companyId: true },
+      select: {
+        id: true,
+        status: true,
+        statusUntil: true,
+        lastSeenAt: true,
+        companyId: true,
+      },
     });
     this.gateway.server
       .to(`company-${updated.companyId}`)
@@ -314,7 +320,8 @@ export class AuthService {
         timezone: true,
         avatar: true,
         status: true,
-        statusUntil: true, lastSeenAt: true,
+        statusUntil: true,
+        lastSeenAt: true,
         company: { select: { isActive: true } },
         // For driver routing: which truck am I on, who is my manager.
         // Null for non-drivers — safe to expose either way.
@@ -333,7 +340,8 @@ export class AuthService {
             phone: true,
             avatar: true,
             status: true,
-            statusUntil: true, lastSeenAt: true,
+            statusUntil: true,
+            lastSeenAt: true,
           },
         },
       },
@@ -418,12 +426,22 @@ export class AuthService {
       );
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const reviewCode = this.reviewOtpFor(phone);
+    const code =
+      reviewCode ?? String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
     await this.prisma.otpCode.create({
       data: { phone, code, userId: user.id, expiresAt },
     });
+
+    // Store reviewers (Google Play / App Store) can't receive our SMS, so the
+    // demo driver's code is fixed and nothing is sent. verifyDriverOtp is
+    // untouched — same TTL, attempt limit and single use as a real code.
+    if (reviewCode) {
+      this.logger.log(`OTP for review phone ${phone}: fixed code, no SMS`);
+      return { ok: true };
+    }
 
     // Delivery: with Twilio creds set, this sends a real SMS; without them
     // (dev/test) SmsService falls back to logging the body, so the OTP flow
@@ -442,6 +460,20 @@ export class AuthService {
     }
 
     return { ok: true };
+  }
+
+  /**
+   * The fixed OTP for the store-review demo driver, or null. Off unless both
+   * REVIEW_PHONE and a 6-digit REVIEW_OTP are set — a typo in either keeps
+   * the normal SMS flow rather than opening a weak backdoor.
+   */
+  private reviewOtpFor(phone: string): string | null {
+    const reviewPhone = normalizePhone(
+      this.config.get<string>('REVIEW_PHONE') ?? '',
+    );
+    const reviewOtp = this.config.get<string>('REVIEW_OTP') ?? '';
+    if (!reviewPhone || !/^\d{6}$/.test(reviewOtp)) return null;
+    return phone === reviewPhone ? reviewOtp : null;
   }
 
   /**

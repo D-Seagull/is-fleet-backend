@@ -36,28 +36,15 @@ async function bootstrap() {
     bufferLogs: true,
   });
   app.useLogger(app.get(PinoLogger));
-  // Render puts one proxy in front of us: take the client address it adds to
-  // X-Forwarded-For. Without this req.ip is the proxy, and rate limits keyed
-  // by IP would lump every user together (common/throttle.ts).
+  // How many proxies stand in front of us; req.ip is the address just before
+  // them in X-Forwarded-For. Production is Cloudflare (api.isfleet.eu is
+  // proxied) → Render's proxy → us, so Render sets TRUST_PROXY_HOPS=2 —
+  // verified 2026-10-09: req.ip became the client, not a 162.158.x.x
+  // Cloudflare edge. Without it every user looked like a rotating set of
+  // Cloudflare servers and IP rate limits (common/throttle.ts) meant nothing.
+  // If Cloudflare proxying is ever switched off, set it back to 1: trusting
+  // more hops than really exist lets a client forge its address.
   app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
-  // TEMP (2026-10-09) — check the hop count above on Render: req.ip must be
-  // the phone's / browser's address, not the same 10.x proxy for everyone.
-  // Logs each new address once (first 50). Remove once confirmed.
-  const seenIps = new Set<string>();
-  app.use(
-    (
-      req: import('express').Request,
-      _res: import('express').Response,
-      next: () => void,
-    ) => {
-      const ip = req.ip ?? '?';
-      if (seenIps.size < 50 && !seenIps.has(ip)) {
-        seenIps.add(ip);
-        console.log('[client-ip]', ip, 'xff=', req.headers['x-forwarded-for']);
-      }
-      next();
-    },
-  );
   // Security headers. Two deliberate relaxations:
   //  - CSP off: this process serves JSON plus the Swagger UI at /api, and the
   //    default policy blocks Swagger's inline bootstrap scripts.
@@ -72,47 +59,6 @@ async function bootstrap() {
   // Parses Cookie header into req.cookies so the auth controller can read the
   // httpOnly refresh_token cookie on /auth/refresh and /auth/logout.
   app.use(cookieParser());
-  // TEMP (2026-10-04) — diagnosing "Network Error" on some Android PDF
-  // uploads: did the request arrive, how big, and did it finish or abort?
-  // Remove once found.
-  app.use(
-    (
-      req: import('express').Request,
-      res: import('express').Response,
-      next: () => void,
-    ) => {
-      if (!req.url.includes('upload-many')) return next();
-      const started = Date.now();
-      const tag = `[upload] ${req.method} ${req.url}`;
-      console.log(tag, 'arrived', {
-        type: req.headers['content-type'],
-        length: req.headers['content-length'],
-      });
-      req.on('aborted', () =>
-        console.log(tag, 'ABORTED by client after', Date.now() - started, 'ms'),
-      );
-      res.on('finish', () =>
-        console.log(
-          tag,
-          'answered',
-          res.statusCode,
-          'in',
-          Date.now() - started,
-          'ms',
-        ),
-      );
-      res.on('close', () => {
-        if (!res.writableFinished)
-          console.log(
-            tag,
-            'connection closed before answer',
-            Date.now() - started,
-            'ms',
-          );
-      });
-      next();
-    },
-  );
   app.enableCors({
     origin: corsOrigin,
     credentials: true,
