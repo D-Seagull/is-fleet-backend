@@ -15,6 +15,7 @@ import { Inject, forwardRef } from '@nestjs/common';
 import { MessagesGateway } from './messages.gateway';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
+import { pushTitle } from '../push/push-titles';
 
 @Injectable()
 export class MessagesService {
@@ -76,7 +77,9 @@ export class MessagesService {
         // Gateway uses trip.truckId to route the lightweight
         // tripUnreadChanged signal to the truck-watchers room (Phase 2
         // fan-out reduction) without an extra DB round-trip.
-        trip: { select: { truckId: true } },
+        trip: {
+          select: { truckId: true, truck: { select: { plate: true } } },
+        },
         replyTo: {
           select: {
             id: true,
@@ -108,10 +111,15 @@ export class MessagesService {
         const online = await this.gateway.isMobileAppOpen(recipientId);
         if (online) return;
         const senderName = fullName(message.sender);
+        const plate = message.trip?.truck?.plate;
         await this.push.sendLocalizedToUsers(
           [recipientId],
           (lang) => ({
-            title: senderName || t(lang, 'push.newMessage'),
+            title: pushTitle.trip(
+              plate,
+              senderName,
+              t(lang, 'push.newMessage'),
+            ),
             body: dto.content.slice(0, 200),
           }),
           {

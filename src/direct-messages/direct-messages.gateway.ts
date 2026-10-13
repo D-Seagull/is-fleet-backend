@@ -22,6 +22,7 @@ import {
   isPhoneOnScreen,
   type PhoneSocketData,
 } from 'src/common/utils/phone-on-screen';
+import { pushTitle } from '../push/push-titles';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class DirectMessagesGateway
@@ -162,7 +163,7 @@ export class DirectMessagesGateway
       await this.push.sendLocalizedToUsers(
         [data.receiverId],
         (lang) => ({
-          title: senderName || t(lang, 'push.newMessage'),
+          title: pushTitle.direct(senderName, t(lang, 'push.newMessage')),
           body: data.content.slice(0, 200),
         }),
         {
@@ -302,6 +303,7 @@ export class DirectMessagesGateway
       where: { id: data.groupId },
       select: {
         type: true,
+        name: true,
         createdBy: true,
         managers: { select: { managerId: true } },
       },
@@ -333,7 +335,11 @@ export class DirectMessagesGateway
         await this.push.sendLocalizedToUsers(
           offlineIds,
           (lang) => ({
-            title: senderName || t(lang, 'push.newMessage'),
+            title: pushTitle.group(
+              group.name,
+              senderName,
+              t(lang, 'push.newMessage'),
+            ),
             body: data.content.slice(0, 200),
           }),
           {
