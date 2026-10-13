@@ -19,6 +19,7 @@ import { ReactionsService } from '../reactions/reactions.service';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
 import { OPEN_TRIP_STATUSES, sortByProgress } from './trip-order';
+import { pushTitle } from '../push/push-titles';
 
 /** "Are we heading to loading?" — re-ask after this long, at most this often. */
 const DEPART_RETRY_MS = 20 * 60 * 1000;
@@ -1328,6 +1329,7 @@ export class TripsService {
         status: { in: [...ACTIVE_STATUSES] },
         truck: { managerId: userId },
       },
+      include: { truck: { select: { plate: true } } },
     });
 
     const results = await Promise.all(
@@ -1380,7 +1382,11 @@ export class TripsService {
             await this.push.sendLocalizedToUsers(
               [trip.driverId],
               (lang) => ({
-                title: senderName || t(lang, 'push.newMessage'),
+                title: pushTitle.trip(
+                  trip.truck?.plate,
+                  senderName,
+                  t(lang, 'push.newMessage'),
+                ),
                 body: content.slice(0, 200),
               }),
               {
