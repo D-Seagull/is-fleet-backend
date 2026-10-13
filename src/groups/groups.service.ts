@@ -296,7 +296,7 @@ export class GroupsService {
       data: {
         groupId,
         senderId: group.createdBy,
-        content: `added ${displayName}`,
+        content: `[[sys]]${JSON.stringify({ k: 'sys.memberAdded', p: { name: displayName } })}`,
         isSystem: true,
       },
       include: {
@@ -375,7 +375,7 @@ export class GroupsService {
         data: {
           groupId,
           senderId: group.createdBy,
-          content: `removed ${displayName}`,
+          content: `[[sys]]${JSON.stringify({ k: 'sys.memberRemoved', p: { name: displayName } })}`,
           isSystem: true,
         },
         include: {
