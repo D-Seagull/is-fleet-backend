@@ -1395,6 +1395,7 @@ export class TripsService {
                 data: {
                   type: 'MESSAGE',
                   tripId: trip.id,
+                  truckId: trip.truckId,
                   messageId: message.id,
                 },
               },
