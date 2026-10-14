@@ -128,6 +128,8 @@ export class MessagesService {
             data: {
               type: 'MESSAGE',
               tripId: dto.tripId,
+              // The manager app opens a trip chat through its truck.
+              truckId: message.trip?.truckId,
               messageId: message.id,
             },
           },
