@@ -124,7 +124,7 @@ export class MessagesService {
           }),
           {
             sound: 'push_message.mp3',
-            channelId: 'messages',
+            channelId: 'chat',
             data: {
               type: 'MESSAGE',
               tripId: dto.tripId,

@@ -187,7 +187,12 @@ export class UsersController {
     @GetUser('id') userId: string,
     @Body() dto: RegisterPushTokenDto,
   ) {
-    return this.usersService.registerPushToken(userId, dto.token, dto.platform);
+    return this.usersService.registerPushToken(
+      userId,
+      dto.token,
+      dto.platform,
+      dto.channels,
+    );
   }
 
   /** Unregister this device (call from logout flow). */

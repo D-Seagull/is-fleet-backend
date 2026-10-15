@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class RegisterPushTokenDto {
   @IsString()
@@ -7,4 +7,11 @@ export class RegisterPushTokenDto {
   @IsOptional()
   @IsIn(['ios', 'android', 'web'])
   platform?: 'ios' | 'android' | 'web';
+
+  /** Android notification channels the app has created (e.g. "chat",
+   *  "alarm"). Older app versions don't send it. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  channels?: string[];
 }

@@ -168,7 +168,7 @@ export class DirectMessagesGateway
         }),
         {
           sound: 'push_message.mp3',
-          channelId: 'messages',
+          channelId: 'chat',
           data: {
             type: 'DM_MESSAGE',
             userId: senderId,
@@ -344,7 +344,7 @@ export class DirectMessagesGateway
           }),
           {
             sound: 'push_message.mp3',
-            channelId: 'messages',
+            channelId: 'chat',
             data: {
               type: 'GROUP_MESSAGE',
               groupId: data.groupId,

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { PushService } from './push.service';
+import { PushService, channelFor } from './push.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 const sent: unknown[] = [];
@@ -30,10 +30,14 @@ describe('PushService', () => {
     prisma = {
       user: { findMany: jest.fn() },
       pushToken: {
-        findMany: jest.fn(({ where }: { where: { userId: { in: string[] } } }) =>
-          Promise.resolve(
-            where.userId.in.map((userId) => ({ token: `tok-${userId}`, userId })),
-          ),
+        findMany: jest.fn(
+          ({ where }: { where: { userId: { in: string[] } } }) =>
+            Promise.resolve(
+              where.userId.in.map((userId) => ({
+                token: `tok-${userId}`,
+                userId,
+              })),
+            ),
         ),
         deleteMany: jest.fn(),
       },
@@ -108,10 +112,67 @@ describe('PushService', () => {
     });
 
     expect(sent[0]).toEqual(
-      expect.objectContaining({ channelId: 'messages', sound: 'push_message.mp3' }),
+      expect.objectContaining({
+        channelId: 'messages',
+        sound: 'push_message.mp3',
+      }),
     );
     expect(sent[1]).toEqual(
       expect.objectContaining({ channelId: 'default', sound: 'default' }),
     );
+  });
+
+  it('uses the new channels only on devices that created them', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'new', status: 'ONLINE', statusUntil: null, language: 'uk' },
+      { id: 'old', status: 'ONLINE', statusUntil: null, language: 'uk' },
+    ]);
+    prisma.pushToken.findMany.mockResolvedValueOnce([
+      { token: 'tok-new', userId: 'new', channels: ['chat', 'alarm'] },
+      { token: 'tok-old', userId: 'old', channels: [] },
+    ]);
+
+    await service.sendToUsers(['new', 'old'], { title: 't', body: 'b' });
+
+    const byTo = Object.fromEntries(
+      (sent as { to: string; channelId: string }[]).map((m) => [
+        m.to,
+        m.channelId,
+      ]),
+    );
+    expect(byTo).toEqual({ 'tok-new': 'chat', 'tok-old': 'messages' });
+  });
+
+  it('rings alarms on the alarm channel, time-sensitive on iOS', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'u1', status: 'SLEEP', statusUntil: null, language: 'uk' },
+    ]);
+    prisma.pushToken.findMany.mockResolvedValueOnce([
+      { token: 'tok-u1', userId: 'u1', channels: ['chat', 'alarm'] },
+    ]);
+
+    await service.sendToUsers(['u1'], {
+      title: 'Wake up',
+      body: '',
+      ignoreDnd: true,
+      channelId: 'alarm',
+      sound: 'is_alarm.mp3',
+      interruptionLevel: 'time-sensitive',
+    });
+
+    expect(sent[0]).toEqual(
+      expect.objectContaining({
+        channelId: 'alarm',
+        sound: 'is_alarm.mp3',
+        interruptionLevel: 'time-sensitive',
+      }),
+    );
+  });
+
+  it('channelFor falls back for older app versions, passes others through', () => {
+    expect(channelFor('chat', ['chat'])).toBe('chat');
+    expect(channelFor('chat', [])).toBe('messages');
+    expect(channelFor('alarm', ['chat'])).toBe('default');
+    expect(channelFor('default', [])).toBe('default');
   });
 });

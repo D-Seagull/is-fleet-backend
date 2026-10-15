@@ -243,9 +243,13 @@ export class AlarmsService {
           body: alarm.note ?? '',
           // An alarm clock must ring in every presence status (incl. VACATION).
           ignoreDnd: true,
-          // Not the IS Fleet chat chime — the alarm keeps the system sound.
-          channelId: 'default',
-          sound: 'default',
+          // `alarm` channel: alarm audio stream (rings on silent / vibrate),
+          // the alarm sound, on the lock screen. Older app versions fall back
+          // to `default` (PushService.channelFor). iOS: the same sound by
+          // name, and time-sensitive to break through Focus.
+          channelId: 'alarm',
+          sound: 'is_alarm.mp3',
+          interruptionLevel: 'time-sensitive',
           data: {
             type: 'ALARM',
             alarmId: alarm.id,

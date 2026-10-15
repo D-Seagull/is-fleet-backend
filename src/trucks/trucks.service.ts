@@ -219,6 +219,31 @@ export class TrucksService {
           },
         );
       }
+
+      // The driver who previously held THIS truck lost it — either detached
+      // outright (currentDriverId → null) or replaced by someone else. The
+      // assign branch above only reaches the new driver, so without this the
+      // removed one gets a silent websocket repaint and no push.
+      if (
+        driverChanged &&
+        oldTruck.currentDriverId &&
+        oldTruck.currentDriverId !== dto.currentDriverId
+      ) {
+        await this.push.sendLocalizedToUsers(
+          [oldTruck.currentDriverId],
+          (lang) => ({
+            title: t(lang, 'push.truckUnassignedTitle', { plate: updated.plate }),
+            body: t(lang, 'push.driverUnassignedBody'),
+          }),
+          {
+            data: {
+              type: 'TRUCK_UNASSIGNED',
+              truckId: id,
+              plate: updated.plate,
+            },
+          },
+        );
+      }
     }
 
     // Якщо менеджер вантажівки змінився — синхронізуємо це з активними

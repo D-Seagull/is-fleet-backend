@@ -18,6 +18,8 @@ export interface PushPayload {
   /** Bypass the SLEEP/VACATION do-not-disturb gate. Use for
    *  alarms — an alarm clock must ring regardless of presence status. */
   ignoreDnd?: boolean;
+  /** iOS: `time-sensitive` breaks through Focus modes (alarms). */
+  interruptionLevel?: 'active' | 'time-sensitive';
 }
 
 /**
@@ -29,8 +31,28 @@ export interface PushPayload {
 // is created by both apps (HIGH importance, push_message.mp3 — lib/push.ts),
 // so pushes about trips and statuses use it too, to sound like IS Fleet.
 // `sound` covers iOS, where the push itself names the file.
-const BRAND_CHANNEL = 'messages';
+//
+// Channels are fixed once created on a phone, so improving one means a NEW
+// channel id: `chat` (MAX importance, shown in full on the lock screen) took
+// over from `messages`, and `alarm` (alarm audio stream, rings through
+// silent mode) from `default`. A device gets the new channel only if its
+// app reported creating it (PushToken.channels) — Android silently drops a
+// push aimed at a channel the phone doesn't have, so older app versions
+// keep getting the old one (FALLBACK_CHANNEL).
+const BRAND_CHANNEL = 'chat';
 const BRAND_SOUND = 'push_message.mp3';
+const FALLBACK_CHANNEL: Record<string, string> = {
+  chat: 'messages',
+  alarm: 'default',
+};
+
+/** The channel to use on this device: the asked one if it has it. */
+export function channelFor(asked: string, deviceChannels: string[]): string {
+  if (!(asked in FALLBACK_CHANNEL) || deviceChannels.includes(asked)) {
+    return asked;
+  }
+  return FALLBACK_CHANNEL[asked];
+}
 
 // Receipts are ready a few seconds to minutes after sending.
 const RECEIPT_DELAY_MS = 60_000;
@@ -52,6 +74,7 @@ export class PushService {
         sound: payload.sound,
         channelId: payload.channelId,
         ignoreDnd: payload.ignoreDnd,
+        interruptionLevel: payload.interruptionLevel,
       },
     );
   }
@@ -71,6 +94,7 @@ export class PushService {
       sound?: string | null;
       channelId?: string;
       ignoreDnd?: boolean;
+      interruptionLevel?: 'active' | 'time-sensitive';
     } = {},
   ): Promise<void> {
     if (userIds.length === 0) return;
@@ -117,7 +141,7 @@ export class PushService {
 
     const tokens = await this.prisma.pushToken.findMany({
       where: { userId: { in: deliverIds } },
-      select: { token: true, userId: true },
+      select: { token: true, userId: true, channels: true },
     });
     this.logger.log(
       `Push "${label}" → users=[${userIds.join(',')}] tokens=${tokens.length}`,
@@ -131,7 +155,7 @@ export class PushService {
 
     const messages: ExpoPushMessage[] = [];
     const validTokens: string[] = [];
-    for (const { token, userId } of tokens) {
+    for (const { token, userId, channels } of tokens) {
       if (!Expo.isExpoPushToken(token)) {
         this.logger.warn(`Drop invalid token format: ${token}`);
         await this.prisma.pushToken.deleteMany({ where: { token } });
@@ -156,7 +180,10 @@ export class PushService {
         // status pushes landed there and stayed silent on a locked phone.
         // Everything rings with the IS Fleet chime unless the caller says
         // otherwise (alarms keep `default`).
-        channelId: extra.channelId ?? BRAND_CHANNEL,
+        channelId: channelFor(extra.channelId ?? BRAND_CHANNEL, channels ?? []),
+        ...(extra.interruptionLevel
+          ? { interruptionLevel: extra.interruptionLevel }
+          : {}),
       });
     }
 
