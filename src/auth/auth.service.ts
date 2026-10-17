@@ -18,6 +18,7 @@ import { SmsService } from 'src/sms/sms.service';
 import { normalizePhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { MailService } from 'src/mail/mail.service';
+import { SELF_PROFILE_SELECT } from 'src/users/self-profile';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
@@ -214,17 +215,21 @@ export class AuthService {
   ) {
     const payload = { sub: userId, role, companyId };
     const refresh_token = await this.issueRefreshToken(userId);
+    // The full own profile, same as /auth/me — clients keep this as their
+    // user, and a bare id/role/name here wiped the mobile avatar on every
+    // token refresh. The bare shape is only a fallback if the row is gone.
+    const user = (await this.getMe(userId)) ?? {
+      id: userId,
+      role,
+      companyId,
+      firstName,
+      lastName,
+      uiLocale,
+    };
     return {
       access_token: this.jwt.sign(payload),
       refresh_token,
-      user: {
-        id: userId,
-        role,
-        companyId,
-        firstName,
-        lastName,
-        uiLocale,
-      },
+      user,
     };
   }
 
@@ -307,44 +312,7 @@ export class AuthService {
   async getMe(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        role: true,
-        companyId: true,
-        email: true,
-        language: true,
-        uiLocale: true,
-        timezone: true,
-        avatar: true,
-        status: true,
-        statusUntil: true,
-        lastSeenAt: true,
-        company: { select: { isActive: true } },
-        // For driver routing: which truck am I on, who is my manager.
-        // Null for non-drivers — safe to expose either way.
-        currentTruck: {
-          select: {
-            id: true,
-            plate: true,
-            status: true,
-          },
-        },
-        manager: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phone: true,
-            avatar: true,
-            status: true,
-            statusUntil: true,
-            lastSeenAt: true,
-          },
-        },
-      },
+      select: SELF_PROFILE_SELECT,
     });
   }
   async checkInvite(token: string) {

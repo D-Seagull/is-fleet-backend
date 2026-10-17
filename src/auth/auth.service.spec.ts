@@ -237,6 +237,33 @@ describe('AuthService', () => {
       expect(prisma.refreshToken.update).not.toHaveBeenCalled();
     });
 
+    it('returns the full own profile — clients keep it, a bare user wiped the avatar', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 'r1',
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+        user: userRow(),
+      });
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        role: 'DRIVER',
+        avatar: 'https://cdn/avatar.jpg',
+        currentTruck: { id: 't1', plate: 'BE 9130', status: 'ON_TRIP' },
+      });
+
+      const res = await service.refresh('raw');
+
+      expect(res.user).toEqual(
+        expect.objectContaining({
+          avatar: 'https://cdn/avatar.jpg',
+          currentTruck: expect.objectContaining({ plate: 'BE 9130' }),
+        }),
+      );
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'u1' } }),
+      );
+    });
+
     it('rejects a logged-out token even within the grace window', async () => {
       // revokeRefresh expires the row as it revokes it.
       prisma.refreshToken.findUnique.mockResolvedValue({
