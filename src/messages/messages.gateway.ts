@@ -92,23 +92,17 @@ export class MessagesGateway implements OnGatewayInit {
       // Defaults to true on fresh connect (clients connect when they open
       // the app); mobile flips it back to false in onBackground.
       client.data.active = true;
-      // Clients say what they are in the handshake. A phone counts as "in use"
-      // while on screen; the web / desktop only while it pulses (visible,
-      // focused, touched recently) — see isSocketActive. Either one holds the
-      // push back, so the phone stays quiet while the manager works on the
-      // desktop and rings again once they walk away.
+      // Clients say what they are in the handshake. The web / desktop counts
+      // as "in use" while it pulses (visible, focused, touched recently) — see
+      // isSocketActive — and holds the push back, so the phone stays quiet
+      // while the manager works on the desktop and rings again once they walk
+      // away. Phones never hold pushes back: the app decides on screen itself.
       client.data.mobile = client.handshake.auth?.client === 'mobile';
       client.data.web = client.handshake.auth?.client === 'web';
       // Shows the `notice` socket event in-app (PushService sends it instead
-      // of a push while the app is in use). Older builds don't, and keep
+      // of a push while the web is in use). Older builds don't, and keep
       // getting pushes.
       client.data.notices = client.handshake.auth?.notices === true;
-      // Pulsing apps start their foreground clock now: a socket that
-      // reconnects while the phone is locked stops counting as "on screen"
-      // after PULSE_TTL_MS unless the app really pulses.
-      if (client.data.mobile && client.handshake.auth?.pulse === true) {
-        client.data.pulseAt = Date.now();
-      }
       void client.join(userId);
       // Global admins room — cross-company presence nudges for the admin
       // dashboard's live "online now" list (admins oversee every company, so
@@ -445,9 +439,8 @@ export class MessagesGateway implements OnGatewayInit {
     this.server.to(tripId).emit('messageEdited', { tripId, message });
   }
 
-  // `{ pulse: true }` — sent every 15 s by apps on screen / a web window in use
-  // (see isSocketActive); older builds send it bare on each foreground switch.
-  // iOS keeps the socket alive a while after the app moves to background, so
+  // `{ pulse: true }` — sent every 15 s by a web window in use (see
+  // isSocketActive) and by phones on screen (not used for pushes any more);
   // socket existence alone can't mean "in use" — clients flip `data.active`.
   @SubscribeMessage('appActive')
   handleAppActive(

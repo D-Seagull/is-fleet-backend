@@ -2,19 +2,19 @@ import { Injectable } from '@nestjs/common';
 import type { RemoteSocket, Server } from 'socket.io';
 import {
   isSocketActive,
-  type PhoneSocketData,
-} from 'src/common/utils/phone-on-screen';
+  type SocketPresenceData,
+} from 'src/common/utils/socket-in-use';
 
 // RemoteSocket's event-map generics are irrelevant here — we only read `data`
 // and emit one event.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnySocket = RemoteSocket<any, PhoneSocketData & { userId?: string }>;
+type AnySocket = RemoteSocket<any, SocketPresenceData & { userId?: string }>;
 
 /**
- * Who is using IS Fleet right now — the phone app on screen or the web /
- * desktop app in use (see `isSocketActive`). PushService asks it before every
- * push: a person who is looking at the app gets the news in-app instead of a
- * banner on top of it.
+ * Who is using the web / desktop app right now (see `isSocketActive` — phones
+ * don't count, they decide for themselves when a push lands). PushService asks
+ * it before every push: a person working on the desktop gets the news there
+ * and the phone stays quiet.
  *
  * It lives in PushModule (imported by every module that sends pushes) and gets
  * the Socket.io server from MessagesGateway on init — all gateways share one
