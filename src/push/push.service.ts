@@ -4,8 +4,10 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { PresenceService } from './presence.service';
 
 /**
- * What to do for a recipient who is using IS Fleet right now (phone app on
- * screen, or web / desktop in use) — a banner on top of the open app is noise:
+ * What to do for a recipient who is using the web / desktop app right now —
+ * the phone shouldn't buzz while the news is on the screen in front of them.
+ * (Phones always get the push; an app on screen keeps the banner and sound
+ * away itself — see `isSocketActive`.)
  *  - `notice` (default): show it in-app instead — the `notice` socket event
  *    goes to the sockets in use; clients too old to show it still get the push;
  *  - `skip`: nothing — the app already shows it (chat messages, or questions
@@ -126,9 +128,8 @@ export class PushService {
     // A representative label (source language) just for the server logs.
     const label = build('uk').title;
 
-    // Presence gate: whoever is using the app right now (phone on screen,
-    // web / desktop in use) gets it in-app — a banner over the open app was
-    // the doubled window when a trip arrived. Everyone else gets the push.
+    // Presence gate: whoever is working on the web / desktop right now gets
+    // it there, and their phone stays quiet. Everyone else gets the push.
     const recipients = await this.applyPresence(
       allRecipients,
       build,
@@ -271,9 +272,9 @@ export class PushService {
 
   /**
    * Splits recipients by presence and returns the ones who still need a push.
-   * Those using the app right now get the `notice` socket event on the sockets
-   * in use (not every socket — the backgrounded phone shouldn't queue a modal
-   * for something already read on the desktop), or nothing for `skip`.
+   * Those working on the web / desktop right now get the `notice` socket event
+   * on the sockets in use (not on the phone — it would queue a modal for
+   * something already read on the desktop), or nothing for `skip`.
    */
   private async applyPresence<
     U extends { id: string; language: string },
