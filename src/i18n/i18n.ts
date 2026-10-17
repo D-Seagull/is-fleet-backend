@@ -34,6 +34,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.managerAssignedTripInfo':
       'Для рейсу {{title}} призначений менеджер {{name}}',
     'push.truckUnassignedTitle': 'Вантажівку {{plate}} відкріплено',
+    'push.driverUnassignedBody': 'Вас більше не призначено на цю вантажівку',
     'push.tripUnassignedTitle': 'Рейс {{title}} відкріплено',
     'push.unassignedNewManager': 'новий менеджер {{manager}}',
     'push.tripStatusTitle': 'Статус рейсу',
@@ -155,6 +156,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.managerAssignedTripInfo':
       'Manager {{name}} assigned to trip {{title}}',
     'push.truckUnassignedTitle': 'Truck {{plate}} unassigned',
+    'push.driverUnassignedBody': 'You are no longer assigned to this truck',
     'push.tripUnassignedTitle': 'Trip {{title}} unassigned',
     'push.unassignedNewManager': 'new manager {{manager}}',
     'push.tripStatusTitle': 'Trip status',
@@ -265,6 +267,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.managerAssignedTripInfo':
       'Menedżer {{name}} przydzielony do trasy {{title}}',
     'push.truckUnassignedTitle': 'Odpięto ciężarówkę {{plate}}',
+    'push.driverUnassignedBody': 'Nie jesteś już przypisany do tej ciężarówki',
     'push.tripUnassignedTitle': 'Odpięto trasę {{title}}',
     'push.unassignedNewManager': 'nowy menedżer {{manager}}',
     'push.tripStatusTitle': 'Status trasy',
@@ -383,6 +386,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.managerAssignedTripInfo':
       'Vadovas {{name}} priskirtas reisui {{title}}',
     'push.truckUnassignedTitle': 'Vilkikas {{plate}} atsietas',
+    'push.driverUnassignedBody': 'Jūs nebesate priskirtas prie šio vilkiko',
     'push.tripUnassignedTitle': 'Reisas {{title}} atsietas',
     'push.unassignedNewManager': 'naujas vadovas {{manager}}',
     'push.tripStatusTitle': 'Reiso būsena',
@@ -496,6 +500,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.managerAssignedTripInfo':
       'Для рейса {{title}} назначен менеджер {{name}}',
     'push.truckUnassignedTitle': 'Грузовик {{plate}} откреплён',
+    'push.driverUnassignedBody': 'Вы больше не закреплены за этой машиной',
     'push.tripUnassignedTitle': 'Рейс {{title}} откреплён',
     'push.unassignedNewManager': 'новый менеджер {{manager}}',
     'push.tripStatusTitle': 'Статус рейса',

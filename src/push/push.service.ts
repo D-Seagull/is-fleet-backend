@@ -1,6 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { PresenceService } from './presence.service';
+
+/**
+ * What to do for a recipient who is using IS Fleet right now (phone app on
+ * screen, or web / desktop in use) — a banner on top of the open app is noise:
+ *  - `notice` (default): show it in-app instead — the `notice` socket event
+ *    goes to the sockets in use; clients too old to show it still get the push;
+ *  - `skip`: nothing — the app already shows it (chat messages, or questions
+ *    that have their own socket event like "heading to loading?");
+ *  - `push`: push anyway (alarms must ring whatever the user is doing).
+ */
+export type WhenActive = 'notice' | 'skip' | 'push';
 
 export interface PushPayload {
   title: string;
@@ -18,6 +30,10 @@ export interface PushPayload {
   /** Bypass the SLEEP/VACATION do-not-disturb gate. Use for
    *  alarms — an alarm clock must ring regardless of presence status. */
   ignoreDnd?: boolean;
+  /** iOS: `time-sensitive` breaks through Focus modes (alarms). */
+  interruptionLevel?: 'active' | 'time-sensitive';
+  /** Recipient using the app right now — see {@link WhenActive}. */
+  whenActive?: WhenActive;
 }
 
 /**
@@ -29,8 +45,28 @@ export interface PushPayload {
 // is created by both apps (HIGH importance, push_message.mp3 — lib/push.ts),
 // so pushes about trips and statuses use it too, to sound like IS Fleet.
 // `sound` covers iOS, where the push itself names the file.
-const BRAND_CHANNEL = 'messages';
+//
+// Channels are fixed once created on a phone, so improving one means a NEW
+// channel id: `chat` (MAX importance, shown in full on the lock screen) took
+// over from `messages`, and `alarm` (alarm audio stream, rings through
+// silent mode) from `default`. A device gets the new channel only if its
+// app reported creating it (PushToken.channels) — Android silently drops a
+// push aimed at a channel the phone doesn't have, so older app versions
+// keep getting the old one (FALLBACK_CHANNEL).
+const BRAND_CHANNEL = 'chat';
 const BRAND_SOUND = 'push_message.mp3';
+const FALLBACK_CHANNEL: Record<string, string> = {
+  chat: 'messages',
+  alarm: 'default',
+};
+
+/** The channel to use on this device: the asked one if it has it. */
+export function channelFor(asked: string, deviceChannels: string[]): string {
+  if (!(asked in FALLBACK_CHANNEL) || deviceChannels.includes(asked)) {
+    return asked;
+  }
+  return FALLBACK_CHANNEL[asked];
+}
 
 // Receipts are ready a few seconds to minutes after sending.
 const RECEIPT_DELAY_MS = 60_000;
@@ -40,7 +76,10 @@ export class PushService {
   private readonly logger = new Logger(PushService.name);
   private readonly expo = new Expo();
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private presence: PresenceService,
+  ) {}
 
   async sendToUsers(userIds: string[], payload: PushPayload): Promise<void> {
     await this.sendLocalizedToUsers(
@@ -52,6 +91,8 @@ export class PushService {
         sound: payload.sound,
         channelId: payload.channelId,
         ignoreDnd: payload.ignoreDnd,
+        interruptionLevel: payload.interruptionLevel,
+        whenActive: payload.whenActive,
       },
     );
   }
@@ -71,19 +112,36 @@ export class PushService {
       sound?: string | null;
       channelId?: string;
       ignoreDnd?: boolean;
+      interruptionLevel?: 'active' | 'time-sensitive';
+      whenActive?: WhenActive;
     } = {},
   ): Promise<void> {
     if (userIds.length === 0) return;
+
+    // `language` drives per-recipient text (the push and the in-app notice).
+    const allRecipients = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, status: true, statusUntil: true, lastSeenAt: true, language: true },
+    });
+    // A representative label (source language) just for the server logs.
+    const label = build('uk').title;
+
+    // Presence gate: whoever is using the app right now (phone on screen,
+    // web / desktop in use) gets it in-app — a banner over the open app was
+    // the doubled window when a trip arrived. Everyone else gets the push.
+    const recipients = await this.applyPresence(
+      allRecipients,
+      build,
+      extra,
+      label,
+    );
+    if (recipients.length === 0) return;
 
     // Skip recipients who are SLEEP / VACATION (with a still-valid
     // statusUntil, or no timer at all). This is the do-not-disturb gate
     // — the message itself still lands via socket; we only silence the
     // banner. ONLINE / AWAY / BUSY recipients and those whose timer already
-    // expired stay in the list. `language` drives per-recipient text.
-    const recipients = await this.prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: { id: true, status: true, statusUntil: true, lastSeenAt: true, language: true },
-    });
+    // expired stay in the list.
     const now = Date.now();
     // Alarms bypass do-not-disturb entirely — an alarm clock must ring in
     // every status (incl. VACATION/SLEEP). Otherwise apply the DND gate.
@@ -106,32 +164,30 @@ export class PushService {
       deliver.map((u) => [u.id, u.language]),
     );
     const deliverIds = deliver.map((u) => u.id);
-    // A representative label (source language) just for the server logs.
-    const label = build('uk').title;
     if (deliverIds.length === 0) {
       this.logger.log(
-        `Push "${label}" suppressed for all ${userIds.length} recipient(s) (SLEEP/VACATION)`,
+        `Push "${label}" suppressed for all ${recipients.length} recipient(s) (SLEEP/VACATION)`,
       );
       return;
     }
 
     const tokens = await this.prisma.pushToken.findMany({
       where: { userId: { in: deliverIds } },
-      select: { token: true, userId: true },
+      select: { token: true, userId: true, channels: true },
     });
     this.logger.log(
-      `Push "${label}" → users=[${userIds.join(',')}] tokens=${tokens.length}`,
+      `Push "${label}" → users=[${deliverIds.join(',')}] tokens=${tokens.length}`,
     );
     if (tokens.length === 0) {
       this.logger.warn(
-        `No push tokens for users=[${userIds.join(',')}] — recipient(s) won't receive "${label}". Check that the mobile app registered a token after login.`,
+        `No push tokens for users=[${deliverIds.join(',')}] — recipient(s) won't receive "${label}". Check that the mobile app registered a token after login.`,
       );
       return;
     }
 
     const messages: ExpoPushMessage[] = [];
     const validTokens: string[] = [];
-    for (const { token, userId } of tokens) {
+    for (const { token, userId, channels } of tokens) {
       if (!Expo.isExpoPushToken(token)) {
         this.logger.warn(`Drop invalid token format: ${token}`);
         await this.prisma.pushToken.deleteMany({ where: { token } });
@@ -156,7 +212,10 @@ export class PushService {
         // status pushes landed there and stayed silent on a locked phone.
         // Everything rings with the IS Fleet chime unless the caller says
         // otherwise (alarms keep `default`).
-        channelId: extra.channelId ?? BRAND_CHANNEL,
+        channelId: channelFor(extra.channelId ?? BRAND_CHANNEL, channels ?? []),
+        ...(extra.interruptionLevel
+          ? { interruptionLevel: extra.interruptionLevel }
+          : {}),
       });
     }
 
@@ -208,6 +267,52 @@ export class PushService {
         }
       }),
     );
+  }
+
+  /**
+   * Splits recipients by presence and returns the ones who still need a push.
+   * Those using the app right now get the `notice` socket event on the sockets
+   * in use (not every socket — the backgrounded phone shouldn't queue a modal
+   * for something already read on the desktop), or nothing for `skip`.
+   */
+  private async applyPresence<
+    U extends { id: string; language: string },
+  >(
+    recipients: U[],
+    build: (lang: string) => { title: string; body: string },
+    extra: { data?: Record<string, unknown>; whenActive?: WhenActive },
+    label: string,
+  ): Promise<U[]> {
+    const whenActive = extra.whenActive ?? 'notice';
+    if (whenActive === 'push' || recipients.length === 0) return recipients;
+
+    const active = await this.presence.activeSockets(recipients.map((u) => u.id));
+    if (active.size === 0) return recipients;
+
+    const inApp: string[] = [];
+    const rest = recipients.filter((u) => {
+      const sockets = active.get(u.id);
+      if (!sockets) return true;
+      if (whenActive === 'skip') {
+        inApp.push(u.id);
+        return false;
+      }
+      // Clients that predate the `notice` event would show nothing — they
+      // keep getting the push, exactly as before.
+      const capable = sockets.filter((s) => s.data?.notices === true);
+      if (capable.length === 0) return true;
+      const { title, body } = build(u.language);
+      for (const s of capable) s.emit('notice', { title, body, data: extra.data });
+      inApp.push(u.id);
+      return false;
+    });
+
+    if (inApp.length > 0) {
+      this.logger.log(
+        `Push "${label}" → ${whenActive === 'skip' ? 'not needed, app in use' : 'shown in-app'} for users=[${inApp.join(',')}]`,
+      );
+    }
+    return rest;
   }
 
   /** Log delivery failures from Expo receipts (FCM / APNs errors). */

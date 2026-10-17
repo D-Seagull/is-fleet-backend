@@ -1123,6 +1123,8 @@ export class TripsService {
       [trip.driverId],
       (lang) => ({ title: t(lang, 'push.departTitle'), body: summary }),
       {
+        // The `departPrompt` socket event above already asks in-app.
+        whenActive: 'skip',
         categoryId: 'DEPART',
         data: {
           type: 'DEPART_PROMPT',
@@ -1260,6 +1262,8 @@ export class TripsService {
               }),
             },
       {
+        // The `tripStatusNotice` banner above already shows it in-app.
+        whenActive: 'skip',
         data: {
           type: n.kind === 'NOT_DEPARTED' ? 'TRIP_NOT_DEPARTED' : 'TRIP_STATUS',
           tripId: n.tripId,
@@ -1372,12 +1376,10 @@ export class TripsService {
             .emit('tripUnreadChanged', { tripId: trip.id });
         }
 
-        // Push unless the driver's phone app is open on screen (then the
-        // socket already shows the message in real time).
+        // Push unless the driver is using the app (then the socket already
+        // shows the message in real time — `whenActive: 'skip'`).
         if (trip.driverId && trip.driverId !== userId) {
           void (async () => {
-            const online = await this.gateway.isMobileAppOpen(trip.driverId);
-            if (online) return;
             const senderName = fullName(message.sender);
             await this.push.sendLocalizedToUsers(
               [trip.driverId],
@@ -1391,7 +1393,8 @@ export class TripsService {
               }),
               {
                 sound: 'push_message.mp3',
-                channelId: 'messages',
+                channelId: 'chat',
+                whenActive: 'skip',
                 data: {
                   type: 'MESSAGE',
                   tripId: trip.id,

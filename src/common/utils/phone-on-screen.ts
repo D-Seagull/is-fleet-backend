@@ -18,9 +18,13 @@ export const PULSE_TTL_MS = 45_000;
 
 export interface PhoneSocketData {
   mobile?: boolean;
+  /** Web / desktop client (handshake `client: 'web'`). */
+  web?: boolean;
   active?: boolean;
   /** ms timestamp of the last pulse; set only for pulsing clients. */
   pulseAt?: number;
+  /** Client shows in-app notices sent as the `notice` socket event. */
+  notices?: boolean;
 }
 
 export function isPhoneOnScreen(
@@ -30,4 +34,25 @@ export function isPhoneOnScreen(
   if (data?.mobile !== true || data.active !== true) return false;
   if (typeof data.pulseAt === 'number') return now - data.pulseAt < PULSE_TTL_MS;
   return true;
+}
+
+/**
+ * Is the person actually using IS Fleet on this socket right now — the phone
+ * app on screen, or the web / desktop app in use?
+ *
+ * The web counts only while it pulses: it pulses just while the window is
+ * visible, focused and touched within the last couple of minutes, so a
+ * desktop left open on an empty desk stops counting within PULSE_TTL_MS and
+ * the phone rings again. Web builds that don't pulse never count — an open
+ * tab used to be unable to silence the phone, and old clients keep that.
+ */
+export function isSocketActive(
+  data: PhoneSocketData | undefined,
+  now = Date.now(),
+): boolean {
+  if (data?.mobile === true) return isPhoneOnScreen(data, now);
+  if (data?.web === true && data.active === true) {
+    return typeof data.pulseAt === 'number' && now - data.pulseAt < PULSE_TTL_MS;
+  }
+  return false;
 }

@@ -19,6 +19,11 @@ import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
 import { fullName } from 'src/common/utils/full-name';
 import { t } from 'src/i18n/i18n';
+import {
+  SELF_PROFILE_FIELDS,
+  SELF_PROFILE_SELECT,
+  type ProfileField,
+} from './self-profile';
 
 /** Same as shared util but throws 400 — used by create flows. */
 function requireValidPhone(input: string): string {
@@ -31,28 +36,8 @@ function requireValidPhone(input: string): string {
   return canonical;
 }
 
-/**
- * The caller's own profile as every client keeps it in its auth store. Used
- * for self-edit responses and the `profileUpdated` socket payload — never
- * return a bare `prisma.user.update()` row, it carries the password hash.
- */
-const SELF_PROFILE_SELECT = {
-  id: true,
-  firstName: true,
-  lastName: true,
-  email: true,
-  phone: true,
-  avatar: true,
-  role: true,
-  language: true,
-  uiLocale: true,
-  timezone: true,
-  status: true,
-  statusUntil: true, lastSeenAt: true,
-  companyId: true,
-} satisfies Prisma.UserSelect;
-
-type ProfileField = keyof typeof SELF_PROFILE_SELECT;
+// Self-edit responses return SELF_PROFILE_SELECT — never a bare
+// `prisma.user.update()` row, it carries the password hash.
 
 @Injectable()
 export class UsersService {
@@ -283,6 +268,7 @@ export class UsersService {
     let truckChanged = false;
     let assignedTruckPlate: string | null = null;
     let previousTruckId: string | null = null;
+    let previousTruckPlate: string | null = null;
 
     if (dto.truckId !== undefined) {
       // Detach this driver from any truck they're currently linked to. Capture
@@ -290,9 +276,10 @@ export class UsersService {
       // to update its "no driver" state too.
       const oldLinks = await this.prisma.truck.findMany({
         where: { currentDriverId: id },
-        select: { id: true },
+        select: { id: true, plate: true },
       });
       previousTruckId = oldLinks[0]?.id ?? null;
+      previousTruckPlate = oldLinks[0]?.plate ?? null;
       await this.prisma.truck.updateMany({
         where: { currentDriverId: id },
         data: { currentDriverId: null },
@@ -383,6 +370,24 @@ export class UsersService {
               type: 'TRUCK_REASSIGNED',
               truckId: dto.truckId,
               plate: assignedTruckPlate,
+            },
+          },
+        );
+      } else if (!dto.truckId && previousTruckPlate) {
+        // Detached from their truck via the driver card — mirror the truck
+        // panel so the driver is told either way, not just on assignment.
+        const plate = previousTruckPlate;
+        await this.push.sendLocalizedToUsers(
+          [id],
+          (lang) => ({
+            title: t(lang, 'push.truckUnassignedTitle', { plate }),
+            body: t(lang, 'push.driverUnassignedBody'),
+          }),
+          {
+            data: {
+              type: 'TRUCK_UNASSIGNED',
+              truckId: previousTruckId ?? '',
+              plate,
             },
           },
         );
@@ -887,7 +892,7 @@ export class UsersService {
   ) {
     if (changed.length === 0) return;
     const profile = Object.fromEntries(
-      (Object.keys(SELF_PROFILE_SELECT) as ProfileField[])
+      (Object.keys(SELF_PROFILE_FIELDS) as ProfileField[])
         .filter((k) => k in user)
         .map((k) => [k, user[k]]),
     );
@@ -901,11 +906,14 @@ export class UsersService {
     userId: string,
     token: string,
     platform?: 'ios' | 'android' | 'web',
+    channels: string[] = [],
   ) {
+    // `channels` is replaced on every registration: after an app update the
+    // device re-registers and reports the channels the new version created.
     return this.prisma.pushToken.upsert({
       where: { token },
-      create: { userId, token, platform },
-      update: { userId, platform },
+      create: { userId, token, platform, channels },
+      update: { userId, platform, channels },
     });
   }
 

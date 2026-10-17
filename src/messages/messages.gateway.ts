@@ -4,6 +4,7 @@ import {
   SubscribeMessage,
   MessageBody,
   ConnectedSocket,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Inject, Logger, forwardRef } from '@nestjs/common';
@@ -15,10 +16,7 @@ import { JoinTripDto } from './dto/join-trip.dto';
 import { JwtService } from '@nestjs/jwt';
 import { corsOrigin } from 'src/common/cors-origin';
 import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
-import {
-  isPhoneOnScreen,
-  type PhoneSocketData,
-} from 'src/common/utils/phone-on-screen';
+import { PresenceService } from 'src/push/presence.service';
 
 @WebSocketGateway({
   cors: {
@@ -26,7 +24,7 @@ import {
     credentials: true,
   },
 })
-export class MessagesGateway {
+export class MessagesGateway implements OnGatewayInit {
   @WebSocketServer()
   server: Server;
 
@@ -37,7 +35,13 @@ export class MessagesGateway {
     private messagesService: MessagesService,
     private jwtService: JwtService,
     private prisma: PrismaService,
+    private presence: PresenceService,
   ) {}
+
+  /** Every gateway shares this server — PushService reads presence off it. */
+  afterInit(server: Server) {
+    this.presence.attach(server);
+  }
 
   // Offline users seen within this window render as "away" (amber); older →
   // grey OFFLINE.
@@ -88,10 +92,17 @@ export class MessagesGateway {
       // Defaults to true on fresh connect (clients connect when they open
       // the app); mobile flips it back to false in onBackground.
       client.data.active = true;
-      // Phone apps say so in the handshake — only THEIR foreground state may
-      // hold back a push (pushes only ever reach phones; an open web tab or
-      // the desktop app must not silence the manager's phone).
+      // Clients say what they are in the handshake. A phone counts as "in use"
+      // while on screen; the web / desktop only while it pulses (visible,
+      // focused, touched recently) — see isSocketActive. Either one holds the
+      // push back, so the phone stays quiet while the manager works on the
+      // desktop and rings again once they walk away.
       client.data.mobile = client.handshake.auth?.client === 'mobile';
+      client.data.web = client.handshake.auth?.client === 'web';
+      // Shows the `notice` socket event in-app (PushService sends it instead
+      // of a push while the app is in use). Older builds don't, and keep
+      // getting pushes.
+      client.data.notices = client.handshake.auth?.notices === true;
       // Pulsing apps start their foreground clock now: a socket that
       // reconnects while the phone is locked stops counting as "on screen"
       // after PULSE_TTL_MS unless the app really pulses.
@@ -434,24 +445,10 @@ export class MessagesGateway {
     this.server.to(tripId).emit('messageEdited', { tripId, message });
   }
 
-  /** True only when at least one of the user's sockets is currently in the
-   *  *foreground*. iOS keeps the socket alive a while after the app moves to
-   *  background, so we can't rely on socket existence alone — clients flip
-   *  `data.active` via appActive / appBackground events below. */
-  /**
-   * Is the user's phone app open on screen right now? Then a chat message
-   * already shows in-app and a push would only blink — skip it. Web / desktop
-   * sockets don't count: the phone should still ring while the manager has
-   * the desktop app open.
-   */
-  async isMobileAppOpen(userId: string): Promise<boolean> {
-    if (!this.server) return false;
-    const sockets = await this.server.in(userId).fetchSockets();
-    return sockets.some((s) => isPhoneOnScreen(s.data as PhoneSocketData));
-  }
-
-  // `{ pulse: true }` — sent every 15 s by apps on screen (see
-  // isPhoneOnScreen); older builds send it bare on each foreground switch.
+  // `{ pulse: true }` — sent every 15 s by apps on screen / a web window in use
+  // (see isSocketActive); older builds send it bare on each foreground switch.
+  // iOS keeps the socket alive a while after the app moves to background, so
+  // socket existence alone can't mean "in use" — clients flip `data.active`.
   @SubscribeMessage('appActive')
   handleAppActive(
     @ConnectedSocket() client: Socket,
