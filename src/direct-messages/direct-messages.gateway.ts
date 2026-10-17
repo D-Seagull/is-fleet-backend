@@ -18,10 +18,6 @@ import { corsOrigin } from 'src/common/cors-origin';
 import { fullName } from 'src/common/utils/full-name';
 import { t } from 'src/i18n/i18n';
 import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
-import {
-  isPhoneOnScreen,
-  type PhoneSocketData,
-} from 'src/common/utils/phone-on-screen';
 import { pushTitle } from '../push/push-titles';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
@@ -40,18 +36,6 @@ export class DirectMessagesGateway
     private prisma: PrismaService,
     private push: PushService,
   ) {}
-
-  /**
-   * True when the user's PHONE app is in the foreground — a mobile socket
-   * (`data.mobile`, set from the handshake) whose `data.active` flag is on
-   * (apps flip it via appActive/appBackground). Web / desktop don't count.
-   * Matches MessagesGateway.isMobileAppOpen so chat push suppression is
-   * consistent: suppress only while the phone app is open.
-   */
-  private async isMobileAppOpen(userId: string): Promise<boolean> {
-    const socks = await this.server.in(`user:${userId}`).fetchSockets();
-    return socks.some((s) => isPhoneOnScreen(s.data as PhoneSocketData));
-  }
 
   handleConnection(client: Socket) {
     try {
@@ -155,10 +139,9 @@ export class DirectMessagesGateway
       .to(`user:${data.receiverId}`)
       .emit('new_direct_message', message);
 
-    // Push the recipient when their app isn't in the foreground — online users
-    // already received it over the socket. Never push the sender.
+    // Push the recipient unless they're using the app — then the socket event
+    // above already shows it (`whenActive: 'skip'`). Never push the sender.
     void (async () => {
-      if (await this.isMobileAppOpen(data.receiverId)) return;
       const senderName = fullName(message.sender);
       await this.push.sendLocalizedToUsers(
         [data.receiverId],
@@ -169,6 +152,7 @@ export class DirectMessagesGateway
         {
           sound: 'push_message.mp3',
           channelId: 'chat',
+          whenActive: 'skip',
           data: {
             type: 'DM_MESSAGE',
             userId: senderId,
@@ -322,18 +306,15 @@ export class DirectMessagesGateway
           .emit('group_unread_update', { groupId: data.groupId });
       }
 
-      // Push to members who are offline — online ones already received the
-      // message over the socket (`new_group_message`). Never push the sender.
+      // Push the other members — those using the app already got it over the
+      // socket (`new_group_message`), so `whenActive: 'skip'` leaves them be.
+      // Never push the sender.
       void (async () => {
         const senderName = fullName(message.sender);
-        const offlineIds: string[] = [];
-        for (const memberId of memberIds) {
-          if (memberId === senderId) continue;
-          if (!(await this.isMobileAppOpen(memberId))) offlineIds.push(memberId);
-        }
-        if (offlineIds.length === 0) return;
+        const recipientIds = [...memberIds].filter((id) => id !== senderId);
+        if (recipientIds.length === 0) return;
         await this.push.sendLocalizedToUsers(
-          offlineIds,
+          recipientIds,
           (lang) => ({
             title: pushTitle.group(
               group.name,
@@ -345,6 +326,7 @@ export class DirectMessagesGateway
           {
             sound: 'push_message.mp3',
             channelId: 'chat',
+            whenActive: 'skip',
             data: {
               type: 'GROUP_MESSAGE',
               groupId: data.groupId,

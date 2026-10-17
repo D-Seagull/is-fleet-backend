@@ -241,8 +241,10 @@ export class AlarmsService {
         await this.push.sendToUsers([alarm.targetUserId], {
           title: alarm.title,
           body: alarm.note ?? '',
-          // An alarm clock must ring in every presence status (incl. VACATION).
+          // An alarm clock must ring in every presence status (incl. VACATION)
+          // and even while the app is open — never swap it for an in-app notice.
           ignoreDnd: true,
+          whenActive: 'push',
           // `alarm` channel: alarm audio stream (rings on silent / vibrate),
           // the alarm sound, on the lock screen. Older app versions fall back
           // to `default` (PushService.channelFor). iOS: the same sound by

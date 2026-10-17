@@ -101,15 +101,13 @@ export class MessagesService {
       },
     });
 
-    // Push the OTHER session participant only when they are NOT online
-    // (no live socket). Online recipients already get the message via the
-    // `newMessage` socket event — a push would just blink the banner.
+    // Push the OTHER session participant. While they use the app (phone on
+    // screen or desktop in use) the `newMessage` socket event already shows
+    // it — `whenActive: 'skip'` holds the push back then.
     const recipientId =
       senderId === trip.driverId ? trip.managerId : trip.driverId;
     if (recipientId) {
       void (async () => {
-        const online = await this.gateway.isMobileAppOpen(recipientId);
-        if (online) return;
         const senderName = fullName(message.sender);
         const plate = message.trip?.truck?.plate;
         await this.push.sendLocalizedToUsers(
@@ -125,6 +123,7 @@ export class MessagesService {
           {
             sound: 'push_message.mp3',
             channelId: 'chat',
+            whenActive: 'skip',
             data: {
               type: 'MESSAGE',
               tripId: dto.tripId,

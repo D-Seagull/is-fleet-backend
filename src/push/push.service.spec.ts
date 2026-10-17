@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { PushService, channelFor } from './push.service';
+import { PresenceService } from './presence.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 const sent: unknown[] = [];
@@ -24,6 +25,7 @@ describe('PushService', () => {
     user: { findMany: jest.Mock };
     pushToken: { findMany: jest.Mock; deleteMany: jest.Mock };
   };
+  let presence: { activeSockets: jest.Mock };
 
   beforeEach(async () => {
     sent.length = 0;
@@ -42,8 +44,14 @@ describe('PushService', () => {
         deleteMany: jest.fn(),
       },
     };
+    // Nobody is using the app unless a test says otherwise.
+    presence = { activeSockets: jest.fn().mockResolvedValue(new Map()) };
     const moduleRef = await Test.createTestingModule({
-      providers: [PushService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        PushService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: PresenceService, useValue: presence },
+      ],
     }).compile();
     service = moduleRef.get(PushService);
   });
@@ -167,6 +175,80 @@ describe('PushService', () => {
         interruptionLevel: 'time-sensitive',
       }),
     );
+  });
+
+  describe('while the recipient is using the app', () => {
+    const socket = (notices: boolean) => ({
+      data: { notices },
+      emit: jest.fn(),
+    });
+
+    beforeEach(() => {
+      prisma.user.findMany.mockResolvedValue([
+        { id: 'inApp', status: 'ONLINE', statusUntil: null, language: 'pl' },
+        { id: 'away', status: 'ONLINE', statusUntil: null, language: 'uk' },
+      ]);
+    });
+
+    it('shows it in-app instead of a banner over the open app', async () => {
+      const s = socket(true);
+      presence.activeSockets.mockResolvedValue(new Map([['inApp', [s]]]));
+
+      await service.sendLocalizedToUsers(
+        ['inApp', 'away'],
+        (lang) => ({ title: `T-${lang}`, body: 'B' }),
+        { data: { type: 'NEW_TRIP', tripId: 't1' } },
+      );
+
+      expect(recipients()).toEqual(['tok-away']);
+      expect(s.emit).toHaveBeenCalledWith('notice', {
+        title: 'T-pl',
+        body: 'B',
+        data: { type: 'NEW_TRIP', tripId: 't1' },
+      });
+    });
+
+    it('keeps pushing clients too old to show in-app notices', async () => {
+      const s = socket(false);
+      presence.activeSockets.mockResolvedValue(new Map([['inApp', [s]]]));
+
+      await service.sendToUsers(['inApp', 'away'], { title: 't', body: 'b' });
+
+      expect(recipients().sort()).toEqual(['tok-away', 'tok-inApp']);
+      expect(s.emit).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing for `skip` — the app already shows it (chat)', async () => {
+      const s = socket(true);
+      presence.activeSockets.mockResolvedValue(new Map([['inApp', [s]]]));
+
+      await service.sendToUsers(['inApp', 'away'], {
+        title: 't',
+        body: 'b',
+        whenActive: 'skip',
+      });
+
+      expect(recipients()).toEqual(['tok-away']);
+      expect(s.emit).not.toHaveBeenCalled();
+    });
+
+    it('still rings for `push` — alarms', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        { id: 'inApp', status: 'ONLINE', statusUntil: null, language: 'pl' },
+      ]);
+      presence.activeSockets.mockResolvedValue(
+        new Map([['inApp', [socket(true)]]]),
+      );
+
+      await service.sendToUsers(['inApp'], {
+        title: 'Wake up',
+        body: '',
+        whenActive: 'push',
+      });
+
+      expect(recipients()).toEqual(['tok-inApp']);
+      expect(presence.activeSockets).not.toHaveBeenCalled();
+    });
   });
 
   it('channelFor falls back for older app versions, passes others through', () => {
