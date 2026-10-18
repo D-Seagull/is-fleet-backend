@@ -39,4 +39,10 @@ export class CreateBugReportDto {
   @IsString()
   @MaxLength(50)
   socketState?: string;
+
+  /** The client's last diagnostic log lines (newest last). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(30000)
+  logs?: string;
 }
