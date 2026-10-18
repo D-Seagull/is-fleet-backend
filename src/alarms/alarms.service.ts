@@ -5,27 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { AlarmRecurrence } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PushService } from 'src/push/push.service';
 import { CreateAlarmDto } from './dto/create-alarm.dto';
 import { UpdateAlarmDto } from './dto/update-alarm.dto';
 import { MessagesGateway } from 'src/messages/messages.gateway';
-import { fromZonedTime } from 'date-fns-tz';
-
-/**
- * Parses the client-supplied `time` as wall-clock in the given IANA timezone.
- *
- * - If the string carries a timezone marker (`Z` or `±HH:MM`) → respect it
- *   (already absolute, no conversion).
- * - Otherwise (e.g. "2026-05-09T14:00:00") → interpret as wall-clock in `tz`.
- *   Falls back to UTC when `tz` is missing.
- */
-function parseAlarmTime(input: string, tz: string | null | undefined): Date {
-  const hasTzSuffix = /Z$|[+-]\d{2}:?\d{2}$/.test(input);
-  if (hasTzSuffix) return new Date(input);
-  return fromZonedTime(input, tz ?? 'UTC');
-}
+import { nextFireTime, parseAlarmTime } from './alarm-time';
 
 const ALARM_INCLUDE = {
   creator: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
@@ -231,7 +216,7 @@ export class AlarmsService {
     const due = await this.prisma.alarm.findMany({
       where: { time: { lte: now }, isSent: false },
       include: {
-        target: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        target: { select: { id: true, firstName: true, lastName: true, avatar: true, timezone: true } },
       },
     });
     if (due.length === 0) return;
@@ -279,7 +264,12 @@ export class AlarmsService {
       }
 
       // Recurring alarms re-fire on the next interval; one-shot get marked sent.
-      const next = nextFireTime(alarm.time, alarm.recurrence);
+      const next = nextFireTime(
+        alarm.time,
+        alarm.recurrence,
+        alarm.target.timezone,
+        now,
+      );
       if (next) {
         await this.prisma.alarm.update({
           where: { id: alarm.id },
@@ -295,10 +285,3 @@ export class AlarmsService {
   }
 }
 
-function nextFireTime(prev: Date, recurrence: AlarmRecurrence): Date | null {
-  if (recurrence === 'NONE') return null;
-  const next = new Date(prev);
-  if (recurrence === 'DAILY') next.setDate(next.getDate() + 1);
-  else if (recurrence === 'WEEKLY') next.setDate(next.getDate() + 7);
-  return next;
-}

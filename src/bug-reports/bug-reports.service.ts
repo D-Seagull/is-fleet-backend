@@ -79,6 +79,7 @@ export class BugReportsService {
         platform: dto.platform ?? null,
         route: dto.route ?? null,
         socketState: dto.socketState ?? null,
+        logs: dto.logs?.trim() || null,
       },
       include: reportInclude,
     });

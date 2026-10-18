@@ -798,6 +798,8 @@ model BugReport {
   route       String?
   /// Socket liveness at report time, for debugging realtime issues.
   socketState String?
+  /// Client diagnostics: the app's last log lines before the report (shown collapsed to admins).
+  logs        String?
   status      BugStatus @default(NEW)
   createdAt   DateTime  @default(now())
   resolvedAt  DateTime?
