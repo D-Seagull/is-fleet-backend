@@ -15,21 +15,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   /**
-   * Pick the response language: the authenticated user's `language`
-   * (populated by the JWT strategy) first, then the `Accept-Language`
-   * header sent by the client, then UK. Any string that isn't a known
-   * catalog key passes through `t()` unchanged, so this is safe to run on
-   * every message.
+   * Pick the response language: the `Accept-Language` header first — the web
+   * and both phone apps set it to the language their UI is showing, so an
+   * error reads in the same language as the screen around it — then the
+   * authenticated user's `language` (populated by the JWT strategy; that's
+   * the chat-translation language and can differ from the UI), then UK. Any
+   * string that isn't a known catalog key passes through `t()` unchanged, so
+   * this is safe to run on every message.
    */
   private localeOf(request: {
     user?: { language?: string };
     headers?: Record<string, unknown>;
   }): string {
-    if (request.user?.language) return request.user.language;
     const header = request.headers?.['accept-language'];
     if (typeof header === 'string' && header.length > 0) {
       return header.split(',')[0].split('-')[0];
     }
+    if (request.user?.language) return request.user.language;
     return 'uk';
   }
 
