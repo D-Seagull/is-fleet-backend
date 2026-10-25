@@ -101,4 +101,92 @@ export class MailService {
       `,
     });
   }
+
+  // ── Landing page (public forms) ─────────────────────────────────────────
+  // English, like the landing page. Everything a visitor typed goes through esc().
+
+  /** Self-serve trial: the link that claims the new company (first sign-up becomes TEAMLEAD). */
+  async sendTrialInvite(
+    to: string,
+    name: string,
+    companyName: string,
+    inviteLink: string,
+  ) {
+    await this.send({
+      to,
+      subject: oneLine(`Your IS Fleet workspace for ${companyName}`),
+      html: `
+        <h2>Welcome to IS Fleet, ${esc(name)}!</h2>
+        <p>Your workspace for <b>${esc(companyName)}</b> is ready.</p>
+        <p>Open this link to set your password and sign in. It is valid for 7 days:</p>
+        <p><a href="${inviteLink}">${inviteLink}</a></p>
+        <p>Once you're in, you can add your trucks, managers and drivers.</p>
+        <p>If you didn't ask for this, just ignore this email.</p>
+      `,
+    });
+  }
+
+  /** A trial was requested for an address that already has an account. */
+  async sendTrialExistingAccount(to: string, loginLink: string) {
+    await this.send({
+      to,
+      subject: 'You already have an IS Fleet account',
+      html: `
+        <p>Someone (probably you) tried to start an IS Fleet trial with this email address,
+        but it already belongs to an account.</p>
+        <p>Sign in here: <a href="${loginLink}">${loginLink}</a></p>
+        <p>Forgot your password? Use "Forgot password" on the sign-in page.</p>
+      `,
+    });
+  }
+
+  /** Demo request received — confirmation to the visitor. */
+  async sendDemoConfirmation(to: string, name: string) {
+    await this.send({
+      to,
+      subject: 'We got your IS Fleet demo request',
+      html: `
+        <p>Hi ${esc(name)},</p>
+        <p>Thanks for your interest in IS Fleet. We'll get back to you shortly to set up a demo
+        on your own routes.</p>
+        <p>— The IS Fleet team</p>
+      `,
+    });
+  }
+
+  /** Lead or sign-up for the sales inbox (SALES_EMAIL); "reply" goes straight to the visitor. */
+  async sendSalesNotification(
+    subject: string,
+    fields: Record<string, string | undefined>,
+    replyTo: string,
+  ) {
+    const rows = Object.entries(fields)
+      .filter(([, v]) => v)
+      .map(
+        ([k, v]) =>
+          `<p><b>${esc(k)}:</b> ${esc(v!).replace(/\n/g, '<br>')}</p>`,
+      )
+      .join('');
+    await this.send({
+      to: this.config.get<string>('SALES_EMAIL') ?? 'isfleet.eu@gmail.com',
+      replyTo,
+      subject: oneLine(subject),
+      html: rows,
+    });
+  }
+}
+
+/** Subjects are plain text: no escaping, but no line breaks from visitor input either. */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+/** Escapes visitor-typed text before it goes into an email body. */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

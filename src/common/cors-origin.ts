@@ -3,11 +3,15 @@
 // localhost (handy for staging probes), and any Vercel preview deploy so
 // PR URLs work without manual whitelisting. Requests without an Origin
 // header (native mobile apps, curl, health probes) are allowed through —
-// the driver app relies on this.
+// the driver app relies on this. LANDING_URL is the public marketing site
+// (its sign-up / demo forms post to /public/*); comma-separate to allow e.g.
+// both https://isfleet.eu and https://www.isfleet.eu.
 const allowedExact = new Set(
-  ['http://localhost:3000', process.env.FRONTEND_URL].filter(
-    (v): v is string => !!v,
-  ),
+  [
+    'http://localhost:3000',
+    process.env.FRONTEND_URL,
+    ...(process.env.LANDING_URL ?? '').split(',').map((u) => u.trim()),
+  ].filter((v): v is string => !!v),
 );
 
 type OriginFn = (
