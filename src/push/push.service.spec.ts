@@ -1,7 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { PushService, channelFor } from './push.service';
 import { PresenceService } from './presence.service';
-import { FcmService } from './fcm.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 const sent: unknown[] = [];
@@ -52,7 +51,6 @@ describe('PushService', () => {
         PushService,
         { provide: PrismaService, useValue: prisma },
         { provide: PresenceService, useValue: presence },
-        { provide: FcmService, useValue: { enabled: false, send: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(PushService);
@@ -94,23 +92,6 @@ describe('PushService', () => {
       expect.objectContaining({
         sound: 'push_message.mp3',
         channelId: 'messages',
-      }),
-    );
-  });
-
-  it('leaves raw FCM tokens (the experiment) out of the Expo path', async () => {
-    prisma.user.findMany.mockResolvedValue([
-      { id: 'u1', status: 'ONLINE', statusUntil: null, language: 'uk' },
-    ]);
-
-    await service.sendToUsers(['u1'], { title: 't', body: 'b' });
-
-    // NULL platform (old rows) must stay in — `not` alone would drop them.
-    expect(prisma.pushToken.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          OR: [{ platform: null }, { platform: { not: 'android-fcm' } }],
-        }),
       }),
     );
   });
