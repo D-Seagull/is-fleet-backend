@@ -16,7 +16,8 @@ import { CreateManagerDto } from './dto/create-manager.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
-import { RegisterPushTokenDto } from './dto/push-token.dto';
+import { PushTestDto, RegisterPushTokenDto } from './dto/push-token.dto';
+import { PushService } from 'src/push/push.service';
 import { SetTimezoneDto } from './dto/timezone.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,7 +31,10 @@ import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private usersService: UsersService) {}
+  constructor(
+    private usersService: UsersService,
+    private push: PushService,
+  ) {}
 
   // Only a TEAMLEAD can create a manager — the new manager is auto-attached
   // to the creator as their team lead. ADMIN cannot create managers here
@@ -193,6 +197,14 @@ export class UsersController {
       dto.platform,
       dto.channels,
     );
+  }
+
+  /** EXPERIMENT: a test push to my own Android phone via Expo or FCM, after
+   *  `delaySec` (time to lock the phone). See FcmService. */
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
+  @Post('me/push-test')
+  pushTest(@GetUser('id') userId: string, @Body() dto: PushTestDto) {
+    return this.push.sendTest(userId, dto.via, dto.delaySec ?? 30);
   }
 
   /** Unregister this device (call from logout flow). */
