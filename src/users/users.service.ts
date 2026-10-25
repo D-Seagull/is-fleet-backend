@@ -905,7 +905,7 @@ export class UsersService {
   async registerPushToken(
     userId: string,
     token: string,
-    platform?: 'ios' | 'android' | 'web',
+    platform?: 'ios' | 'android' | 'web' | 'android-fcm',
     channels: string[] = [],
   ) {
     // `channels` is replaced on every registration: after an app update the

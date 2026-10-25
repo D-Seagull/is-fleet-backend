@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { FCM_PLATFORM, FcmService } from './fcm.service';
 import { PresenceService } from './presence.service';
 
 /**
@@ -70,6 +71,11 @@ export function channelFor(asked: string, deviceChannels: string[]): string {
   return FALLBACK_CHANNEL[asked];
 }
 
+// Raw FCM tokens (the FCM experiment) live in PushToken too — keep them out
+// of the Expo path, which would drop them as "invalid format". `platform` is
+// NULL on old rows, and `not` alone would skip those as well.
+const NOT_FCM = { OR: [{ platform: null }, { platform: { not: FCM_PLATFORM } }] };
+
 // Receipts are ready a few seconds to minutes after sending.
 const RECEIPT_DELAY_MS = 60_000;
 
@@ -81,6 +87,7 @@ export class PushService {
   constructor(
     private prisma: PrismaService,
     private presence: PresenceService,
+    private fcm: FcmService,
   ) {}
 
   async sendToUsers(userIds: string[], payload: PushPayload): Promise<void> {
@@ -173,7 +180,7 @@ export class PushService {
     }
 
     const tokens = await this.prisma.pushToken.findMany({
-      where: { userId: { in: deliverIds } },
+      where: { userId: { in: deliverIds }, ...NOT_FCM },
       select: { token: true, userId: true, channels: true },
     });
     this.logger.log(
@@ -314,6 +321,68 @@ export class PushService {
       );
     }
     return rest;
+  }
+
+  /**
+   * EXPERIMENT: a test push to the caller's own Android phone(s), `delaySec`
+   * from now (time to lock the phone), through Expo or straight through FCM
+   * (see FcmService). The body carries the send time, so the banner shows
+   * how late it arrived. Bypasses every gate — it's a delivery test.
+   */
+  async sendTest(
+    userId: string,
+    via: 'expo' | 'fcm',
+    delaySec: number,
+  ): Promise<{ scheduled: boolean; tokens: number; reason?: string }> {
+    if (via === 'fcm' && !this.fcm.enabled) {
+      return { scheduled: false, tokens: 0, reason: 'FCM_NOT_CONFIGURED' };
+    }
+    const tokens = await this.prisma.pushToken.findMany({
+      where:
+        via === 'fcm'
+          ? { userId, platform: FCM_PLATFORM }
+          : { userId, platform: 'android' },
+      select: { token: true, channels: true },
+    });
+    if (tokens.length === 0) return { scheduled: false, tokens: 0, reason: 'NO_TOKENS' };
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+
+    setTimeout(() => {
+      void (async () => {
+        const at = new Date().toLocaleTimeString('uk-UA', {
+          timeZone: user?.timezone || 'Europe/Warsaw',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+        const title = `🧪 Push test · ${via.toUpperCase()}`;
+        const body = `Sent at ${at}`;
+        const data = { type: 'TEST', via };
+        for (const { token, channels } of tokens) {
+          const channelId = channelFor(BRAND_CHANNEL, channels ?? []);
+          if (via === 'fcm') {
+            const r = await this.fcm.send(token, { title, body, data, channelId, sound: BRAND_SOUND });
+            if (!r.ok && r.code === 'UNREGISTERED') {
+              await this.prisma.pushToken.deleteMany({ where: { token } });
+            }
+          } else {
+            try {
+              const [ticket] = await this.expo.sendPushNotificationsAsync([
+                { to: token, priority: 'high', sound: BRAND_SOUND, title, body, data, channelId },
+              ]);
+              this.logger.log(`Push test EXPO → ${ticket?.status ?? '?'}`);
+            } catch (e) {
+              this.logger.warn(`Push test EXPO failed: ${(e as Error).message}`);
+            }
+          }
+        }
+        this.logger.log(`Push test ${via} sent at ${at} to ${tokens.length} token(s) of ${userId}`);
+      })();
+    }, delaySec * 1000);
+    return { scheduled: true, tokens: tokens.length };
   }
 
   /** Log delivery failures from Expo receipts (FCM / APNs errors). */
