@@ -41,7 +41,7 @@ type ServiceAccount = {
 @Injectable()
 export class FcmService {
   private readonly logger = new Logger(FcmService.name);
-  private readonly account: ServiceAccount | null = FcmService.loadAccount();
+  private readonly account: ServiceAccount | null = this.loadAccount();
   private readonly auth = this.account
     ? new GoogleAuth({
         credentials: {
@@ -56,19 +56,40 @@ export class FcmService {
     return this.auth !== null;
   }
 
-  private static loadAccount(): ServiceAccount | null {
+  /** Reads the credentials and says in the boot log why FCM is off. */
+  private loadAccount(): ServiceAccount | null {
+    const inline = process.env.FCM_SERVICE_ACCOUNT;
+    const file = process.env.FCM_SERVICE_ACCOUNT_FILE;
+    const source = inline
+      ? 'FCM_SERVICE_ACCOUNT'
+      : file
+        ? 'FCM_SERVICE_ACCOUNT_FILE'
+        : null;
+    if (!source) {
+      this.logger.log(
+        'FCM off: neither FCM_SERVICE_ACCOUNT nor FCM_SERVICE_ACCOUNT_FILE is set',
+      );
+      return null;
+    }
     try {
-      const raw = process.env.FCM_SERVICE_ACCOUNT
-        ? process.env.FCM_SERVICE_ACCOUNT
-        : process.env.FCM_SERVICE_ACCOUNT_FILE
-          ? readFileSync(process.env.FCM_SERVICE_ACCOUNT_FILE, 'utf8')
-          : null;
-      if (!raw) return null;
+      let raw = (inline ?? readFileSync(file!, 'utf8')).trim();
+      // A value pasted into a dashboard wrapped in quotes.
+      const q = raw[0];
+      if ((q === "'" || q === '"') && raw.endsWith(q)) raw = raw.slice(1, -1);
       const json = JSON.parse(raw) as Partial<ServiceAccount>;
-      if (!json.project_id || !json.client_email || !json.private_key)
+      const missing = (
+        ['project_id', 'client_email', 'private_key'] as const
+      ).filter((k) => !json[k]);
+      if (missing.length > 0) {
+        this.logger.warn(`FCM off: ${source} has no ${missing.join(', ')}`);
         return null;
+      }
+      this.logger.log(`FCM on: project ${json.project_id} (${source})`);
       return json as ServiceAccount;
-    } catch {
+    } catch (e) {
+      this.logger.warn(
+        `FCM off: ${source} can't be read as JSON — ${(e as Error).message}`,
+      );
       return null;
     }
   }
