@@ -139,6 +139,7 @@ export class AuthService {
     const company = await this.prisma.company.findFirst({
       where: {
         inviteToken: dto.inviteToken,
+        inviteExpiry: { gt: new Date() },
       },
       include: {
         users: { where: { role: 'TEAMLEAD' } },
@@ -149,15 +150,27 @@ export class AuthService {
 
     const hash = await bcrypt.hash(dto.password, 10);
 
-    const user = await this.prisma.user.create({
-      data: {
-        firstName: dto.firstName.trim(),
-        lastName: dto.lastName?.trim() || null,
-        email: dto.email,
-        password: hash,
-        role: 'TEAMLEAD',
-        companyId: company.id,
-      },
+    // The company link is single-use: claim it in the same transaction as the
+    // sign-up, so a second registration on the same link fails and a failed
+    // create (e.g. email taken) leaves the link usable.
+    const user = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.company.updateMany({
+        where: { id: company.id, inviteToken: dto.inviteToken },
+        data: { inviteToken: null, inviteExpiry: null },
+      });
+      if (claimed.count === 0)
+        throw new BadRequestException('errors.invalidOrExpiredToken');
+
+      return tx.user.create({
+        data: {
+          firstName: dto.firstName.trim(),
+          lastName: dto.lastName?.trim() || null,
+          email: dto.email,
+          password: hash,
+          role: 'TEAMLEAD',
+          companyId: company.id,
+        },
+      });
     });
 
     // якщо перший тімлід — оновлюємо дані компанії
@@ -336,7 +349,7 @@ export class AuthService {
 
     // Перевіряємо токен компанії
     const company = await this.prisma.company.findFirst({
-      where: { inviteToken: token },
+      where: { inviteToken: token, inviteExpiry: { gt: new Date() } },
       include: {
         users: { where: { role: 'TEAMLEAD' } },
       },

@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import {
+  BadRequestException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -558,6 +559,65 @@ describe('AuthService', () => {
       expect(mockedBcrypt.hash).toHaveBeenCalledWith('newpw', 10);
       // Both writes go through a single transaction.
       expect(prisma.$transaction).toHaveBeenCalled();
+    });
+  });
+
+  // ─── register via a company link (first / extra team lead) ────────────────
+  describe('register with a company invite link', () => {
+    const dto = {
+      inviteToken: 'tok',
+      firstName: 'Anna',
+      email: 'anna@acme.eu',
+      password: 'secret123',
+    };
+    let tx: {
+      company: { updateMany: jest.Mock };
+      user: { create: jest.Mock };
+    };
+
+    beforeEach(() => {
+      prisma.user.findFirst.mockResolvedValue(null); // not a user invite
+      prisma.company.findFirst.mockResolvedValue({ id: 'c1', users: [] });
+      tx = {
+        company: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        user: {
+          create: jest.fn().mockResolvedValue({
+            id: 'u2',
+            role: 'TEAMLEAD',
+            companyId: 'c1',
+            firstName: 'Anna',
+          }),
+        },
+      };
+      prisma.$transaction.mockImplementation((fn) => fn(tx));
+    });
+
+    it('only accepts a link that has not expired', async () => {
+      prisma.company.findFirst.mockResolvedValue(null);
+      await expect(service.register(dto as never)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.company.findFirst.mock.calls[0][0].where).toEqual({
+        inviteToken: 'tok',
+        inviteExpiry: { gt: expect.any(Date) },
+      });
+    });
+
+    it('uses the link up when the team lead signs up', async () => {
+      await service.register(dto as never);
+      expect(tx.company.updateMany).toHaveBeenCalledWith({
+        where: { id: 'c1', inviteToken: 'tok' },
+        data: { inviteToken: null, inviteExpiry: null },
+      });
+      expect(tx.user.create).toHaveBeenCalled();
+    });
+
+    it('refuses a second sign-up that lost the race for the link', async () => {
+      tx.company.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.register(dto as never)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(tx.user.create).not.toHaveBeenCalled();
     });
   });
 });
