@@ -28,8 +28,7 @@ export class AdminService {
       },
     });
 
-    if (existing)
-      throw new BadRequestException('errors.companyExists');
+    if (existing) throw new BadRequestException('errors.companyExists');
 
     const company = await this.prisma.company.create({
       data: {
@@ -55,7 +54,9 @@ export class AdminService {
    * aren't scoped to a single tenant elsewhere), so we can't rely on
    * `@GetUser('companyId')` here — we look it up by admin's userId instead.
    */
-  private async getAdminCompanyId(adminId: string): Promise<string | undefined> {
+  private async getAdminCompanyId(
+    adminId: string,
+  ): Promise<string | undefined> {
     if (!adminId) return undefined;
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
@@ -303,10 +304,10 @@ export class AdminService {
       this.prisma.truck.count({ where: { companyId: id, isActive: true } }),
       this.prisma.trip.count({
         where: {
-            companyId: id,
-            deletedAt: null,
-            status: { in: [...activeTripStatuses] },
-          },
+          companyId: id,
+          deletedAt: null,
+          status: { in: [...activeTripStatuses] },
+        },
       }),
       this.prisma.trip.count({
         where: { companyId: id, deletedAt: null, createdAt: { gte: monthAgo } },
@@ -325,7 +326,8 @@ export class AdminService {
           phone: true,
           role: true,
           status: true,
-          statusUntil: true, lastSeenAt: true,
+          statusUntil: true,
+          lastSeenAt: true,
           avatar: true,
           createdAt: true,
         },
@@ -384,8 +386,17 @@ export class AdminService {
   }
 
   async resendInvite(id: string, email: string) {
-    const company = await this.prisma.company.findFirst({ where: { id } });
-    if (!company) throw new NotFoundException('errors.companyNotFound');
+    const exists = await this.prisma.company.findFirst({ where: { id } });
+    if (!exists) throw new NotFoundException('errors.companyNotFound');
+
+    // Company links are single-use and expire, so every resend issues a fresh
+    // 7-day token (this is also how a company gets another team lead).
+    const inviteExpiry = new Date();
+    inviteExpiry.setDate(inviteExpiry.getDate() + 7);
+    const company = await this.prisma.company.update({
+      where: { id },
+      data: { inviteToken: uuidv4(), inviteExpiry },
+    });
 
     // Must match the public register route (route group `(auth)` is NOT in the
     // URL → it's `/register`, not `/auth/register`). Kept in sync with

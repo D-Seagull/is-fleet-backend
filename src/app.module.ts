@@ -27,6 +27,7 @@ import { GroupMessageDocumentsModule } from './group-message-documents/group-mes
 import { ReactionsModule } from './reactions/reactions.module';
 import { ChatModule } from './chat/chat.module';
 import { BugReportsModule } from './bug-reports/bug-reports.module';
+import { SignupModule } from './signup/signup.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -62,10 +63,9 @@ import { HealthController } from './health/health.controller';
     ReactionsModule,
     ChatModule,
     BugReportsModule,
+    SignupModule,
   ],
   controllers: [HealthController],
-  providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
