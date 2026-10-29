@@ -20,6 +20,11 @@ import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
 import { OPEN_TRIP_STATUSES, sortByProgress } from './trip-order';
 import { pushTitle } from '../push/push-titles';
+import {
+  assertTruckInCompany,
+  assertUserInCompany,
+  MANAGER_ROLES,
+} from '../common/utils/access';
 
 /** "Are we heading to loading?" — re-ask after this long, at most this often. */
 const DEPART_RETRY_MS = 20 * 60 * 1000;
@@ -106,6 +111,16 @@ export class TripsService {
   }
 
   async create(companyId: string, managerId: string, dto: CreateTripDto) {
+    // Driver and truck from the body must be this company's — otherwise the
+    // response (and a push) would hand over another company's driver.
+    await assertUserInCompany(
+      this.prisma,
+      dto.driverId,
+      companyId,
+      ['DRIVER'],
+      'errors.driverNotFound',
+    );
+    await assertTruckInCompany(this.prisma, dto.truckId, companyId);
     const trip = await this.prisma.trip.create({
       data: {
         title: dto.title,
@@ -403,6 +418,13 @@ export class TripsService {
       where: { id, companyId, deletedAt: null },
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
+    await assertUserInCompany(
+      this.prisma,
+      driverId,
+      trip.companyId,
+      ['DRIVER'],
+      'errors.driverNotFound',
+    );
 
     const driverChanged = trip.driverId !== driverId;
 
@@ -856,6 +878,13 @@ export class TripsService {
       where: { id, companyId, deletedAt: null },
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
+    await assertUserInCompany(
+      this.prisma,
+      managerId,
+      trip.companyId,
+      MANAGER_ROLES,
+      'errors.managerNotFound',
+    );
 
     const managerChanged = trip.managerId !== managerId;
 

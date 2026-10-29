@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Twilio } from 'twilio';
+import { maskPhone } from 'src/common/utils/phone';
 
 @Injectable()
 export class SmsService {
@@ -75,7 +76,13 @@ export class SmsService {
    */
   async send(to: string, body: string): Promise<void> {
     if (!this.client) {
-      this.logger.log(`[DEV-SMS → ${to}] ${body}`);
+      // The body carries the OTP — print it only outside production. A prod
+      // box with Twilio unset must not turn its logs into a code feed.
+      if (process.env.NODE_ENV === 'production') {
+        this.logger.warn(`SMS to ${maskPhone(to)} NOT sent: no SMS provider`);
+      } else {
+        this.logger.log(`[DEV-SMS → ${to}] ${body}`);
+      }
       return;
     }
     await this.client.messages.create({

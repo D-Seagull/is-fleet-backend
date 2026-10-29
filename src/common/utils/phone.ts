@@ -10,3 +10,14 @@ export function normalizePhone(input: string): string | null {
   if (!/^\+\d{8,16}$/.test(withPlus)) return null;
   return withPlus;
 }
+
+/**
+ * Log-safe form of a phone number: only the last 3 digits (`***567`).
+ * Full numbers are personal data and never go to production logs.
+ */
+export function maskPhone(input: string | null | undefined): string {
+  if (typeof input !== 'string') return 'INVALID';
+  const digits = input.replace(/\D/g, '');
+  if (digits.length < 3) return '***';
+  return `***${digits.slice(-3)}`;
+}

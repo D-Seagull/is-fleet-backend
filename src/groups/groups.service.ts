@@ -10,6 +10,11 @@ import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.se
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { DirectMessagesGateway } from 'src/direct-messages/direct-messages.gateway';
+import {
+  assertTruckInCompany,
+  canAccessGroup,
+  type Requester,
+} from 'src/common/utils/access';
 
 @Injectable()
 export class GroupsService {
@@ -150,9 +155,26 @@ export class GroupsService {
     });
   }
 
-  async update(id: string, userId: string, role: string, dto: UpdateGroupDto) {
-    const group = await this.prisma.group.findFirst({ where: { id } });
+  /**
+   * The group, if it belongs to the caller's company. companyId is null only
+   * for ADMIN (AdminInterceptor), who may act on any company's group.
+   */
+  private async findCompanyGroup(id: string, companyId: string | null) {
+    const group = await this.prisma.group.findFirst({
+      where: companyId ? { id, companyId } : { id },
+    });
     if (!group) throw new NotFoundException('errors.groupNotFound');
+    return group;
+  }
+
+  async update(
+    id: string,
+    userId: string,
+    role: string,
+    dto: UpdateGroupDto,
+    companyId: string | null,
+  ) {
+    const group = await this.findCompanyGroup(id, companyId);
 
     if (role === 'MANAGER' && group.createdBy !== userId) {
       throw new ForbiddenException('errors.editOwnGroups');
@@ -209,9 +231,11 @@ export class GroupsService {
     truckId: string,
     userId: string,
     role: string,
+    companyId: string | null,
   ) {
-    const group = await this.prisma.group.findFirst({ where: { id: groupId } });
-    if (!group) throw new NotFoundException('errors.groupNotFound');
+    const group = await this.findCompanyGroup(groupId, companyId);
+    // The truck must come from the group's company too.
+    await assertTruckInCompany(this.prisma, truckId, group.companyId);
 
     if (role === 'MANAGER' && group.createdBy !== userId) {
       throw new ForbiddenException('errors.editOwnGroups');
@@ -232,7 +256,9 @@ export class GroupsService {
     truckId: string,
     userId: string,
     role: string,
+    companyId: string | null,
   ) {
+    await this.findCompanyGroup(groupId, companyId);
     const groupTruck = await this.prisma.groupTruck.findFirst({
       where: { groupId, truckId },
     });
@@ -248,9 +274,23 @@ export class GroupsService {
     return { message: 'Вантажівка видалена з групи' };
   }
 
-  async addManager(groupId: string, managerId: string) {
-    const group = await this.prisma.group.findFirst({ where: { id: groupId } });
-    if (!group) throw new NotFoundException('errors.groupNotFound');
+  /**
+   * Membership edits: the group must be one the caller can see (same company;
+   * a MANAGER only their own / joined groups) — see canAccessGroup.
+   */
+  private async assertCanManageMembers(groupId: string, requester: Requester) {
+    const group = await this.prisma.group.findFirst({
+      where: { id: groupId, deletedAt: null },
+      include: { managers: { select: { managerId: true } } },
+    });
+    if (!group || !canAccessGroup(group, requester)) {
+      throw new NotFoundException('errors.groupNotFound');
+    }
+    return group;
+  }
+
+  async addManager(groupId: string, managerId: string, requester: Requester) {
+    const group = await this.assertCanManageMembers(groupId, requester);
 
     if (group.type !== 'MANAGERS') {
       throw new ForbiddenException(
@@ -258,8 +298,9 @@ export class GroupsService {
       );
     }
 
+    // Only people of the group's own company can be added.
     const user = await this.prisma.user.findFirst({
-      where: { id: managerId },
+      where: { id: managerId, companyId: group.companyId },
     });
     // Frontend's member picker lists MANAGER + TEAMLEAD (a teamlead is
     // effectively a senior manager and belongs in manager chats); the API
@@ -348,7 +389,12 @@ export class GroupsService {
     return created;
   }
 
-  async removeManager(groupId: string, managerId: string) {
+  async removeManager(
+    groupId: string,
+    managerId: string,
+    requester: Requester,
+  ) {
+    await this.assertCanManageMembers(groupId, requester);
     const groupManager = await this.prisma.groupManager.findFirst({
       where: { groupId, managerId },
     });

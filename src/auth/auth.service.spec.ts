@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -342,6 +343,24 @@ describe('AuthService', () => {
 
   // ─── verifyDriverOtp ────────────────────────────────────────────────────────
   describe('verifyDriverOtp', () => {
+    it('never logs the entered code or the full phone number', async () => {
+      const logged: string[] = [];
+      const capture = (m: unknown) => void logged.push(String(m));
+      const spies = (['log', 'warn', 'error', 'debug'] as const).map((lvl) =>
+        jest.spyOn(Logger.prototype, lvl).mockImplementation(capture),
+      );
+      prisma.otpCode.findFirst.mockResolvedValue(null);
+      await service.verifyDriverOtp(VALID_PHONE, '918273').catch(() => {});
+      await service.requestDriverOtp(VALID_PHONE).catch(() => {});
+      spies.forEach((s) => s.mockRestore());
+
+      expect(logged.length).toBeGreaterThan(0);
+      for (const line of logged) {
+        expect(line).not.toContain('918273');
+        expect(line).not.toContain('971234567');
+      }
+    });
+
     it('rejects an unparseable phone', async () => {
       await expect(
         service.verifyDriverOtp('not-a-phone', '123456'),

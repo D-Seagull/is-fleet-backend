@@ -1,5 +1,15 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  assertGroupAccess,
+  assertTripAccess,
+  type Requester,
+} from '../common/utils/access';
 
 export type ReactionTarget =
   | 'TRIP'
@@ -21,6 +31,83 @@ export interface ReactionRow {
 export class ReactionsService {
   private readonly logger = new Logger(ReactionsService.name);
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Check that `requester` may see the message / file being reacted to and
+   * return the socket rooms the change goes to. Trip → trip access, group →
+   * group access, DM → one of the two people in the conversation. A miss is
+   * 404 (no reacting to — or probing — another company's ids).
+   */
+  async assertTarget(
+    targetType: ReactionTarget,
+    targetId: string,
+    requester: Requester,
+  ): Promise<string[]> {
+    const id = typeof targetId === 'string' ? targetId : '';
+    const notFound = () =>
+      new NotFoundException(
+        targetType.endsWith('_DOC')
+          ? 'errors.documentNotFound'
+          : 'errors.messageNotFound',
+      );
+    switch (targetType) {
+      case 'TRIP':
+      case 'TRIP_DOC': {
+        const row =
+          targetType === 'TRIP'
+            ? await this.prisma.message.findUnique({
+                where: { id },
+                select: { tripId: true },
+              })
+            : await this.prisma.tripDocument.findUnique({
+                where: { id },
+                select: { tripId: true },
+              });
+        if (!row) throw notFound();
+        await assertTripAccess(this.prisma, row.tripId, requester).catch(() => {
+          throw notFound();
+        });
+        return [row.tripId];
+      }
+      case 'GROUP':
+      case 'GROUP_DOC': {
+        const row =
+          targetType === 'GROUP'
+            ? await this.prisma.groupMessage.findUnique({
+                where: { id },
+                select: { groupId: true },
+              })
+            : await this.prisma.groupMessageDocument.findUnique({
+                where: { id },
+                select: { groupId: true },
+              });
+        if (!row) throw notFound();
+        await assertGroupAccess(this.prisma, row.groupId, requester).catch(() => {
+          throw notFound();
+        });
+        return [`group:${row.groupId}`];
+      }
+      case 'DM':
+      case 'DM_DOC': {
+        const ends =
+          targetType === 'DM'
+            ? await this.prisma.directMessage
+                .findUnique({
+                  where: { id },
+                  select: { senderId: true, receiverId: true },
+                })
+                .then((m) => (m ? [m.senderId, m.receiverId] : null))
+            : await this.prisma.directMessageDocument
+                .findUnique({
+                  where: { id },
+                  select: { uploadedBy: true, otherUserId: true },
+                })
+                .then((d) => (d ? [d.uploadedBy, d.otherUserId] : null));
+        if (!ends || !ends.includes(requester.id)) throw notFound();
+        return ends.map((u) => `user:${u}`);
+      }
+    }
+  }
 
   /**
    * Toggle a user's reaction on a message:

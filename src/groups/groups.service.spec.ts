@@ -56,14 +56,14 @@ describe('GroupsService', () => {
     it('throws NotFound for an unknown group', async () => {
       prisma.group.findFirst.mockResolvedValue(null);
       await expect(
-        service.update('g1', 'u1', 'MANAGER', { name: 'x' } as never),
+        service.update('g1', 'u1', 'MANAGER', { name: 'x' } as never, 'c1'),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('forbids a manager editing a group they did not create', async () => {
       prisma.group.findFirst.mockResolvedValue({ id: 'g1', createdBy: 'other' });
       await expect(
-        service.update('g1', 'u1', 'MANAGER', { name: 'x' } as never),
+        service.update('g1', 'u1', 'MANAGER', { name: 'x' } as never, 'c1'),
       ).rejects.toThrow(/editOwnGroups/);
       expect(prisma.group.update).not.toHaveBeenCalled();
     });
@@ -74,7 +74,7 @@ describe('GroupsService', () => {
         createdBy: 'u1',
         managers: [],
       });
-      await service.update('g1', 'u1', 'MANAGER', { name: 'New' } as never);
+      await service.update('g1', 'u1', 'MANAGER', { name: 'New' } as never, 'c1');
       expect(prisma.group.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'g1' }, data: { name: 'New' } }),
       );
@@ -86,7 +86,7 @@ describe('GroupsService', () => {
         createdBy: 'other',
         managers: [],
       });
-      await service.update('g1', 'admin', 'ADMIN', { name: 'New' } as never);
+      await service.update('g1', 'admin', 'ADMIN', { name: 'New' } as never, null);
       expect(prisma.group.update).toHaveBeenCalled();
     });
   });

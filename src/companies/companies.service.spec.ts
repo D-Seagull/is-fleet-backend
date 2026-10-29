@@ -47,6 +47,30 @@ describe('CompaniesService', () => {
     });
   });
 
+  // ─── updateEmails (C9 regression: never spread the body into Prisma) ────────
+  describe('updateEmails', () => {
+    it('writes only the three email columns, whatever the body carries', async () => {
+      await service.updateEmails('c1', {
+        hrEmail: 'hr@acme.co',
+        // What an attacker would smuggle past an unvalidated body:
+        users: { update: { where: { id: 'me' }, data: { role: 'ADMIN' } } },
+      } as never);
+      expect(prisma.company.update).toHaveBeenCalledWith({
+        where: { id: 'c1' },
+        data: {
+          accountingEmail: undefined,
+          hrEmail: 'hr@acme.co',
+          directorEmail: undefined,
+        },
+      });
+    });
+
+    it('clears a contact sent as an empty string', async () => {
+      const res = await service.updateEmails('c1', { directorEmail: '' });
+      expect(res.directorEmail).toBeNull();
+    });
+  });
+
   // ─── updateCompany (email normalization + name trim) ────────────────────────
   describe('updateCompany', () => {
     it('normalizes empty-string emails to null (so String? columns clear cleanly)', async () => {

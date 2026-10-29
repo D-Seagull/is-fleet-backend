@@ -15,7 +15,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
 import { SmsService } from 'src/sms/sms.service';
-import { normalizePhone } from 'src/common/utils/phone';
+import { maskPhone, normalizePhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { MailService } from 'src/mail/mail.service';
 import { SELF_PROFILE_SELECT } from 'src/users/self-profile';
@@ -392,7 +392,7 @@ export class AuthService {
   async requestDriverOtp(phoneInput: string) {
     const phone = normalizePhone(phoneInput);
     this.logger.log(
-      `requestDriverOtp called: input="${phoneInput}" → normalized="${phone ?? 'INVALID'}"`,
+      `requestDriverOtp: ${phone ? maskPhone(phone) : 'INVALID'}`,
     );
 
     if (!phone) {
@@ -404,7 +404,7 @@ export class AuthService {
 
     if (!user || user.role !== 'DRIVER' || !user.isActive) {
       this.logger.warn(
-        `OTP request for ${phone}: no active DRIVER row found — returning ok:true silently`,
+        `OTP request for ${maskPhone(phone)}: no active DRIVER row found — returning ok:true silently`,
       );
       return { ok: true };
     }
@@ -442,7 +442,7 @@ export class AuthService {
     // demo driver's code is fixed and nothing is sent. verifyDriverOtp is
     // untouched — same TTL, attempt limit and single use as a real code.
     if (reviewCode) {
-      this.logger.log(`OTP for review phone ${phone}: fixed code, no SMS`);
+      this.logger.log(`OTP for review phone: fixed code, no SMS`);
       return { ok: true };
     }
 
@@ -456,7 +456,7 @@ export class AuthService {
       await this.sms.send(phone, `Your IS Fleet code: ${code}`);
     } catch (err) {
       this.logger.error(
-        `SMS delivery failed for ${phone}: ${
+        `SMS delivery failed for ${maskPhone(phone)}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -487,8 +487,9 @@ export class AuthService {
    */
   async verifyDriverOtp(phoneInput: string, code: string) {
     const phone = normalizePhone(phoneInput);
+    // Never log the entered code — it's a live credential for 5 minutes.
     this.logger.log(
-      `verifyDriverOtp called: input="${phoneInput}" → normalized="${phone ?? 'INVALID'}", code=${code}`,
+      `verifyDriverOtp: ${phone ? maskPhone(phone) : 'INVALID'}`,
     );
 
     if (!phone) {

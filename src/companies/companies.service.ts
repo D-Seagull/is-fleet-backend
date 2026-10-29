@@ -55,14 +55,22 @@ export class CompaniesService {
   async updateEmails(
     companyId: string,
     dto: {
-      accountingEmail?: string;
-      hrEmail?: string;
-      directorEmail?: string;
+      accountingEmail?: string | null;
+      hrEmail?: string | null;
+      directorEmail?: string | null;
     },
   ) {
+    // Build `data` field by field — never spread the body into Prisma, or a
+    // nested write (`users: { update: … role: 'ADMIN' }`) rides along.
+    const normEmail = (v: unknown) =>
+      v === undefined ? undefined : typeof v === 'string' && v.length > 0 ? v : null;
     return this.prisma.company.update({
       where: { id: companyId },
-      data: dto,
+      data: {
+        accountingEmail: normEmail(dto.accountingEmail),
+        hrEmail: normEmail(dto.hrEmail),
+        directorEmail: normEmail(dto.directorEmail),
+      },
     });
   }
 

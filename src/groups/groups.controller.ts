@@ -18,6 +18,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
@@ -71,9 +72,10 @@ export class GroupsController {
     @Param('id') id: string,
     @GetUser('id') userId: string,
     @GetUser('role') role: string,
+    @GetUser('companyId') companyId: string | null,
     @Body() dto: UpdateGroupDto,
   ) {
-    return this.groupsService.update(id, userId, role, dto);
+    return this.groupsService.update(id, userId, role, dto, companyId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -93,8 +95,9 @@ export class GroupsController {
     @Param('truckId') truckId: string,
     @GetUser('id') userId: string,
     @GetUser('role') role: string,
+    @GetUser('companyId') companyId: string | null,
   ) {
-    return this.groupsService.addTruck(groupId, truckId, userId, role);
+    return this.groupsService.addTruck(groupId, truckId, userId, role, companyId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -104,8 +107,15 @@ export class GroupsController {
     @Param('truckId') truckId: string,
     @GetUser('id') userId: string,
     @GetUser('role') role: string,
+    @GetUser('companyId') companyId: string | null,
   ) {
-    return this.groupsService.removeTruck(groupId, truckId, userId, role);
+    return this.groupsService.removeTruck(
+      groupId,
+      truckId,
+      userId,
+      role,
+      companyId,
+    );
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -113,8 +123,9 @@ export class GroupsController {
   addManager(
     @Param('id') groupId: string,
     @Param('managerId') managerId: string,
+    @GetUser() user: JwtUser,
   ) {
-    return this.groupsService.addManager(groupId, managerId);
+    return this.groupsService.addManager(groupId, managerId, user);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -122,8 +133,9 @@ export class GroupsController {
   removeManager(
     @Param('id') groupId: string,
     @Param('managerId') managerId: string,
+    @GetUser() user: JwtUser,
   ) {
-    return this.groupsService.removeManager(groupId, managerId);
+    return this.groupsService.removeManager(groupId, managerId, user);
   }
 
   // Group avatar — service enforces membership (creator + members + ADMIN).

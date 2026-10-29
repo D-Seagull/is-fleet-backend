@@ -19,6 +19,7 @@ import { AuthService } from './auth.service';
 const IS_PROD = process.env.NODE_ENV === 'production';
 const REFRESH_COOKIE = 'refresh_token';
 const REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+import { RefreshBodyDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RequestOtpDto } from './dto/request-otp.dto';
@@ -137,7 +138,7 @@ export class AuthController {
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Body() body: { refreshToken?: string; remember?: boolean },
+    @Body() body: RefreshBodyDto,
   ) {
     const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
     if (fromCookie) assertCookieOrigin(req);
@@ -159,7 +160,7 @@ export class AuthController {
   async logout(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Body() body: { refreshToken?: string },
+    @Body() body: RefreshBodyDto,
   ) {
     const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
     if (fromCookie) assertCookieOrigin(req);

@@ -101,8 +101,11 @@ export class TrucksController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/notes')
-  getNotes(@Param('id') truckId: string) {
-    return this.trucksService.getNotes(truckId);
+  getNotes(
+    @Param('id') truckId: string,
+    @GetUser('companyId') companyId: string | null,
+  ) {
+    return this.trucksService.getNotes(truckId, companyId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')

@@ -18,6 +18,12 @@ import { corsOrigin } from 'src/common/cors-origin';
 import { fullName } from 'src/common/utils/full-name';
 import { t } from 'src/i18n/i18n';
 import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
+import { authenticateSocket, socketUser } from 'src/common/utils/socket-auth';
+import {
+  assertCanMessageUser,
+  canAccessGroup,
+  hasGroupAccess,
+} from 'src/common/utils/access';
 import { pushTitle } from '../push/push-titles';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
@@ -37,65 +43,47 @@ export class DirectMessagesGateway
     private push: PushService,
   ) {}
 
-  handleConnection(client: Socket) {
-    try {
-      // Accept token from web (auth.token) OR mobile (query.userId)
-      const token =
-        (client.handshake.auth?.token as string | undefined) ||
-        (client.handshake.query?.userId as string | undefined);
-      if (!token) throw new Error('No token');
-      // Explicit secret — mirrors MessagesGateway. Without it `jwt.verify`
-      // can silently fail when the JwtModule default differs.
-      const payload = this.jwt.verify(token, {
-        secret: process.env.JWT_SECRET,
-      });
-      // userId may already be set by MessagesGateway.handleConnection — only overwrite if missing
-      if (!client.data.userId) client.data.userId = payload.sub;
-      // Sync join — `void` so we don't block event delivery while waiting.
-      void client.join(`user:${payload.sub}`);
-      this.logger.log(`user ${payload.sub} joined user:${payload.sub}`);
+  async handleConnection(client: Socket) {
+    // Shared with MessagesGateway — one DB-checked lookup per socket.
+    const me = await authenticateSocket(client, this.jwt, this.prisma);
+    if (!me) {
+      // No anonymous sockets (MessagesGateway disconnects too — same result).
+      client.disconnect(true);
+      return;
+    }
+    void client.join(`user:${me.userId}`);
+    this.logger.log(`user ${me.userId} joined user:${me.userId}`);
 
-      // Join every group room the user belongs to, so `new_group_message`
-      // reaches them app-wide (powers the global notification sound) — not
-      // only while the group chat is open.
-      const role = payload.role as string | undefined;
-      const companyId = payload.companyId as string | undefined;
-      void (async () => {
-        try {
-          let ids: string[] = [];
-          if (role === 'DRIVER' && companyId) {
-            const g = await this.prisma.group.findFirst({
-              where: { companyId, type: 'DRIVERS', deletedAt: null },
-              select: { id: true },
-            });
-            if (g) ids = [g.id];
-          } else if (companyId) {
-            const gs = await this.prisma.group.findMany({
-              where: {
-                companyId,
-                type: 'MANAGERS',
-                deletedAt: null,
-                OR: [
-                  { createdBy: payload.sub },
-                  { managers: { some: { managerId: payload.sub } } },
-                ],
-              },
-              select: { id: true },
-            });
-            ids = gs.map((g) => g.id);
-          }
-          for (const id of ids) await client.join(`group:${id}`);
-        } catch (err) {
-          this.logger.warn(
-            `group room auto-join failed for ${payload.sub}: ${(err as Error).message}`,
-          );
-        }
-      })();
-    } catch (e) {
-      // Soft fail: log but do NOT disconnect — the socket may still be valid
-      // for trip-chat (MessagesGateway). Disconnecting here kills trip chat too.
+    // Join every group room the user belongs to, so `new_group_message`
+    // reaches them app-wide (powers the global notification sound) — not
+    // only while the group chat is open.
+    try {
+      let ids: string[] = [];
+      if (me.role === 'DRIVER') {
+        const g = await this.prisma.group.findFirst({
+          where: { companyId: me.companyId, type: 'DRIVERS', deletedAt: null },
+          select: { id: true },
+        });
+        if (g) ids = [g.id];
+      } else {
+        const gs = await this.prisma.group.findMany({
+          where: {
+            companyId: me.companyId,
+            type: 'MANAGERS',
+            deletedAt: null,
+            OR: [
+              { createdBy: me.userId },
+              { managers: { some: { managerId: me.userId } } },
+            ],
+          },
+          select: { id: true },
+        });
+        ids = gs.map((g) => g.id);
+      }
+      for (const id of ids) await client.join(`group:${id}`);
+    } catch (err) {
       this.logger.warn(
-        `auth failed for ${client.id}: ${(e as Error).message}`,
+        `group room auto-join failed for ${me.userId}: ${(err as Error).message}`,
       );
     }
   }
@@ -115,12 +103,27 @@ export class DirectMessagesGateway
       replyToDocumentId?: string | null;
     },
   ) {
-    const senderId = client.data.userId as string | undefined;
-    if (!senderId) {
+    const me = await socketUser(client);
+    const senderId = me?.userId;
+    if (!me || !senderId) {
       this.logger.warn(
         `send_direct_message rejected — no senderId on socket ${client.id}. Client likely connected without a valid JWT.`,
       );
       return { error: 'unauthenticated' };
+    }
+    if (typeof data?.receiverId !== 'string' || typeof data.content !== 'string') {
+      return { error: 'invalid' };
+    }
+    // Same company (or an ADMIN on either side) — no DMs, and so no pushes,
+    // to arbitrary users of other companies.
+    try {
+      await assertCanMessageUser(this.prisma, data.receiverId, {
+        id: senderId,
+        role: me.role,
+        companyId: me.companyId,
+      });
+    } catch {
+      return { error: 'errors.userNotFound' };
     }
     if (await isCompanyWriteBlocked(this.prisma, senderId)) {
       return { error: 'errors.companyDeactivated' };
@@ -165,50 +168,72 @@ export class DirectMessagesGateway
     return message;
   }
   @SubscribeMessage('typing_start')
-  handleTypingStart(
+  async handleTypingStart(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { receiverId: string },
   ) {
+    const userId = (await socketUser(client))?.userId;
+    if (!userId || typeof data?.receiverId !== 'string') return;
     this.server
       .to(`user:${data.receiverId}`)
-      .emit('user_typing', { userId: client.data.userId });
+      .emit('user_typing', { userId });
   }
 
   @SubscribeMessage('typing_stop')
-  handleTypingStop(
+  async handleTypingStop(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { receiverId: string },
   ) {
+    const userId = (await socketUser(client))?.userId;
+    if (!userId || typeof data?.receiverId !== 'string') return;
     this.server
       .to(`user:${data.receiverId}`)
-      .emit('user_stopped_typing', { userId: client.data.userId });
+      .emit('user_stopped_typing', { userId });
   }
   @SubscribeMessage('mark_as_read')
   async handleMarkAsRead(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { senderId: string },
   ) {
+    // Without a reader the Prisma filter loses its receiver condition and
+    // marks everything that sender ever sent as read — reject outright.
+    const userId = (await socketUser(client))?.userId;
+    if (!userId || typeof data?.senderId !== 'string') return;
     this.logger.debug(
-      `mark_as_read received: senderId=${data.senderId} by user:${client.data.userId}`,
+      `mark_as_read received: senderId=${data.senderId} by user:${userId}`,
     );
-    await this.service.markAsRead(client.data.userId as string, data.senderId);
+    await this.service.markAsRead(userId, data.senderId);
 
     this.server
       .to(`user:${data.senderId}`)
-      .emit('messages_read', { readBy: client.data.userId });
+      .emit('messages_read', { readBy: userId });
     // Also notify the reader so their own DM-unread counter can refresh
     // immediately (without waiting for the 20s polling fallback).
     this.server
-      .to(`user:${client.data.userId}`)
-      .emit('messages_read', { readBy: client.data.userId });
+      .to(`user:${userId}`)
+      .emit('messages_read', { readBy: userId });
   }
   // ─── Group messages ───────────────────────────────────────────────────────
+  /**
+   * Live room of a group chat. Same right as reading it over HTTP (see
+   * canAccessGroup) — a teamlead may watch a company group they're not a
+   * member of, nobody may watch another company's.
+   */
   @SubscribeMessage('join_group')
   async handleJoinGroup(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { groupId: string },
   ) {
+    const me = await socketUser(client);
+    if (!me) return { error: 'unauthenticated' };
+    const ok = await hasGroupAccess(this.prisma, data?.groupId, {
+      id: me.userId,
+      role: me.role,
+      companyId: me.companyId,
+    });
+    if (!ok) return { error: 'errors.groupNotFound' };
     await client.join(`group:${data.groupId}`);
+    return { ok: true };
   }
 
   @SubscribeMessage('leave_group')
@@ -228,8 +253,9 @@ export class DirectMessagesGateway
 
   /** Same membership rule as the auto-join on connect. */
   private async isGroupMember(client: Socket, groupId: string) {
-    const userId = client.data.userId as string | undefined;
-    if (!userId) return false;
+    const me = await socketUser(client);
+    const userId = me?.userId;
+    if (!me || !userId) return false;
     const group = await this.prisma.group.findFirst({
       where: { id: groupId, deletedAt: null },
       select: {
@@ -241,9 +267,7 @@ export class DirectMessagesGateway
     });
     if (!group) return false;
     if (group.type === 'DRIVERS') {
-      return (
-        client.data.role === 'DRIVER' && client.data.companyId === group.companyId
-      );
+      return me.role === 'DRIVER' && me.companyId === group.companyId;
     }
     return group.createdBy === userId || group.managers.length > 0;
   }
@@ -262,15 +286,42 @@ export class DirectMessagesGateway
     this.logger.debug(
       `send_group_message from ${client.data.userId} to group ${data.groupId}`,
     );
-    const senderId = client.data.userId as string | undefined;
-    if (!senderId) {
+    const me = await socketUser(client);
+    const senderId = me?.userId;
+    if (!me || !senderId) {
       this.logger.warn(
         `send_group_message rejected — no senderId on socket ${client.id}.`,
       );
       return { error: 'unauthenticated' };
     }
+    if (typeof data?.groupId !== 'string' || typeof data.content !== 'string') {
+      return { error: 'invalid' };
+    }
     if (await isCompanyWriteBlocked(this.prisma, senderId)) {
       return { error: 'errors.companyDeactivated' };
+    }
+    // Posting needs the same right as reading — never into another
+    // company's group (its members would get our pushes).
+    const group = await this.prisma.group.findFirst({
+      where: { id: data.groupId, deletedAt: null },
+      select: {
+        id: true,
+        companyId: true,
+        type: true,
+        name: true,
+        createdBy: true,
+        managers: { select: { managerId: true } },
+      },
+    });
+    if (
+      !group ||
+      !canAccessGroup(group, {
+        id: senderId,
+        role: me.role,
+        companyId: me.companyId,
+      })
+    ) {
+      return { error: 'errors.groupNotFound' };
     }
     const message = await this.groupService.createMessage(
       data.groupId,
@@ -283,19 +334,10 @@ export class DirectMessagesGateway
     // Also broadcast a lightweight notification to every group member's
     // personal room so their unread counter updates even when they're not
     // currently viewing the group (e.g. on /trucks, /managers, etc).
-    const group = await this.prisma.group.findUnique({
-      where: { id: data.groupId },
-      select: {
-        type: true,
-        name: true,
-        createdBy: true,
-        managers: { select: { managerId: true } },
-      },
-    });
     // The company-wide DRIVERS group's `createdBy` is a nominal manager owner
     // (drivers are members implicitly) — don't ping managers for driver
     // chatter. Drivers get their group unread via the driver-groups fetch.
-    if (group && group.type !== 'DRIVERS') {
+    if (group.type !== 'DRIVERS') {
       const memberIds = new Set<string>([
         group.createdBy,
         ...group.managers.map((m) => m.managerId),
@@ -371,7 +413,8 @@ export class DirectMessagesGateway
     @MessageBody() data: { groupId: string },
   ) {
     const room = `group:${data?.groupId}`;
-    if (!data?.groupId || !client.data.userId || !client.rooms.has(room)) return;
+    const userId = (await socketUser(client))?.userId;
+    if (!data?.groupId || !userId || !client.rooms.has(room)) return;
     const { firstName, lastName } = await this.typingName(client);
     client.to(room).emit('group_typing', {
       groupId: data.groupId,
@@ -382,15 +425,16 @@ export class DirectMessagesGateway
   }
 
   @SubscribeMessage('group_stopped_typing')
-  handleGroupStoppedTyping(
+  async handleGroupStoppedTyping(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { groupId: string },
   ) {
     const room = `group:${data?.groupId}`;
-    if (!data?.groupId || !client.rooms.has(room)) return;
+    const userId = (await socketUser(client))?.userId;
+    if (!data?.groupId || !userId || !client.rooms.has(room)) return;
     client.to(room).emit('group_stopped_typing', {
       groupId: data.groupId,
-      userId: client.data.userId,
+      userId,
     });
   }
 
@@ -399,7 +443,15 @@ export class DirectMessagesGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { groupId: string },
   ) {
-    const userId = client.data.userId as string;
+    const me = await socketUser(client);
+    if (!me || typeof data?.groupId !== 'string') return;
+    const userId = me.userId;
+    const ok = await hasGroupAccess(this.prisma, data.groupId, {
+      id: userId,
+      role: me.role,
+      companyId: me.companyId,
+    });
+    if (!ok) return;
     await this.groupService.markAsRead(userId, data.groupId);
     // Emit to the group room so other members may update read indicators,
     // and to the reader so their own unread-summary refreshes.

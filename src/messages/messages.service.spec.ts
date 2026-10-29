@@ -171,18 +171,37 @@ describe('MessagesService', () => {
 
   // ─── remove (role-based soft-delete) ────────────────────────────────────────
   describe('remove', () => {
+    const driver = { id: 'u1', role: 'DRIVER', companyId: 'c1' };
+    const tripRow = {
+      id: 't1',
+      companyId: 'c1',
+      driverId: 'u1',
+      managerId: 'mgr',
+      truckId: 'tr1',
+    };
+    beforeEach(() => prisma.trip.findFirst.mockResolvedValue(tripRow));
+
     it('throws NotFound for an unknown message', async () => {
       prisma.message.findUnique.mockResolvedValue(null);
-      await expect(service.remove('m1', 'u1', 'DRIVER')).rejects.toBeInstanceOf(
+      await expect(service.remove('m1', driver)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    it('hides another company’s message from a manager (404, nothing written)', async () => {
+      prisma.message.findUnique.mockResolvedValue(msgRow({ senderId: 'x' }));
+      prisma.trip.findFirst.mockResolvedValue({ ...tripRow, companyId: 'other' });
+      await expect(
+        service.remove('m1', { id: 'mgr', role: 'MANAGER', companyId: 'c1' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.message.update).not.toHaveBeenCalled();
     });
 
     it('forbids a driver deleting someone else’s message', async () => {
       prisma.message.findUnique.mockResolvedValue(
         msgRow({ senderId: 'other' }),
       );
-      await expect(service.remove('m1', 'u1', 'DRIVER')).rejects.toBeInstanceOf(
+      await expect(service.remove('m1', driver)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
       expect(prisma.message.update).not.toHaveBeenCalled();
@@ -190,7 +209,7 @@ describe('MessagesService', () => {
 
     it('lets a driver soft-delete their own message', async () => {
       prisma.message.findUnique.mockResolvedValue(msgRow({ senderId: 'u1' }));
-      const res = await service.remove('m1', 'u1', 'DRIVER');
+      const res = await service.remove('m1', driver);
       expect(prisma.message.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'm1' },
@@ -207,7 +226,7 @@ describe('MessagesService', () => {
       prisma.message.findUnique.mockResolvedValue(
         msgRow({ senderId: 'other' }),
       );
-      await service.remove('m1', 'mgr', 'MANAGER');
+      await service.remove('m1', { id: 'mgr', role: 'MANAGER', companyId: 'c1' });
       expect(prisma.message.update).toHaveBeenCalled();
     });
   });

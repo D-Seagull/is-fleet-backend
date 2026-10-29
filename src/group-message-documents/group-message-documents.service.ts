@@ -10,6 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
+import { assertGroupAccess, type Requester } from '../common/utils/access';
 
 @Injectable()
 export class GroupMessageDocumentsService {
@@ -150,7 +151,8 @@ export class GroupMessageDocumentsService {
     return created;
   }
 
-  async findByGroup(groupId: string) {
+  async findByGroup(groupId: string, requester: Requester) {
+    await assertGroupAccess(this.prisma, groupId, requester);
     // Docs + reactions in parallel.
     const [docs, reactionRows] = await Promise.all([
       this.prisma.groupMessageDocument.findMany({
@@ -283,20 +285,26 @@ export class GroupMessageDocumentsService {
     return { deletedAt, signedUrl: '', thumbUrl: null };
   }
 
-  async view(id: string): Promise<{ url: string }> {
+  /** A group file is visible to whoever may read the group (canAccessGroup). */
+  private async findVisibleDoc(id: string, requester: Requester) {
     const doc = await this.prisma.groupMessageDocument.findUnique({
       where: { id },
     });
     if (!doc) throw new NotFoundException('errors.documentNotFound');
+    await assertGroupAccess(this.prisma, doc.groupId, requester).catch(() => {
+      throw new NotFoundException('errors.documentNotFound');
+    });
+    return doc;
+  }
+
+  async view(id: string, requester: Requester): Promise<{ url: string }> {
+    const doc = await this.findVisibleDoc(id, requester);
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600);
     return { url };
   }
 
-  async download(id: string): Promise<{ url: string }> {
-    const doc = await this.prisma.groupMessageDocument.findUnique({
-      where: { id },
-    });
-    if (!doc) throw new NotFoundException('errors.documentNotFound');
+  async download(id: string, requester: Requester): Promise<{ url: string }> {
+    const doc = await this.findVisibleDoc(id, requester);
     const url = await this.storage.getSignedUrl(
       doc.fileUrl,
       3600,

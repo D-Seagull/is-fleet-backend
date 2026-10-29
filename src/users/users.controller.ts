@@ -18,6 +18,7 @@ import { UpdateDriverDto } from './dto/update-driver.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { RegisterPushTokenDto } from './dto/push-token.dto';
 import { SetTimezoneDto } from './dto/timezone.dto';
+import { UpsertRatingDto } from './dto/upsert-rating.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -64,8 +65,11 @@ export class UsersController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id')
-  getUserById(@Param('id') id: string) {
-    return this.usersService.getUserById(id);
+  getUserById(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string | null,
+  ) {
+    return this.usersService.getUserById(id, companyId);
   }
 
   // Self-update: every authenticated role can edit their own profile here.
@@ -110,11 +114,13 @@ export class UsersController {
   upsertRating(
     @Param('id') driverId: string,
     @GetUser('id') ratedById: string,
-    @Body() body: { score: number; comment?: string; anonymous?: boolean },
+    @GetUser('companyId') companyId: string | null,
+    @Body() body: UpsertRatingDto,
   ) {
     return this.usersService.upsertRating(
       driverId,
       ratedById,
+      companyId,
       body.score,
       body.comment,
       body.anonymous,
@@ -123,8 +129,11 @@ export class UsersController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Get(':id/ratings')
-  getDriverRatings(@Param('id') driverId: string) {
-    return this.usersService.getDriverRatings(driverId);
+  getDriverRatings(
+    @Param('id') driverId: string,
+    @GetUser('companyId') companyId: string | null,
+  ) {
+    return this.usersService.getDriverRatings(driverId, companyId);
   }
 
   // ── Manager rating: only drivers in the company can rate managers ─────
@@ -134,7 +143,7 @@ export class UsersController {
     @Param('id') managerId: string,
     @GetUser('id') ratedById: string,
     @GetUser('companyId') companyId: string,
-    @Body() body: { score: number; comment?: string; anonymous?: boolean },
+    @Body() body: UpsertRatingDto,
   ) {
     return this.usersService.upsertManagerRating(
       managerId,
@@ -148,8 +157,11 @@ export class UsersController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/manager-ratings')
-  getManagerRatings(@Param('id') managerId: string) {
-    return this.usersService.getManagerRatings(managerId);
+  getManagerRatings(
+    @Param('id') managerId: string,
+    @GetUser('companyId') companyId: string | null,
+  ) {
+    return this.usersService.getManagerRatings(managerId, companyId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')

@@ -10,6 +10,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
+import {
+  assertCompanyTruck,
+  assertTripAccess,
+  type Requester,
+} from '../common/utils/access';
 
 @Injectable()
 export class DocumentsService {
@@ -22,7 +27,7 @@ export class DocumentsService {
 
   async uploadMany(
     tripId: string,
-    uploadedBy: string,
+    uploader: Requester,
     files: Express.Multer.File[],
     replyToMessageId?: string | null,
     replyToDocumentId?: string | null,
@@ -30,10 +35,10 @@ export class DocumentsService {
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
-    const trip = await this.prisma.trip.findFirst({
-      where: { id: tripId, deletedAt: null },
-    });
-    if (!trip) throw new NotFoundException('errors.tripNotFound');
+    // A trip of the uploader's company (a driver: their own) — never a
+    // foreign trip id from the request body.
+    await assertTripAccess(this.prisma, tripId, uploader);
+    const uploadedBy = uploader.id;
 
     // Several files in one message form an album: they share a batchId so
     // clients draw them as one bubble. A single file stays a plain one.
@@ -148,13 +153,14 @@ export class DocumentsService {
    * rules and events as deleting each file. A file outside an album is just
    * deleted on its own. Only the uploader's files of the batch are touched.
    */
-  async removeAlbum(id: string, userId: string, userRole: string) {
+  async removeAlbum(id: string, requester: Requester) {
     const doc = await this.prisma.tripDocument.findUnique({
       where: { id },
-      select: { batchId: true, uploadedBy: true },
+      select: { batchId: true, uploadedBy: true, tripId: true },
     });
     if (!doc) throw new NotFoundException('errors.documentNotFound');
-    if (!doc.batchId) return [await this.remove(id, userId, userRole)];
+    await this.assertDocTrip(doc.tripId, requester);
+    if (!doc.batchId) return [await this.remove(id, requester)];
 
     const album = await this.prisma.tripDocument.findMany({
       where: { batchId: doc.batchId, uploadedBy: doc.uploadedBy },
@@ -162,20 +168,22 @@ export class DocumentsService {
     });
     const removed: { id: string }[] = [];
     for (const d of album) {
-      removed.push(await this.remove(d.id, userId, userRole));
+      removed.push(await this.remove(d.id, requester));
     }
     return removed;
   }
 
-  async remove(id: string, userId: string, userRole: string) {
+  async remove(id: string, requester: Requester) {
     const document = await this.prisma.tripDocument.findUnique({
       where: { id },
     });
     if (!document) throw new NotFoundException('errors.documentNotFound');
+    // Company first — "managers can delete anything" means in their company.
+    await this.assertDocTrip(document.tripId, requester);
 
     // Drivers can only delete their own uploads; managers can delete anything.
-    const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(userRole);
-    if (!isManager && document.uploadedBy !== userId) {
+    const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(requester.role);
+    if (!isManager && document.uploadedBy !== requester.id) {
       throw new ForbiddenException('errors.cannotDeleteDocument');
     }
     if (document.deletedAt) {
@@ -200,16 +208,31 @@ export class DocumentsService {
     return { id: document.id };
   }
 
-  async view(id: string): Promise<{ url: string }> {
+  /**
+   * The document's trip must be visible to the requester (deleted trips
+   * included — their files stay readable from the archive). Answers with the
+   * document's not-found key so a foreign id looks like a missing one.
+   */
+  private async assertDocTrip(tripId: string, requester: Requester) {
+    await assertTripAccess(this.prisma, tripId, requester, {
+      includeDeleted: true,
+    }).catch(() => {
+      throw new NotFoundException('errors.documentNotFound');
+    });
+  }
+
+  async view(id: string, requester: Requester): Promise<{ url: string }> {
     const doc = await this.prisma.tripDocument.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('errors.documentNotFound');
+    await this.assertDocTrip(doc.tripId, requester);
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600);
     return { url };
   }
 
-  async download(id: string): Promise<{ url: string }> {
+  async download(id: string, requester: Requester): Promise<{ url: string }> {
     const doc = await this.prisma.tripDocument.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('errors.documentNotFound');
+    await this.assertDocTrip(doc.tripId, requester);
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600, doc.fileName);
     return { url };
   }
@@ -268,7 +291,10 @@ export class DocumentsService {
     return { ...doc, ...(await this.signOrHeal(doc)) };
   }
 
-  async findByTrip(tripId: string) {
+  async findByTrip(tripId: string, requester: Requester) {
+    await assertTripAccess(this.prisma, tripId, requester, {
+      includeDeleted: true,
+    });
     // Docs query + reactions subquery in parallel — same wall-time gain
     // as the message endpoints. Reactions subquery filters by tripId so
     // it returns only the relevant rows.
@@ -329,9 +355,20 @@ export class DocumentsService {
     );
   }
 
-  async findByTruck(truckId: string) {
+  async findByTruck(truckId: string, requester: Requester) {
+    // Truck of the requester's company; the trips filter repeats the company
+    // so an ADMIN-less miss can't slip through a shared truck id.
+    await assertCompanyTruck(this.prisma, truckId, requester);
     const docs = await this.prisma.tripDocument.findMany({
-      where: { trip: { truckId, deletedAt: null } },
+      where: {
+        trip: {
+          truckId,
+          deletedAt: null,
+          ...(requester.role === 'ADMIN'
+            ? {}
+            : { companyId: requester.companyId ?? undefined }),
+        },
+      },
       include: {
         uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
         // createdAt + stop addresses let the driver Documents screen search

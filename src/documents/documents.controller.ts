@@ -18,6 +18,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
@@ -42,11 +43,11 @@ export class DocumentsController {
     @Body('replyToMessageId') replyToMessageId: string | undefined,
     @Body('replyToDocumentId') replyToDocumentId: string | undefined,
     @Body('caption') caption: string | undefined,
-    @GetUser('id') userId: string,
+    @GetUser() user: JwtUser,
   ) {
     return this.documentsService.uploadMany(
       tripId,
-      userId,
+      user,
       files,
       replyToMessageId || null,
       replyToDocumentId || null,
@@ -62,46 +63,38 @@ export class DocumentsController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('trip/:tripId')
-  findByTrip(@Param('tripId') tripId: string) {
-    return this.documentsService.findByTrip(tripId);
+  findByTrip(@Param('tripId') tripId: string, @GetUser() user: JwtUser) {
+    return this.documentsService.findByTrip(tripId, user);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get('truck/:truckId')
-  findByTruck(@Param('truckId') truckId: string) {
-    return this.documentsService.findByTruck(truckId);
+  findByTruck(@Param('truckId') truckId: string, @GetUser() user: JwtUser) {
+    return this.documentsService.findByTruck(truckId, user);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/view')
-  view(@Param('id') id: string) {
-    return this.documentsService.view(id);
+  view(@Param('id') id: string, @GetUser() user: JwtUser) {
+    return this.documentsService.view(id, user);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/download')
-  download(@Param('id') id: string) {
-    return this.documentsService.download(id);
+  download(@Param('id') id: string, @GetUser() user: JwtUser) {
+    return this.documentsService.download(id, user);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id/album')
-  removeAlbum(
-    @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @GetUser('role') role: string,
-  ) {
-    return this.documentsService.removeAlbum(id, userId, role);
+  removeAlbum(@Param('id') id: string, @GetUser() user: JwtUser) {
+    return this.documentsService.removeAlbum(id, user);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
-  remove(
-    @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @GetUser('role') role: string,
-  ) {
-    return this.documentsService.remove(id, userId, role);
+  remove(@Param('id') id: string, @GetUser() user: JwtUser) {
+    return this.documentsService.remove(id, user);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
@@ -109,27 +102,16 @@ export class DocumentsController {
   async react(
     @Param('docId') docId: string,
     @Body('emoji') emoji: string,
-    @GetUser('id') userId: string,
+    @GetUser() user: JwtUser,
   ) {
+    const rooms = await this.reactions.assertTarget('TRIP_DOC', docId, user);
     const reactions = await this.reactions.toggle(
       'TRIP_DOC',
       docId,
-      userId,
+      user.id,
       emoji,
     );
-    const doc = await this.prisma.tripDocument.findUnique({
-      where: { id: docId },
-      select: { tripId: true },
-    });
-    if (doc) {
-      this.reactionsGateway.emit(
-        'TRIP_DOC',
-        docId,
-        reactions,
-        [doc.tripId],
-        userId,
-      );
-    }
+    this.reactionsGateway.emit('TRIP_DOC', docId, reactions, rooms, user.id);
     return reactions;
   }
 }

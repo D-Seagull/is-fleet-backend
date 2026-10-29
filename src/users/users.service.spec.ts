@@ -126,10 +126,39 @@ describe('UsersService', () => {
     });
   });
 
+  // ─── getUserById (company scoping) ──────────────────────────────────────────
+  describe('getUserById', () => {
+    it('404s a non-admin user of another company', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      await expect(service.getUserById('uB', 'cA')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.user.findFirst.mock.calls[0][0].where).toEqual({
+        id: 'uB',
+        companyId: 'cA',
+      });
+    });
+
+    it('returns only a public card for a platform ADMIN of another company', async () => {
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'adm', firstName: 'Ops', role: 'ADMIN' });
+      await expect(service.getUserById('adm', 'cA')).resolves.toEqual({
+        id: 'adm',
+        firstName: 'Ops',
+        role: 'ADMIN',
+      });
+      const select = prisma.user.findFirst.mock.calls[1][0].select;
+      expect(select.email).toBeUndefined();
+      expect(select.phone).toBeUndefined();
+    });
+  });
+
   // ─── upsertRating (idempotent per rater, defaults) ──────────────────────────
   describe('upsertRating', () => {
     it('upserts keyed on (driver, rater) and defaults anonymous to false', async () => {
-      await service.upsertRating('d1', 'r1', 5, 'great');
+      prisma.user.findFirst.mockResolvedValue({ id: 'd1' });
+      await service.upsertRating('d1', 'r1', 'c1', 5, 'great');
       expect(prisma.driverRating.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { driverId_ratedById: { driverId: 'd1', ratedById: 'r1' } },
