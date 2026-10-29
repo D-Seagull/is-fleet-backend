@@ -74,15 +74,22 @@ async function bootstrap() {
     .useGlobalFilters(new AllExceptionsFilter())
     .useGlobalInterceptors(new AdminInterceptor());
 
-  const config = new DocumentBuilder()
-    .setTitle('IS Fleet API')
-    .setDescription('Documentation for API for IS Fleet ')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  // Swagger is a full map of the API — off in production unless explicitly
+  // switched on (SWAGGER_ENABLED=true) for a debugging session.
+  if (
+    process.env.NODE_ENV !== 'production' ||
+    process.env.SWAGGER_ENABLED === 'true'
+  ) {
+    const config = new DocumentBuilder()
+      .setTitle('IS Fleet API')
+      .setDescription('Documentation for API for IS Fleet ')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+  }
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
   logger.log(`Сервер летить на ${port}`);

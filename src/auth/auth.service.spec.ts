@@ -16,6 +16,7 @@ import { MailService } from 'src/mail/mail.service';
 
 jest.mock('bcrypt');
 import * as bcrypt from 'bcrypt';
+import { createHash, createHmac } from 'crypto';
 const mockedBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
 
 // expo-server-sdk is ESM-only and gets pulled in transitively via the
@@ -30,6 +31,10 @@ jest.mock('expo-server-sdk', () => ({
 }));
 
 const VALID_PHONE = '+380971234567';
+// What AuthService stores for an OTP (config mock has no JWT_SECRET → '' key).
+const otpHash = (code: string, phone = VALID_PHONE) =>
+  createHmac('sha256', '').update(`${phone}:${code}`).digest('hex');
+const sha256 = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 // A minimal User row shaped for the fields signToken / markSessionStart read.
 const userRow = (over: Record<string, unknown> = {}) => ({
@@ -354,7 +359,7 @@ describe('AuthService', () => {
     it('locks the OTP after too many attempts', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
         id: 'o1',
-        code: '000000',
+        code: otpHash('000000'),
         attempts: 5,
         user: userRow(),
       });
@@ -373,7 +378,7 @@ describe('AuthService', () => {
     it('increments attempts on a wrong code', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
         id: 'o1',
-        code: '654321',
+        code: otpHash('654321'),
         attempts: 1,
         user: userRow(),
       });
@@ -390,7 +395,7 @@ describe('AuthService', () => {
     it('forbids a non-driver / inactive account even with the right code', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
         id: 'o1',
-        code: '123456',
+        code: otpHash('123456'),
         attempts: 0,
         user: userRow({ role: 'MANAGER' }),
       });
@@ -402,7 +407,7 @@ describe('AuthService', () => {
     it('signs a token and consumes the OTP on success', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
         id: 'o1',
-        code: '123456',
+        code: otpHash('123456'),
         attempts: 0,
         user: userRow(),
       });
@@ -469,7 +474,10 @@ describe('AuthService', () => {
         env({ REVIEW_PHONE: VALID_PHONE, REVIEW_OTP: '424242' });
         await service.requestDriverOtp(VALID_PHONE);
         expect(prisma.otpCode.create).toHaveBeenCalledWith({
-          data: expect.objectContaining({ phone: VALID_PHONE, code: '424242' }),
+          data: expect.objectContaining({
+            phone: VALID_PHONE,
+            code: otpHash('424242'),
+          }),
         });
         expect(sms.send).not.toHaveBeenCalled();
       });
@@ -479,7 +487,7 @@ describe('AuthService', () => {
         await service.requestDriverOtp(VALID_PHONE);
         expect(sms.send).toHaveBeenCalled();
         expect(prisma.otpCode.create.mock.calls[0][0].data.code).not.toBe(
-          '424242',
+          otpHash('424242'),
         );
       });
 
@@ -515,9 +523,28 @@ describe('AuthService', () => {
       expect(prisma.passwordResetToken.updateMany).toHaveBeenCalled();
       expect(prisma.passwordResetToken.create).toHaveBeenCalled();
     });
+
+    it('stores only the hash; the raw token goes out in the link', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ role: 'MANAGER' }));
+      await service.requestPasswordReset('x@y.co');
+      const stored = prisma.passwordResetToken.create.mock.calls[0][0].data
+        .token as string;
+      const link = mail.sendPasswordReset.mock.calls[0][1] as string;
+      const raw = new URL(link).searchParams.get('token')!;
+      expect(stored).toBe(sha256(raw));
+      expect(stored).not.toBe(raw);
+    });
   });
 
   describe('resetPassword', () => {
+    it('looks the token up by its hash', async () => {
+      prisma.passwordResetToken.findUnique.mockResolvedValue(null);
+      await expect(service.resetPassword('tok', 'newpw')).rejects.toThrow();
+      expect(prisma.passwordResetToken.findUnique).toHaveBeenCalledWith({
+        where: { token: sha256('tok') },
+      });
+    });
+
     it('rejects an unknown token', async () => {
       prisma.passwordResetToken.findUnique.mockResolvedValue(null);
       await expect(service.resetPassword('tok', 'newpw')).rejects.toThrow();

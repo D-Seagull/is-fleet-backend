@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -27,9 +28,22 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { authThrottle } from '../common/throttle';
+import { isAllowedOrigin } from '../common/cors-origin';
 import { JwtGuard } from './guards/jwt.guard';
 import { GetUser } from './decorators/get-user.decorator';
 import type { JwtUser } from './interfaces/jwt-user.interface';
+// The refresh cookie is SameSite=None in prod, so the browser attaches it to
+// cross-site POSTs too. CORS only stops a foreign page from READING the
+// response — the rotation itself would still run. Refuse cookie-borne calls
+// from any origin outside the CORS allowlist before touching the token.
+// (No Origin header = not a cross-site browser request; let it through.)
+function assertCookieOrigin(req: Request) {
+  const origin = req.headers.origin;
+  if (origin && !isAllowedOrigin(origin)) {
+    throw new ForbiddenException('Origin not allowed');
+  }
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -126,6 +140,7 @@ export class AuthController {
     @Body() body: { refreshToken?: string; remember?: boolean },
   ) {
     const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
+    if (fromCookie) assertCookieOrigin(req);
     const result = await this.AuthService.refresh(
       fromCookie ?? body?.refreshToken,
     );
@@ -146,9 +161,9 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Body() body: { refreshToken?: string },
   ) {
-    const raw =
-      (req.cookies?.[REFRESH_COOKIE] as string | undefined) ??
-      body?.refreshToken;
+    const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
+    if (fromCookie) assertCookieOrigin(req);
+    const raw = fromCookie ?? body?.refreshToken;
     await this.AuthService.revokeRefresh(raw);
     this.clearRefreshCookie(res);
     return { ok: true };

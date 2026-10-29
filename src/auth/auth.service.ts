@@ -28,6 +28,13 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 // A token rotated this recently is still accepted once more — see refresh().
 const REFRESH_REUSE_GRACE_MS = 60_000;
 
+/** Constant-time string compare; unequal lengths are simply unequal. */
+function safeEqual(a: string, b: string) {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -253,6 +260,16 @@ export class AuthService {
     return crypto.createHash('sha256').update(raw).digest('hex');
   }
 
+  // A 6-digit code has only a million values, so a plain SHA-256 of it is
+  // reversed instantly — the hash is keyed with JWT_SECRET (never in the DB)
+  // and bound to the phone, so a leaked otp_codes table gives nothing away.
+  private hashOtp(phone: string, code: string) {
+    return crypto
+      .createHmac('sha256', this.config.get<string>('JWT_SECRET') ?? '')
+      .update(`${phone}:${code}`)
+      .digest('hex');
+  }
+
   private async issueRefreshToken(userId: string): Promise<string> {
     const raw = crypto.randomBytes(48).toString('base64url');
     await this.prisma.refreshToken.create({
@@ -408,12 +425,17 @@ export class AuthService {
     }
 
     const reviewCode = this.reviewOtpFor(phone);
-    const code =
-      reviewCode ?? String(Math.floor(100000 + Math.random() * 900000));
+    const code = reviewCode ?? String(crypto.randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
+    // Only a keyed hash is stored — see hashOtp.
     await this.prisma.otpCode.create({
-      data: { phone, code, userId: user.id, expiresAt },
+      data: {
+        phone,
+        code: this.hashOtp(phone, code),
+        userId: user.id,
+        expiresAt,
+      },
     });
 
     // Store reviewers (Google Play / App Store) can't receive our SMS, so the
@@ -496,7 +518,7 @@ export class AuthService {
       throw new UnauthorizedException('errors.tooManyAttempts');
     }
 
-    if (otp.code !== code) {
+    if (!safeEqual(otp.code, this.hashOtp(phone, code))) {
       await this.prisma.otpCode.update({
         where: { id: otp.id },
         data: { attempts: { increment: 1 } },
@@ -546,8 +568,10 @@ export class AuthService {
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
 
+    // The raw token only travels in the email link; the row holds its hash,
+    // same as refresh tokens.
     await this.prisma.passwordResetToken.create({
-      data: { token, userId: user.id, expiresAt },
+      data: { token: this.hashToken(token), userId: user.id, expiresAt },
     });
 
     const frontendUrl =
@@ -567,7 +591,7 @@ export class AuthService {
 
   async resetPassword(token: string, newPassword: string) {
     const record = await this.prisma.passwordResetToken.findUnique({
-      where: { token },
+      where: { token: this.hashToken(token) },
     });
 
     if (!record || record.usedAt || record.expiresAt < new Date()) {
