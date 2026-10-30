@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Unit tests mock Prisma/Supabase/Twilio — no real DB or secrets.
+    # Dummy URLs only so `prisma generate` never trips on a missing env().
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Typecheck
+        run: npx tsc --noEmit
+      # `npm run lint` has --fix, so lint without it. Red today (~15 real
+      # errors + prettier) — doesn't fail the job until cleaned up; then
+      # drop continue-on-error.
+      - name: Lint
+        run: npx eslint "{src,test}/**/*.ts"
+        continue-on-error: true
+      - name: Unit tests
+        run: npm test -- --ci
