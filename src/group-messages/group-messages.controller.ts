@@ -19,6 +19,8 @@ import { ReactionsGateway } from '../reactions/reactions.gateway';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
+import { assertGroupAccess } from '../common/utils/access';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('group-messages')
@@ -43,10 +45,12 @@ export class GroupMessagesController {
   // Defaults to the latest 50 messages. Pass `before` (ISO date) to page
   // backward into older history; pass `take` (1..100) to override page size.
   @Get(':groupId')
-  getMessages(
+  async getMessages(
     @Param('groupId') groupId: string,
     @Query() query: GetChatMessagesDto,
+    @GetUser() user: JwtUser,
   ) {
+    await assertGroupAccess(this.prisma, groupId, user);
     return this.service.getMessages(groupId, {
       take: query.take,
       before: query.before ? new Date(query.before) : undefined,
@@ -54,11 +58,12 @@ export class GroupMessagesController {
   }
 
   @Post(':groupId/read')
-  markAsRead(
+  async markAsRead(
     @Param('groupId') groupId: string,
-    @GetUser('id') userId: string,
+    @GetUser() user: JwtUser,
   ) {
-    return this.service.markAsRead(userId, groupId);
+    await assertGroupAccess(this.prisma, groupId, user);
+    return this.service.markAsRead(user.id, groupId);
   }
 
   @Delete('messages/:messageId')
@@ -86,27 +91,16 @@ export class GroupMessagesController {
   async react(
     @Param('messageId') messageId: string,
     @Body('emoji') emoji: string,
-    @GetUser('id') userId: string,
+    @GetUser() user: JwtUser,
   ) {
+    const rooms = await this.reactions.assertTarget('GROUP', messageId, user);
     const reactions = await this.reactions.toggle(
       'GROUP',
       messageId,
-      userId,
+      user.id,
       emoji,
     );
-    const message = await this.prisma.groupMessage.findUnique({
-      where: { id: messageId },
-      select: { groupId: true },
-    });
-    if (message) {
-      this.reactionsGateway.emit(
-        'GROUP',
-        messageId,
-        reactions,
-        [`group:${message.groupId}`],
-        userId,
-      );
-    }
+    this.reactionsGateway.emit('GROUP', messageId, reactions, rooms, user.id);
     return reactions;
   }
 }

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { CreateManagerDto } from './dto/create-manager.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
@@ -17,7 +17,13 @@ import { MailService } from 'src/mail/mail.service';
 import { normalizePhone as toCanonicalPhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
+import { DriverTransfersService } from 'src/driver-transfers/driver-transfers.service';
 import { fullName } from 'src/common/utils/full-name';
+import {
+  assertTruckInCompany,
+  assertUserInCompany,
+  MANAGER_ROLES,
+} from 'src/common/utils/access';
 import { t } from 'src/i18n/i18n';
 import {
   SELF_PROFILE_FIELDS,
@@ -26,6 +32,12 @@ import {
 } from './self-profile';
 
 /** Same as shared util but throws 400 — used by create flows. */
+/** "Ivan" → "I." — enough to recognise, not to identify. */
+function initial(name: string | null | undefined): string {
+  const c = (name ?? '').trim().charAt(0);
+  return c ? `${c.toUpperCase()}.` : '';
+}
+
 function requireValidPhone(input: string): string {
   const canonical = toCanonicalPhone(input);
   if (!canonical) {
@@ -49,6 +61,7 @@ export class UsersService {
     private mail: MailService,
     private gateway: MessagesGateway,
     private push: PushService,
+    private transfers: DriverTransfersService,
   ) {}
 
   async createManager(
@@ -135,29 +148,23 @@ export class UsersService {
         // Let the caller confirm the identity before we move anything —
         // surfaces the existing driver's name in a "this driver already
         // exists, move them here?" prompt.
+        // Initials only: a phone number must not reveal who owns it in
+        // another company. The `driver` shape stays — installed web /
+        // is-manager builds read it — but carries no id or full name.
         throw new ConflictException({
           message: 'errors.driverExistsElsewhere',
           code: 'DRIVER_EXISTS_ELSEWHERE',
           driver: {
-            id: existing.id,
-            firstName: existing.firstName,
-            lastName: existing.lastName,
+            id: '',
+            firstName: initial(existing.firstName),
+            lastName: existing.lastName ? initial(existing.lastName) : null,
           },
         });
       }
-      // Confirmed — re-home the driver. Trip/message history stays put
-      // (it carries its own companyId), but detach them from their old
-      // company's truck and hand them to whoever is inviting them now.
-      await this.prisma.truck.updateMany({
-        where: { currentDriverId: existing.id },
-        data: { currentDriverId: null },
-      });
-      const moved = await this.prisma.user.update({
-        where: { id: existing.id },
-        data: { companyId, managerId: creatorId },
-      });
-      const { password, ...result } = moved;
-      return result;
+      // Confirmed by the manager — but the driver decides. Nothing moves
+      // until they accept the SMS link (DriverTransfersService.accept); the
+      // caller gets `{ pending: true, code: 'DRIVER_TRANSFER_PENDING' }`.
+      return this.transfers.request(existing, companyId, creatorId);
     }
 
     const hash = dto.password ? await bcrypt.hash(dto.password, 10) : null;
@@ -260,6 +267,29 @@ export class UsersService {
       where: companyId ? { id, companyId } : { id },
     });
     if (!user) throw new NotFoundException('errors.userNotFound');
+
+    // Truck / manager / teamlead ids must be from the edited user's company —
+    // no attaching another company's truck (or boss) to our driver.
+    if (dto.truckId) {
+      await assertTruckInCompany(this.prisma, dto.truckId, user.companyId);
+    }
+    if (dto.managerId) {
+      await assertUserInCompany(
+        this.prisma,
+        dto.managerId,
+        user.companyId,
+        MANAGER_ROLES,
+        'errors.managerNotFound',
+      );
+    }
+    if (dto.teamleadId) {
+      await assertUserInCompany(
+        this.prisma,
+        dto.teamleadId,
+        user.companyId,
+        ['TEAMLEAD'],
+      );
+    }
 
     // Track truck change so we can emit the same socket + push notifications
     // TrucksService.update emits when a manager reassigns from the truck side.
@@ -619,9 +649,11 @@ export class UsersService {
     return { message: `User ${fullName(user)} deactivated!` };
   }
 
-  async getUserById(id: string) {
+  // companyId is null only for ADMIN (AdminInterceptor) — everyone else sees
+  // profiles of their own company.
+  async getUserById(id: string, companyId: string | null) {
     const user = await this.prisma.user.findFirst({
-      where: { id },
+      where: companyId ? { id, companyId } : { id },
       select: {
         id: true,
         firstName: true,
@@ -693,6 +725,27 @@ export class UsersService {
         },
       },
     });
+    if (!user) {
+      // A platform ADMIN of another company is reachable by DM (support /
+      // bug-report replies), so the DM header may ask for them: answer with
+      // a public card only — no email, phone, team or ratings.
+      const admin = companyId
+        ? await this.prisma.user.findFirst({
+            where: { id, role: 'ADMIN', deletedAt: null },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              status: true,
+              statusUntil: true,
+              lastSeenAt: true,
+              role: true,
+            },
+          })
+        : null;
+      if (admin) return admin;
+    }
     if (!user) throw new NotFoundException('errors.userNotFound');
 
     const rawDriver = user.ratingsReceived;
@@ -740,10 +793,15 @@ export class UsersService {
   async upsertRating(
     driverId: string,
     ratedById: string,
+    companyId: string | null,
     score: number,
     comment?: string,
     anonymous?: boolean,
   ) {
+    if (score < 1 || score > 5) {
+      throw new BadRequestException('errors.scoreRange');
+    }
+    await this.assertRatee(driverId, companyId, ['DRIVER'], 'errors.driverNotFound');
     return this.prisma.driverRating.upsert({
       where: { driverId_ratedById: { driverId, ratedById } },
       create: { driverId, ratedById, score, comment, anonymous: anonymous ?? false },
@@ -751,7 +809,28 @@ export class UsersService {
     });
   }
 
-  async getDriverRatings(driverId: string) {
+  /** The rated person must be of `roles` and (unless ADMIN) in `companyId`. */
+  private async assertRatee(
+    userId: string,
+    companyId: string | null,
+    roles: Role[],
+    notFound: string,
+  ) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        role: { in: roles },
+        ...(companyId ? { companyId } : {}),
+      },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException(notFound);
+  }
+
+  async getDriverRatings(driverId: string, companyId: string | null) {
+    if (companyId) {
+      await this.assertRatee(driverId, companyId, ['DRIVER'], 'errors.driverNotFound');
+    }
     const ratings = await this.prisma.driverRating.findMany({
       where: { driverId },
       select: {
@@ -815,7 +894,16 @@ export class UsersService {
     });
   }
 
-  async getManagerRatings(managerId: string) {
+  async getManagerRatings(managerId: string, companyId: string | null) {
+    if (companyId) {
+      // ADMIN too: a truck's manager may be an ADMIN-role user (MANAGER_ROLES).
+      await this.assertRatee(
+        managerId,
+        companyId,
+        ['MANAGER', 'TEAMLEAD', 'ADMIN'],
+        'errors.managerNotFound',
+      );
+    }
     const ratings = await this.prisma.managerRating.findMany({
       where: { managerId },
       select: {

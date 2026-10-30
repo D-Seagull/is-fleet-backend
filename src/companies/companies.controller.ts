@@ -17,6 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { UpdateCompanyEmailsDto } from './dto/update-company-emails.dto';
 import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
 @ApiTags('companies')
@@ -62,8 +63,7 @@ export class CompaniesController {
   @Patch('emails')
   updateEmails(
     @GetUser('companyId') companyId: string,
-    @Body()
-    dto: { accountingEmail?: string; hrEmail?: string; directorEmail?: string },
+    @Body() dto: UpdateCompanyEmailsDto,
   ) {
     return this.companiesService.updateEmails(companyId, dto);
   }

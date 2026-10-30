@@ -16,6 +16,7 @@ import { MessagesGateway } from './messages.gateway';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
 import { pushTitle } from '../push/push-titles';
+import { assertTripAccess, type Requester } from '../common/utils/access';
 
 @Injectable()
 export class MessagesService {
@@ -77,8 +78,13 @@ export class MessagesService {
         // Gateway uses trip.truckId to route the lightweight
         // tripUnreadChanged signal to the truck-watchers room (Phase 2
         // fan-out reduction) without an extra DB round-trip.
+        // companyId → the company-admin room of the TRIP's company.
         trip: {
-          select: { truckId: true, truck: { select: { plate: true } } },
+          select: {
+            truckId: true,
+            companyId: true,
+            truck: { select: { plate: true } },
+          },
         },
         replyTo: {
           select: {
@@ -195,14 +201,19 @@ export class MessagesService {
   // tripId so the controller can broadcast `messageDeleted` to the room.
   async remove(
     id: string,
-    userId: string,
-    userRole: string,
+    requester: Requester,
   ): Promise<{ tripId: string }> {
     const msg = await this.prisma.message.findUnique({ where: { id } });
     if (!msg) throw new NotFoundException('errors.messageNotFound');
+    // "Managers can delete any" — any in their own company.
+    await assertTripAccess(this.prisma, msg.tripId, requester, {
+      includeDeleted: true,
+    }).catch(() => {
+      throw new NotFoundException('errors.messageNotFound');
+    });
 
-    const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(userRole);
-    if (!isManager && msg.senderId !== userId) {
+    const isManager = ['ADMIN', 'TEAMLEAD', 'MANAGER'].includes(requester.role);
+    if (!isManager && msg.senderId !== requester.id) {
       throw new ForbiddenException('errors.cannotDeleteMessage');
     }
 

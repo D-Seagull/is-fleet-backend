@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -16,6 +17,7 @@ import { MailService } from 'src/mail/mail.service';
 
 jest.mock('bcrypt');
 import * as bcrypt from 'bcrypt';
+import { createHash, createHmac } from 'crypto';
 const mockedBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
 
 // expo-server-sdk is ESM-only and gets pulled in transitively via the
@@ -30,6 +32,10 @@ jest.mock('expo-server-sdk', () => ({
 }));
 
 const VALID_PHONE = '+380971234567';
+// What AuthService stores for an OTP (config mock has no JWT_SECRET → '' key).
+const otpHash = (code: string, phone = VALID_PHONE) =>
+  createHmac('sha256', '').update(`${phone}:${code}`).digest('hex');
+const sha256 = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 // A minimal User row shaped for the fields signToken / markSessionStart read.
 const userRow = (over: Record<string, unknown> = {}) => ({
@@ -59,7 +65,7 @@ describe('AuthService', () => {
   let jwt: { sign: jest.Mock };
   let sms: { send: jest.Mock };
   let config: { get: jest.Mock };
-  let mail: { sendPasswordReset: jest.Mock };
+  let mail: { sendPasswordReset: jest.Mock; sendDriverLoginCode: jest.Mock };
   let emit: jest.Mock;
 
   beforeEach(async () => {
@@ -86,6 +92,7 @@ describe('AuthService', () => {
       },
       otpCode: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: 'o1' }),
         update: jest.fn().mockResolvedValue({ id: 'o1' }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -102,7 +109,10 @@ describe('AuthService', () => {
     jwt = { sign: jest.fn().mockReturnValue('access.jwt') };
     sms = { send: jest.fn().mockResolvedValue(undefined) };
     config = { get: jest.fn() };
-    mail = { sendPasswordReset: jest.fn().mockResolvedValue(undefined) };
+    mail = {
+      sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+      sendDriverLoginCode: jest.fn().mockResolvedValue(undefined),
+    };
     emit = jest.fn();
     const gateway = { server: { to: jest.fn().mockReturnValue({ emit }) } };
 
@@ -337,75 +347,122 @@ describe('AuthService', () => {
 
   // ─── verifyDriverOtp ────────────────────────────────────────────────────────
   describe('verifyDriverOtp', () => {
+    const otpRow = (over: Record<string, unknown> = {}) => ({
+      id: 'o1',
+      code: otpHash('123456'),
+      attempts: 0,
+      user: userRow(),
+      ...over,
+    });
+
+    it('never logs the entered code or the full phone number', async () => {
+      const logged: string[] = [];
+      const capture = (m: unknown) => void logged.push(String(m));
+      const spies = (['log', 'warn', 'error', 'debug'] as const).map((lvl) =>
+        jest.spyOn(Logger.prototype, lvl).mockImplementation(capture),
+      );
+      prisma.otpCode.findMany.mockResolvedValue([]);
+      prisma.otpCode.findFirst.mockResolvedValue(null);
+      await service.verifyDriverOtp(VALID_PHONE, '918273').catch(() => {});
+      await service.requestDriverOtp(VALID_PHONE).catch(() => {});
+      spies.forEach((s) => s.mockRestore());
+
+      expect(logged.length).toBeGreaterThan(0);
+      for (const line of logged) {
+        expect(line).not.toContain('918273');
+        expect(line).not.toContain('971234567');
+      }
+    });
+
     it('rejects an unparseable phone', async () => {
       await expect(
         service.verifyDriverOtp('not-a-phone', '123456'),
       ).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(prisma.otpCode.findFirst).not.toHaveBeenCalled();
+      expect(prisma.otpCode.findMany).not.toHaveBeenCalled();
     });
 
     it('rejects when there is no pending OTP', async () => {
-      prisma.otpCode.findFirst.mockResolvedValue(null);
+      prisma.otpCode.findMany.mockResolvedValue([]);
       await expect(
         service.verifyDriverOtp(VALID_PHONE, '123456'),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('locks the OTP after too many attempts', async () => {
-      prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1',
-        code: '000000',
-        attempts: 5,
-        user: userRow(),
-      });
+      prisma.otpCode.findMany.mockResolvedValue([
+        otpRow({ code: otpHash('000000'), attempts: 5 }),
+      ]);
       await expect(
         service.verifyDriverOtp(VALID_PHONE, '123456'),
       ).rejects.toThrow(/tooManyAttempts/);
       // Burns the OTP so a fresh one is required.
-      expect(prisma.otpCode.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'o1' },
-          data: expect.objectContaining({ usedAt: expect.any(Date) }),
-        }),
-      );
+      expect(prisma.otpCode.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['o1'] } },
+        data: { usedAt: expect.any(Date) },
+      });
+    });
+
+    it('an exhausted code stays locked even for the right code', async () => {
+      prisma.otpCode.findMany.mockResolvedValue([otpRow({ attempts: 5 })]);
+      await expect(
+        service.verifyDriverOtp(VALID_PHONE, '123456'),
+      ).rejects.toThrow(/tooManyAttempts/);
+      expect(jwt.sign).not.toHaveBeenCalled();
     });
 
     it('increments attempts on a wrong code', async () => {
-      prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1',
-        code: '654321',
-        attempts: 1,
-        user: userRow(),
-      });
+      prisma.otpCode.findMany.mockResolvedValue([
+        otpRow({ code: otpHash('654321'), attempts: 1 }),
+      ]);
       await expect(
         service.verifyDriverOtp(VALID_PHONE, '123456'),
       ).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(prisma.otpCode.update).toHaveBeenCalledWith(
+      expect(prisma.otpCode.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['o1'] } },
+        data: { attempts: { increment: 1 } },
+      });
+    });
+
+    it('a miss counts against every live code at once', async () => {
+      prisma.otpCode.findMany.mockResolvedValue([
+        otpRow({ id: 'sms', code: otpHash('111111') }),
+        otpRow({ id: 'mgr', code: otpHash('222222') }),
+      ]);
+      await expect(
+        service.verifyDriverOtp(VALID_PHONE, '333333'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.otpCode.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['sms', 'mgr'] } },
+        data: { attempts: { increment: 1 } },
+      });
+    });
+
+    it('accepts an older manager code while a newer SMS code is pending', async () => {
+      prisma.otpCode.findMany.mockResolvedValue([
+        otpRow({ id: 'sms', code: otpHash('111111') }),
+        otpRow({ id: 'mgr', code: otpHash('222222') }),
+      ]);
+      const res = await service.verifyDriverOtp(VALID_PHONE, '222222');
+      expect(res.access_token).toBe('access.jwt');
+      expect(prisma.otpCode.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { attempts: { increment: 1 } },
+          where: expect.objectContaining({ phone: VALID_PHONE, usedAt: null }),
+          take: 5,
         }),
       );
     });
 
     it('forbids a non-driver / inactive account even with the right code', async () => {
-      prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1',
-        code: '123456',
-        attempts: 0,
-        user: userRow({ role: 'MANAGER' }),
-      });
+      prisma.otpCode.findMany.mockResolvedValue([
+        otpRow({ user: userRow({ role: 'MANAGER' }) }),
+      ]);
       await expect(
         service.verifyDriverOtp(VALID_PHONE, '123456'),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('signs a token and consumes the OTP on success', async () => {
-      prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1',
-        code: '123456',
-        attempts: 0,
-        user: userRow(),
-      });
+      prisma.otpCode.findMany.mockResolvedValue([otpRow()]);
 
       const res = await service.verifyDriverOtp(VALID_PHONE, '123456');
 
@@ -416,6 +473,146 @@ describe('AuthService', () => {
           where: { phone: VALID_PHONE, usedAt: null },
         }),
       );
+    });
+  });
+
+  // ─── Driver login without SMS ───────────────────────────────────────────────
+  describe('requestDriverOtpViaManager', () => {
+    const manager = (over: Record<string, unknown> = {}) => ({
+      id: 'm1',
+      email: 'boss@example.com',
+      isActive: true,
+      companyId: 'c1',
+      uiLocale: 'PL',
+      ...over,
+    });
+
+    it('returns ok and sends nothing for an unknown phone', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(
+        service.requestDriverOtpViaManager(VALID_PHONE),
+      ).resolves.toEqual({ ok: true });
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
+      expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['no manager', null],
+      ['an inactive manager', manager({ isActive: false })],
+      ['a manager in another company', manager({ companyId: 'c2' })],
+      ['a manager without email', manager({ email: null })],
+    ])('returns ok and sends nothing with %s', async (_, m) => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ manager: m }));
+      await expect(
+        service.requestDriverOtpViaManager(VALID_PHONE),
+      ).resolves.toEqual({ ok: true });
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
+      expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
+    });
+
+    it('shares the per-phone cooldown with SMS codes', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ manager: manager() }));
+      prisma.otpCode.findFirst.mockResolvedValue({ id: 'recent' });
+      const err = await service
+        .requestDriverOtpViaManager(VALID_PHONE)
+        .catch((e: unknown) => e);
+      expect((err as HttpException).getStatus()).toBe(
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+      expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
+    });
+
+    it('stores only the hash and emails the code to the assigned manager', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ manager: manager() }));
+      prisma.otpCode.findFirst.mockResolvedValue(null);
+      await service.requestDriverOtpViaManager(VALID_PHONE);
+
+      const [to, opts] = mail.sendDriverLoginCode.mock.calls[0];
+      expect(to).toBe('boss@example.com');
+      expect(opts).toEqual(
+        expect.objectContaining({ locale: 'PL', ttlMinutes: 15 }),
+      );
+      expect(opts.code).toMatch(/^\d{6}$/);
+      expect(opts.driverPhone).not.toContain('971234567');
+      const row = prisma.otpCode.create.mock.calls[0][0].data;
+      expect(row.code).toBe(otpHash(opts.code));
+      expect(row.expiresAt.getTime() - Date.now()).toBeGreaterThan(
+        14 * 60_000,
+      );
+      expect(sms.send).not.toHaveBeenCalled();
+    });
+
+    it('still answers ok when the email fails', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ manager: manager() }));
+      prisma.otpCode.findFirst.mockResolvedValue(null);
+      mail.sendDriverLoginCode.mockRejectedValue(new Error('resend down'));
+      await expect(
+        service.requestDriverOtpViaManager(VALID_PHONE),
+      ).resolves.toEqual({ ok: true });
+    });
+  });
+
+  describe('issueDriverLoginCode', () => {
+    const requester = { id: 'm1', companyId: 'c1', isActive: true };
+    const driver = (over: Record<string, unknown> = {}) => ({
+      id: 'd1',
+      role: 'DRIVER',
+      phone: VALID_PHONE,
+      isActive: true,
+      companyId: 'c1',
+      managerId: 'm1',
+      deletedAt: null,
+      ...over,
+    });
+    const rows = (req: unknown, drv: unknown) =>
+      prisma.user.findUnique.mockImplementation(
+        ({ where }: { where: { id: string } }) =>
+          Promise.resolve(where.id === 'm1' ? req : drv),
+      );
+
+    it('issues a single-use 15-minute code to the assigned manager', async () => {
+      rows(requester, driver());
+      const res = await service.issueDriverLoginCode('m1', 'd1');
+
+      expect(res.code).toMatch(/^\d{6}$/);
+      expect(res.expiresAt.getTime() - Date.now()).toBeGreaterThan(
+        14 * 60_000,
+      );
+      expect(prisma.otpCode.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          phone: VALID_PHONE,
+          userId: 'd1',
+          code: otpHash(res.code),
+        }),
+      });
+    });
+
+    it.each([
+      ['another manager of the same company', driver({ managerId: 'm2' })],
+      ['a driver of another company', driver({ companyId: 'c2' })],
+      ['a non-driver', driver({ role: 'MANAGER' })],
+      ['a missing driver', null],
+    ])('refuses %s', async (_, drv) => {
+      rows(requester, drv);
+      await expect(
+        service.issueDriverLoginCode('m1', 'd1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a deactivated requester', async () => {
+      rows({ ...requester, isActive: false }, driver());
+      await expect(
+        service.issueDriverLoginCode('m1', 'd1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('refuses an inactive / deleted driver', async () => {
+      rows(requester, driver({ deletedAt: new Date() }));
+      await expect(
+        service.issueDriverLoginCode('m1', 'd1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
     });
   });
 
@@ -469,7 +666,10 @@ describe('AuthService', () => {
         env({ REVIEW_PHONE: VALID_PHONE, REVIEW_OTP: '424242' });
         await service.requestDriverOtp(VALID_PHONE);
         expect(prisma.otpCode.create).toHaveBeenCalledWith({
-          data: expect.objectContaining({ phone: VALID_PHONE, code: '424242' }),
+          data: expect.objectContaining({
+            phone: VALID_PHONE,
+            code: otpHash('424242'),
+          }),
         });
         expect(sms.send).not.toHaveBeenCalled();
       });
@@ -479,7 +679,7 @@ describe('AuthService', () => {
         await service.requestDriverOtp(VALID_PHONE);
         expect(sms.send).toHaveBeenCalled();
         expect(prisma.otpCode.create.mock.calls[0][0].data.code).not.toBe(
-          '424242',
+          otpHash('424242'),
         );
       });
 
@@ -515,9 +715,28 @@ describe('AuthService', () => {
       expect(prisma.passwordResetToken.updateMany).toHaveBeenCalled();
       expect(prisma.passwordResetToken.create).toHaveBeenCalled();
     });
+
+    it('stores only the hash; the raw token goes out in the link', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ role: 'MANAGER' }));
+      await service.requestPasswordReset('x@y.co');
+      const stored = prisma.passwordResetToken.create.mock.calls[0][0].data
+        .token as string;
+      const link = mail.sendPasswordReset.mock.calls[0][1] as string;
+      const raw = new URL(link).searchParams.get('token')!;
+      expect(stored).toBe(sha256(raw));
+      expect(stored).not.toBe(raw);
+    });
   });
 
   describe('resetPassword', () => {
+    it('looks the token up by its hash', async () => {
+      prisma.passwordResetToken.findUnique.mockResolvedValue(null);
+      await expect(service.resetPassword('tok', 'newpw')).rejects.toThrow();
+      expect(prisma.passwordResetToken.findUnique).toHaveBeenCalledWith({
+        where: { token: sha256('tok') },
+      });
+    });
+
     it('rejects an unknown token', async () => {
       prisma.passwordResetToken.findUnique.mockResolvedValue(null);
       await expect(service.resetPassword('tok', 'newpw')).rejects.toThrow();

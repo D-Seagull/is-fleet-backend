@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -18,6 +19,7 @@ import { AuthService } from './auth.service';
 const IS_PROD = process.env.NODE_ENV === 'production';
 const REFRESH_COOKIE = 'refresh_token';
 const REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+import { RefreshBodyDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RequestOtpDto } from './dto/request-otp.dto';
@@ -27,9 +29,24 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { authThrottle } from '../common/throttle';
+import { isAllowedOrigin } from '../common/cors-origin';
 import { JwtGuard } from './guards/jwt.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
 import { GetUser } from './decorators/get-user.decorator';
 import type { JwtUser } from './interfaces/jwt-user.interface';
+// The refresh cookie is SameSite=None in prod, so the browser attaches it to
+// cross-site POSTs too. CORS only stops a foreign page from READING the
+// response — the rotation itself would still run. Refuse cookie-borne calls
+// from any origin outside the CORS allowlist before touching the token.
+// (No Origin header = not a cross-site browser request; let it through.)
+function assertCookieOrigin(req: Request) {
+  const origin = req.headers.origin;
+  if (origin && !isAllowedOrigin(origin)) {
+    throw new ForbiddenException('Origin not allowed');
+  }
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -93,6 +110,29 @@ export class AuthController {
     return this.AuthService.requestDriverOtp(dto.phone);
   }
 
+  // SMS doesn't reach the driver → the code is emailed to their assigned
+  // manager instead. Same per-phone / per-IP budget as request-otp.
+  @Throttle(authThrottle('phone', 3, 30))
+  @Post('driver/request-otp-manager')
+  @HttpCode(HttpStatus.OK)
+  requestDriverOtpViaManager(@Body() dto: RequestOtpDto) {
+    return this.AuthService.requestDriverOtpViaManager(dto.phone);
+  }
+
+  // The assigned manager mints a one-time login code to dictate to the
+  // driver. Per-manager budget: each code is another 5 guesses at the phone.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(JwtGuard, RolesGuard)
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Post('driver/:id/login-code')
+  @HttpCode(HttpStatus.OK)
+  issueDriverLoginCode(
+    @Param('id') driverId: string,
+    @GetUser('id') requesterId: string,
+  ) {
+    return this.AuthService.issueDriverLoginCode(requesterId, driverId);
+  }
+
   @Throttle(authThrottle('phone', 10, 100))
   @Post('driver/verify-otp')
   @HttpCode(HttpStatus.OK)
@@ -123,9 +163,10 @@ export class AuthController {
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Body() body: { refreshToken?: string; remember?: boolean },
+    @Body() body: RefreshBodyDto,
   ) {
     const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
+    if (fromCookie) assertCookieOrigin(req);
     const result = await this.AuthService.refresh(
       fromCookie ?? body?.refreshToken,
     );
@@ -144,11 +185,11 @@ export class AuthController {
   async logout(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Body() body: { refreshToken?: string },
+    @Body() body: RefreshBodyDto,
   ) {
-    const raw =
-      (req.cookies?.[REFRESH_COOKIE] as string | undefined) ??
-      body?.refreshToken;
+    const fromCookie = req.cookies?.[REFRESH_COOKIE] as string | undefined;
+    if (fromCookie) assertCookieOrigin(req);
+    const raw = fromCookie ?? body?.refreshToken;
     await this.AuthService.revokeRefresh(raw);
     this.clearRefreshCookie(res);
     return { ok: true };

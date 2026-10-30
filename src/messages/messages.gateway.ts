@@ -16,6 +16,8 @@ import { JoinTripDto } from './dto/join-trip.dto';
 import { JwtService } from '@nestjs/jwt';
 import { corsOrigin } from 'src/common/cors-origin';
 import { isCompanyWriteBlocked } from 'src/common/utils/company-write-guard';
+import { authenticateSocket, socketUser } from 'src/common/utils/socket-auth';
+import { assertTripAccess } from 'src/common/utils/access';
 import { PresenceService } from 'src/push/presence.service';
 
 @WebSocketGateway({
@@ -69,25 +71,19 @@ export class MessagesGateway implements OnGatewayInit {
   }
 
   async handleConnection(client: Socket) {
+    // Synchronous first call — caches the lookup for every gateway and for
+    // handlers that fire before it resolves (see authenticateSocket).
+    const me = await authenticateSocket(client, this.jwtService, this.prisma);
+    if (!me) {
+      // No anonymous sockets: one left connected could still join rooms and
+      // listen. Clients re-handshake with a fresh token (web on refresh /
+      // tab focus, mobile via the liveness watchdog).
+      this.logger.warn(`${client.id} rejected: no valid token / inactive user`);
+      client.disconnect(true);
+      return;
+    }
     try {
-      // Support both:
-      //  - mobile app: query.userId (full JWT token, despite the field name)
-      //  - web frontend: auth.token
-      const token =
-        (client.handshake.auth?.token as string | undefined) ||
-        (client.handshake.query?.userId as string | undefined);
-
-      if (!token) throw new Error('No token');
-
-      const payload = this.jwtService.verify(token, {
-        secret: process.env.JWT_SECRET,
-      });
-      const userId = payload.sub as string;
-      const companyId = payload.companyId as string | undefined;
-      const role = payload.role as string | undefined;
-      client.data.userId = userId;
-      client.data.companyId = companyId;
-      client.data.role = role;
+      const { userId, companyId, role } = me;
       // Foreground flag — clients flip it via appActive/appBackground events.
       // Defaults to true on fresh connect (clients connect when they open
       // the app); mobile flips it back to false in onBackground.
@@ -112,7 +108,7 @@ export class MessagesGateway implements OnGatewayInit {
       // Company-level room — kept for presence broadcasts (userPresence-
       // Changed / presenceSnapshot). Unread-related signals now go to
       // role-scoped rooms below (Phase 2 fan-out).
-      if (companyId) {
+      {
         await client.join(`company-${companyId}`);
 
         // Role-scoped rooms for tripUnreadChanged routing. ADMIN/TEAMLEAD
@@ -161,11 +157,11 @@ export class MessagesGateway implements OnGatewayInit {
           });
         }
       }
-      this.logger.log(
-        `${client.id} → room:${userId} company:${companyId ?? 'n/a'}`,
+      this.logger.log(`${client.id} → room:${userId} company:${companyId}`);
+    } catch (e) {
+      this.logger.warn(
+        `${client.id} connection setup failed: ${(e as Error).message}`,
       );
-    } catch {
-      this.logger.warn(`${client.id} connected without valid token`);
     }
   }
 
@@ -225,7 +221,7 @@ export class MessagesGateway implements OnGatewayInit {
    */
   @SubscribeMessage('requestPresence')
   async handleRequestPresence(@ConnectedSocket() client: Socket) {
-    const companyId = (client.data as { companyId?: string }).companyId;
+    const companyId = (await socketUser(client))?.companyId;
     if (!companyId) return;
     const sockets = await this.server
       .in(`company-${companyId}`)
@@ -241,13 +237,32 @@ export class MessagesGateway implements OnGatewayInit {
     client.emit('presenceSnapshot', { userIds: onlineUserIds, awayUserIds });
   }
 
+  /**
+   * Trip rooms carry every live trip-chat event, so joining one needs the same
+   * right as reading the chat over HTTP: a trip of the caller's company (a
+   * driver: one they drive / drove). Only real trip ids — the room namespace
+   * is shared with `userId`, `company-…` and `admins` rooms.
+   */
   @SubscribeMessage('joinTrip')
   async handleJoinTrip(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: JoinTripDto,
   ) {
-    await client.join(body.tripId);
-    this.logger.log(`${client.id} joined room:${body.tripId}`);
+    const me = await socketUser(client);
+    if (!me) return { error: 'unauthenticated' };
+    try {
+      const trip = await assertTripAccess(this.prisma, body?.tripId, {
+        id: me.userId,
+        role: me.role,
+        companyId: me.companyId,
+      });
+      await client.join(trip.id);
+      this.logger.log(`${client.id} joined room:${trip.id}`);
+      return { ok: true };
+    } catch {
+      this.logger.warn(`${client.id} joinTrip refused`);
+      return { error: 'errors.tripNotFound' };
+    }
   }
 
   @SubscribeMessage('sendMessage')
@@ -256,7 +271,7 @@ export class MessagesGateway implements OnGatewayInit {
     @MessageBody() dto: CreateMessageDto,
   ) {
     // Always use the authenticated userId from the JWT — never trust client-sent senderId
-    const senderId = client.data.userId as string | undefined;
+    const senderId = (await socketUser(client))?.userId;
     this.logger.debug(
       `sendMessage from ${client.id} senderId=${senderId} tripId=${dto.tripId}`,
     );
@@ -285,7 +300,8 @@ export class MessagesGateway implements OnGatewayInit {
       // ONLY to the stakeholders who actually need their unread badges
       // invalidated. Drivers / managers of other trips no longer see
       // signals about chats they're not involved with.
-      const companyId = client.data.companyId as string | undefined;
+      const companyId = (message as { trip?: { companyId?: string } }).trip
+        ?.companyId;
       const driverId = (message as { session?: { driverId: string | null } })
         .session?.driverId;
       const managerId = (message as { session?: { managerId: string | null } })
@@ -328,8 +344,8 @@ export class MessagesGateway implements OnGatewayInit {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: JoinTripDto,
   ) {
-    const userId = client.data.userId as string | undefined;
-    if (!userId || !body?.tripId) return;
+    const userId = (await socketUser(client))?.userId;
+    if (!userId || typeof body?.tripId !== 'string') return;
     const result = await this.messagesService.markTripRead(
       body.tripId,
       userId,
@@ -361,8 +377,8 @@ export class MessagesGateway implements OnGatewayInit {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: JoinTripDto,
   ) {
-    const userId = client.data.userId as string | undefined;
-    if (!userId || !body?.tripId) return;
+    const userId = (await socketUser(client))?.userId;
+    if (!userId || typeof body?.tripId !== 'string') return;
     const trip = await this.prisma.trip.findFirst({
       where: { id: body.tripId, deletedAt: null },
       select: { driverId: true, managerId: true },
@@ -382,12 +398,15 @@ export class MessagesGateway implements OnGatewayInit {
   }
 
   @SubscribeMessage('stopTyping')
-  handleStopTyping(
+  async handleStopTyping(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: JoinTripDto,
   ) {
-    const userId = client.data.userId as string | undefined;
-    if (!userId || !body?.tripId) return;
+    const userId = (await socketUser(client))?.userId;
+    // Only from inside the room (joinTrip checked access) — no broadcasting
+    // into a trip the caller can't see.
+    if (!userId || typeof body?.tripId !== 'string') return;
+    if (!client.rooms.has(body.tripId)) return;
     client.to(body.tripId).emit('userStopTyping', {
       tripId: body.tripId,
       userId,

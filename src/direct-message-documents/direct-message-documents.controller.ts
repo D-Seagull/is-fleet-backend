@@ -18,6 +18,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
@@ -42,10 +43,10 @@ export class DirectMessageDocumentsController {
     @Body('replyToMessageId') replyToMessageId: string | undefined,
     @Body('replyToDocumentId') replyToDocumentId: string | undefined,
     @Body('caption') caption: string | undefined,
-    @GetUser('id') userId: string,
+    @GetUser() user: JwtUser,
   ) {
     return this.service.uploadMany(
-      userId,
+      user,
       otherUserId,
       files,
       replyToMessageId || null,
@@ -65,14 +66,14 @@ export class DirectMessageDocumentsController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/view')
-  view(@Param('id') id: string) {
-    return this.service.view(id);
+  view(@Param('id') id: string, @GetUser('id') userId: string) {
+    return this.service.view(id, userId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id/download')
-  download(@Param('id') id: string) {
-    return this.service.download(id);
+  download(@Param('id') id: string, @GetUser('id') userId: string) {
+    return this.service.download(id, userId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
@@ -92,27 +93,16 @@ export class DirectMessageDocumentsController {
   async react(
     @Param('docId') docId: string,
     @Body('emoji') emoji: string,
-    @GetUser('id') userId: string,
+    @GetUser() user: JwtUser,
   ) {
+    const rooms = await this.reactions.assertTarget('DM_DOC', docId, user);
     const reactions = await this.reactions.toggle(
       'DM_DOC',
       docId,
-      userId,
+      user.id,
       emoji,
     );
-    const doc = await this.prisma.directMessageDocument.findUnique({
-      where: { id: docId },
-      select: { uploadedBy: true, otherUserId: true },
-    });
-    if (doc) {
-      this.reactionsGateway.emit(
-        'DM_DOC',
-        docId,
-        reactions,
-        [`user:${doc.uploadedBy}`, `user:${doc.otherUserId}`],
-        userId,
-      );
-    }
+    this.reactionsGateway.emit('DM_DOC', docId, reactions, rooms, user.id);
     return reactions;
   }
 }

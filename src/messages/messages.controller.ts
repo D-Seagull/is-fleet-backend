@@ -11,6 +11,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -51,12 +52,8 @@ export class MessagesController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Delete(':id')
-  async remove(
-    @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @GetUser('role') role: string,
-  ) {
-    const { tripId } = await this.messagesService.remove(id, userId, role);
+  async remove(@Param('id') id: string, @GetUser() user: JwtUser) {
+    const { tripId } = await this.messagesService.remove(id, user);
     // Broadcast so every client in the trip room drops the message instantly.
     this.gateway.emitMessageDeleted(tripId, id);
     return { id };
@@ -79,27 +76,16 @@ export class MessagesController {
   async react(
     @Param('messageId') messageId: string,
     @Body('emoji') emoji: string,
-    @GetUser('id') userId: string,
+    @GetUser() user: JwtUser,
   ) {
+    const rooms = await this.reactions.assertTarget('TRIP', messageId, user);
     const reactions = await this.reactions.toggle(
       'TRIP',
       messageId,
-      userId,
+      user.id,
       emoji,
     );
-    const message = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: { tripId: true },
-    });
-    if (message) {
-      this.reactionsGateway.emit(
-        'TRIP',
-        messageId,
-        reactions,
-        [message.tripId],
-        userId,
-      );
-    }
+    this.reactionsGateway.emit('TRIP', messageId, reactions, rooms, user.id);
     return reactions;
   }
 }

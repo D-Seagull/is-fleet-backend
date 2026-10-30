@@ -10,6 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
+import { assertCanMessageUser, type Requester } from '../common/utils/access';
 
 @Injectable()
 export class DirectMessageDocumentsService {
@@ -21,7 +22,7 @@ export class DirectMessageDocumentsService {
   ) {}
 
   async uploadMany(
-    uploadedBy: string,
+    uploader: Requester,
     otherUserId: string,
     files: Express.Multer.File[],
     replyToMessageId?: string | null,
@@ -30,10 +31,9 @@ export class DirectMessageDocumentsService {
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
-    const otherUser = await this.prisma.user.findUnique({
-      where: { id: otherUserId },
-    });
-    if (!otherUser) throw new NotFoundException('errors.userNotFound');
+    // Only to someone the uploader may DM — not to any user id on the platform.
+    await assertCanMessageUser(this.prisma, otherUserId, uploader);
+    const uploadedBy = uploader.id;
 
     // Several files in one message form an album: they share a batchId so
     // clients draw them as one bubble. A single file stays a plain one.
@@ -227,20 +227,25 @@ export class DirectMessageDocumentsService {
     return { deletedAt, signedUrl: '', thumbUrl: null };
   }
 
-  async view(id: string): Promise<{ url: string }> {
+  /** A DM file is visible to its two participants only. */
+  private async findOwnDoc(id: string, userId: string) {
     const doc = await this.prisma.directMessageDocument.findUnique({
       where: { id },
     });
-    if (!doc) throw new NotFoundException('errors.documentNotFound');
+    if (!doc || (doc.uploadedBy !== userId && doc.otherUserId !== userId)) {
+      throw new NotFoundException('errors.documentNotFound');
+    }
+    return doc;
+  }
+
+  async view(id: string, userId: string): Promise<{ url: string }> {
+    const doc = await this.findOwnDoc(id, userId);
     const url = await this.storage.getSignedUrl(doc.fileUrl, 3600);
     return { url };
   }
 
-  async download(id: string): Promise<{ url: string }> {
-    const doc = await this.prisma.directMessageDocument.findUnique({
-      where: { id },
-    });
-    if (!doc) throw new NotFoundException('errors.documentNotFound');
+  async download(id: string, userId: string): Promise<{ url: string }> {
+    const doc = await this.findOwnDoc(id, userId);
     const url = await this.storage.getSignedUrl(
       doc.fileUrl,
       3600,

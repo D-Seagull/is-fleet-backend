@@ -102,6 +102,35 @@ export class MailService {
     });
   }
 
+  /**
+   * Driver login without SMS: the code goes to the driver's assigned manager,
+   * who passes it on. In the manager's interface language.
+   */
+  async sendDriverLoginCode(
+    to: string,
+    opts: {
+      driverName: string;
+      driverPhone: string;
+      code: string;
+      ttlMinutes: number;
+      locale?: string | null;
+    },
+  ) {
+    const copy =
+      DRIVER_LOGIN_CODE_COPY[opts.locale ?? 'UK'] ?? DRIVER_LOGIN_CODE_COPY.UK;
+    const driver = `${esc(opts.driverName)} (${esc(opts.driverPhone)})`;
+    await this.send({
+      to,
+      subject: oneLine(`${copy.subject} — ${opts.driverName}`),
+      html: `
+        <p>${copy.intro.replace('{driver}', driver)}</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:6px">${esc(opts.code)}</p>
+        <p>${copy.ttl.replace('{minutes}', String(opts.ttlMinutes))}</p>
+        <p>${copy.warning}</p>
+      `,
+    });
+  }
+
   // ── Landing page (public forms) ─────────────────────────────────────────
   // English, like the landing page. Everything a visitor typed goes through esc().
 
@@ -175,6 +204,60 @@ export class MailService {
     });
   }
 }
+
+/** sendDriverLoginCode copy, keyed by User.uiLocale. */
+const DRIVER_LOGIN_CODE_COPY: Record<
+  string,
+  { subject: string; intro: string; ttl: string; warning: string }
+> = {
+  UK: {
+    subject: 'Код входу для водія',
+    intro: 'Водій {driver} не отримав SMS і просить код для входу в IS Fleet:',
+    ttl: 'Код одноразовий і діє {minutes} хв.',
+    warning:
+      'Передайте його водієві телефоном, переконавшись, що це справді він. Якщо водій нічого не просив — проігноруйте цей лист.',
+  },
+  EN: {
+    subject: 'Driver login code',
+    intro:
+      "Driver {driver} didn't receive the SMS and asks for an IS Fleet login code:",
+    ttl: 'The code is single-use and valid for {minutes} min.',
+    warning:
+      "Pass it to the driver by phone, making sure it's really them. If the driver didn't ask for it, ignore this email.",
+  },
+  PL: {
+    subject: 'Kod logowania dla kierowcy',
+    intro:
+      'Kierowca {driver} nie otrzymał SMS-a i prosi o kod logowania do IS Fleet:',
+    ttl: 'Kod jest jednorazowy i ważny {minutes} min.',
+    warning:
+      'Przekaż go kierowcy telefonicznie, upewniając się, że to naprawdę on. Jeśli kierowca o nic nie prosił — zignoruj tę wiadomość.',
+  },
+  LT: {
+    subject: 'Vairuotojo prisijungimo kodas',
+    intro:
+      'Vairuotojas {driver} negavo SMS ir prašo IS Fleet prisijungimo kodo:',
+    ttl: 'Kodas vienkartinis ir galioja {minutes} min.',
+    warning:
+      'Perduokite jį vairuotojui telefonu, įsitikinę, kad tai tikrai jis. Jei vairuotojas nieko neprašė — ignoruokite šį laišką.',
+  },
+  DE: {
+    subject: 'Anmeldecode für Fahrer',
+    intro:
+      'Fahrer {driver} hat die SMS nicht erhalten und bittet um einen IS Fleet Anmeldecode:',
+    ttl: 'Der Code ist einmalig und {minutes} Min. gültig.',
+    warning:
+      'Geben Sie ihn dem Fahrer telefonisch weiter und stellen Sie sicher, dass er es wirklich ist. Hat der Fahrer nichts angefordert, ignorieren Sie diese E-Mail.',
+  },
+  RU: {
+    subject: 'Код входа для водителя',
+    intro:
+      'Водитель {driver} не получил SMS и просит код для входа в IS Fleet:',
+    ttl: 'Код одноразовый и действует {minutes} мин.',
+    warning:
+      'Передайте его водителю по телефону, убедившись, что это действительно он. Если водитель ничего не просил — проигнорируйте это письмо.',
+  },
+};
 
 /** Subjects are plain text: no escaping, but no line breaks from visitor input either. */
 function oneLine(value: string): string {

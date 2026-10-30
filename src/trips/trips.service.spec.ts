@@ -62,6 +62,8 @@ describe('TripsService', () => {
       },
       user: {
         findUnique: jest.fn().mockResolvedValue(null),
+        // assertUserInCompany: the referenced driver / manager is in-company.
+        findFirst: jest.fn().mockResolvedValue({ id: 'u' }),
         findMany: jest.fn().mockResolvedValue([]),
       },
       // Власність на машини міняється однією транзакцією зі списку промісів.
@@ -187,6 +189,26 @@ describe('TripsService', () => {
       await expect(
         service.assignDriver('t1', 'c1', 'd2', 'mgr1'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses a driver of another company (no update, no push)', async () => {
+      prisma.trip.findFirst.mockResolvedValue({
+        id: 't1',
+        companyId: 'c1',
+        driverId: 'd1',
+        managerId: 'm1',
+      });
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.assignDriver('t1', 'c1', 'foreignDriver', 'mgr1'),
+      ).rejects.toThrow('errors.driverNotFound');
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'foreignDriver', companyId: 'c1' }),
+        }),
+      );
+      expect(prisma.trip.update).not.toHaveBeenCalled();
     });
 
     it('does NOT churn the chat session when the driver is unchanged', async () => {

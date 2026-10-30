@@ -13,9 +13,15 @@ import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import * as Sentry from '@sentry/nestjs';
 import helmet from 'helmet';
-// Process-level safety net: log stray async errors through the normal logger
-// rather than letting Node take the whole server down on a single unhandled
-// rejection. (Replaces the temporary crash.log diagnostics.)
+// Process-level safety net.
+//  - unhandledRejection: log + Sentry, keep serving. A forgotten `await` on a
+//    fire-and-forget push / socket emit lands here; the rejected promise is
+//    already settled, nothing is left half-done, and dropping every socket
+//    of every driver for that would be worse than the bug.
+//  - uncaughtException: log + Sentry, then exit. After a synchronous throw
+//    escaped to the event loop Node's state is undefined (a handler stopped
+//    mid-way, locks/timers may be orphaned), so limping on risks silent
+//    corruption. Render restarts the service within seconds.
 const processLogger = new Logger('Process');
 process.on('unhandledRejection', (reason) => {
   const detail =
@@ -24,8 +30,12 @@ process.on('unhandledRejection', (reason) => {
   Sentry.captureException(reason);
 });
 process.on('uncaughtException', (err) => {
-  processLogger.error(`Uncaught exception: ${err.stack ?? err.message}`);
+  // console.error for the same reason as in bootstrap's catch below: the
+  // async pino transport would lose the line on exit.
+  console.error('Uncaught exception, exiting:', err);
   Sentry.captureException(err);
+  // exit() would kill the process before the event is sent.
+  void Sentry.flush(2000).finally(() => process.exit(1));
 });
 
 async function bootstrap() {
@@ -74,15 +84,22 @@ async function bootstrap() {
     .useGlobalFilters(new AllExceptionsFilter())
     .useGlobalInterceptors(new AdminInterceptor());
 
-  const config = new DocumentBuilder()
-    .setTitle('IS Fleet API')
-    .setDescription('Documentation for API for IS Fleet ')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  // Swagger is a full map of the API — off in production unless explicitly
+  // switched on (SWAGGER_ENABLED=true) for a debugging session.
+  if (
+    process.env.NODE_ENV !== 'production' ||
+    process.env.SWAGGER_ENABLED === 'true'
+  ) {
+    const config = new DocumentBuilder()
+      .setTitle('IS Fleet API')
+      .setDescription('Documentation for API for IS Fleet ')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+  }
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
   logger.log(`Сервер летить на ${port}`);

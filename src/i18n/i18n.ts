@@ -106,6 +106,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Час на редагування минув (15 хв)',
     'errors.cannotDeleteMessage': 'Ви не можете видалити це повідомлення',
     'errors.driverNotActive': 'Акаунт водія неактивний.',
+    'errors.notAssignedManager': 'Код входу може видати лише закріплений менеджер водія.',
     // errors — bad request / conflict / auth
     'errors.phoneFormat':
       'Номер має бути в міжнародному форматі, напр. +380501234567',
@@ -139,6 +140,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компанію деактивовано — зміни тимчасово недоступні',
     'errors.driverExistsElsewhere':
       'Цей водій вже зареєстрований в іншій компанії',
+    'errors.transferInvalid': 'Посилання недійсне або застаріло',
+    'sms.driverTransfer':
+      'IS Fleet: компанія «{{company}}» хоче додати вас як водія. Підтвердіть або відхиліть: {{link}}',
   },
   en: {
     'push.newMessage': 'New message',
@@ -220,6 +224,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'The edit window has passed (15 min)',
     'errors.cannotDeleteMessage': "You can't delete this message",
     'errors.driverNotActive': 'Driver account is not active.',
+    'errors.notAssignedManager': "Only the driver's assigned manager can issue a login code.",
     'errors.phoneFormat':
       'Phone must be in international format, e.g. +380501234567',
     'errors.userExists': 'A user with this email or phone already exists.',
@@ -250,6 +255,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Company is deactivated — changes are temporarily unavailable',
     'errors.driverExistsElsewhere':
       'This driver is already registered with another company',
+    'errors.transferInvalid': 'This link is invalid or has expired',
+    'sms.driverTransfer':
+      'IS Fleet: "{{company}}" wants to add you as a driver. Accept or decline: {{link}}',
   },
   pl: {
     'push.newMessage': 'Nowa wiadomość',
@@ -336,6 +344,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Czas na edycję minął (15 min)',
     'errors.cannotDeleteMessage': 'Nie możesz usunąć tej wiadomości',
     'errors.driverNotActive': 'Konto kierowcy nie jest aktywne.',
+    'errors.notAssignedManager': 'Kod logowania może wydać tylko przypisany menedżer kierowcy.',
     'errors.phoneFormat':
       'Numer musi być w formacie międzynarodowym, np. +380501234567',
     'errors.userExists':
@@ -369,6 +378,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
       'Ten kierowca jest już zarejestrowany w innej firmie',
+    'errors.transferInvalid': 'Link jest nieprawidłowy lub wygasł',
+    'sms.driverTransfer':
+      'IS Fleet: firma „{{company}}” chce dodać Cię jako kierowcę. Zaakceptuj lub odrzuć: {{link}}',
   },
   lt: {
     'push.newMessage': 'Nauja žinutė',
@@ -452,6 +464,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Redagavimo laikas baigėsi (15 min)',
     'errors.cannotDeleteMessage': 'Negalite ištrinti šios žinutės',
     'errors.driverNotActive': 'Vairuotojo paskyra neaktyvi.',
+    'errors.notAssignedManager': 'Prisijungimo kodą gali išduoti tik priskirtas vairuotojo vadybininkas.',
     'errors.phoneFormat':
       'Telefonas turi būti tarptautiniu formatu, pvz. +380501234567',
     'errors.userExists':
@@ -483,6 +496,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
     'errors.driverExistsElsewhere':
       'Šis vairuotojas jau užregistruotas kitoje įmonėje',
+    'errors.transferInvalid': 'Nuoroda neteisinga arba nebegalioja',
+    'sms.driverTransfer':
+      'IS Fleet: „{{company}}“ nori pridėti jus kaip vairuotoją. Patvirtinkite arba atmeskite: {{link}}',
   },
   ru: {
     'push.newMessage': 'Новое сообщение',
@@ -570,6 +586,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Время на редактирование истекло (15 мин)',
     'errors.cannotDeleteMessage': 'Вы не можете удалить это сообщение',
     'errors.driverNotActive': 'Аккаунт водителя неактивен.',
+    'errors.notAssignedManager': 'Код входа может выдать только закреплённый менеджер водителя.',
     'errors.phoneFormat':
       'Номер должен быть в международном формате, напр. +380501234567',
     'errors.userExists':
@@ -602,6 +619,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компания деактивирована — изменения временно недоступны',
     'errors.driverExistsElsewhere':
       'Этот водитель уже зарегистрирован в другой компании',
+    'errors.transferInvalid': 'Ссылка недействительна или устарела',
+    'sms.driverTransfer':
+      'IS Fleet: компания «{{company}}» хочет добавить вас как водителя. Подтвердите или отклоните: {{link}}',
   },
 };
 

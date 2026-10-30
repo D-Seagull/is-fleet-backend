@@ -13,6 +13,7 @@ import { PushService } from '../push/push.service';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
 import { withCurrentTripOnly } from '../trips/trip-order';
+import { assertUserInCompany, MANAGER_ROLES } from '../common/utils/access';
 
 const ACTIVE_TRIP_STATUSES = [
   'ASSIGNED',
@@ -38,6 +39,7 @@ export class TrucksService {
   async create(companyId: string, dto: CreateTruckDto) {
     const plate = dto.plate.trim();
     await this.assertPlateFree(companyId, plate);
+    await this.assertRefs(companyId, dto);
     return this.prisma.truck.create({
       data: {
         ...dto,
@@ -45,6 +47,31 @@ export class TrucksService {
         companyId,
       },
     });
+  }
+
+  /** Driver / manager ids from the body must belong to the truck's company. */
+  private async assertRefs(
+    companyId: string,
+    dto: { currentDriverId?: string | null; managerId?: string | null },
+  ) {
+    if (dto.currentDriverId) {
+      await assertUserInCompany(
+        this.prisma,
+        dto.currentDriverId,
+        companyId,
+        ['DRIVER'],
+        'errors.driverNotFound',
+      );
+    }
+    if (dto.managerId) {
+      await assertUserInCompany(
+        this.prisma,
+        dto.managerId,
+        companyId,
+        MANAGER_ROLES,
+        'errors.managerNotFound',
+      );
+    }
   }
 
   /**
@@ -135,6 +162,7 @@ export class TrucksService {
     triggeredById: string,
   ) {
     const oldTruck = await this.findOne(id, companyId);
+    await this.assertRefs(oldTruck.companyId, dto);
     if (dto.plate !== undefined) {
       dto.plate = dto.plate.trim();
       await this.assertPlateFree(companyId, dto.plate, id);
@@ -504,9 +532,11 @@ export class TrucksService {
     });
   }
 
-  async getNotes(truckId: string) {
+  // companyId null = ADMIN (AdminInterceptor); everyone else reads notes of
+  // their own company's trucks only.
+  async getNotes(truckId: string, companyId: string | null) {
     return this.prisma.truckNote.findMany({
-      where: { truckId },
+      where: { truckId, ...(companyId ? { truck: { companyId } } : {}) },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
       },
