@@ -17,6 +17,7 @@ import { MailService } from 'src/mail/mail.service';
 import { normalizePhone as toCanonicalPhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
+import { DriverTransfersService } from 'src/driver-transfers/driver-transfers.service';
 import { fullName } from 'src/common/utils/full-name';
 import {
   assertTruckInCompany,
@@ -60,6 +61,7 @@ export class UsersService {
     private mail: MailService,
     private gateway: MessagesGateway,
     private push: PushService,
+    private transfers: DriverTransfersService,
   ) {}
 
   async createManager(
@@ -159,19 +161,10 @@ export class UsersService {
           },
         });
       }
-      // Confirmed — re-home the driver. Trip/message history stays put
-      // (it carries its own companyId), but detach them from their old
-      // company's truck and hand them to whoever is inviting them now.
-      await this.prisma.truck.updateMany({
-        where: { currentDriverId: existing.id },
-        data: { currentDriverId: null },
-      });
-      const moved = await this.prisma.user.update({
-        where: { id: existing.id },
-        data: { companyId, managerId: creatorId },
-      });
-      const { password, ...result } = moved;
-      return result;
+      // Confirmed by the manager — but the driver decides. Nothing moves
+      // until they accept the SMS link (DriverTransfersService.accept); the
+      // caller gets `{ pending: true, code: 'DRIVER_TRANSFER_PENDING' }`.
+      return this.transfers.request(existing, companyId, creatorId);
     }
 
     const hash = dto.password ? await bcrypt.hash(dto.password, 10) : null;

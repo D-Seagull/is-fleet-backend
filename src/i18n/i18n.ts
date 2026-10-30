@@ -139,6 +139,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компанію деактивовано — зміни тимчасово недоступні',
     'errors.driverExistsElsewhere':
       'Цей водій вже зареєстрований в іншій компанії',
+    'errors.transferInvalid': 'Посилання недійсне або застаріло',
+    'sms.driverTransfer':
+      'IS Fleet: компанія «{{company}}» хоче додати вас як водія. Підтвердіть або відхиліть: {{link}}',
   },
   en: {
     'push.newMessage': 'New message',
@@ -250,6 +253,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Company is deactivated — changes are temporarily unavailable',
     'errors.driverExistsElsewhere':
       'This driver is already registered with another company',
+    'errors.transferInvalid': 'This link is invalid or has expired',
+    'sms.driverTransfer':
+      'IS Fleet: "{{company}}" wants to add you as a driver. Accept or decline: {{link}}',
   },
   pl: {
     'push.newMessage': 'Nowa wiadomość',
@@ -369,6 +375,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
       'Ten kierowca jest już zarejestrowany w innej firmie',
+    'errors.transferInvalid': 'Link jest nieprawidłowy lub wygasł',
+    'sms.driverTransfer':
+      'IS Fleet: firma „{{company}}” chce dodać Cię jako kierowcę. Zaakceptuj lub odrzuć: {{link}}',
   },
   lt: {
     'push.newMessage': 'Nauja žinutė',
@@ -483,6 +492,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
     'errors.driverExistsElsewhere':
       'Šis vairuotojas jau užregistruotas kitoje įmonėje',
+    'errors.transferInvalid': 'Nuoroda neteisinga arba nebegalioja',
+    'sms.driverTransfer':
+      'IS Fleet: „{{company}}“ nori pridėti jus kaip vairuotoją. Patvirtinkite arba atmeskite: {{link}}',
   },
   ru: {
     'push.newMessage': 'Новое сообщение',
@@ -602,6 +614,9 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компания деактивирована — изменения временно недоступны',
     'errors.driverExistsElsewhere':
       'Этот водитель уже зарегистрирован в другой компании',
+    'errors.transferInvalid': 'Ссылка недействительна или устарела',
+    'sms.driverTransfer':
+      'IS Fleet: компания «{{company}}» хочет добавить вас как водителя. Подтвердите или отклоните: {{link}}',
   },
 };
 

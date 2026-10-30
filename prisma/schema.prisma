@@ -31,6 +31,7 @@ model Company {
   advanceRequests    AdvanceRequest[]
   alarms             Alarm[]
   bugReports         BugReport[]
+  driverTransfersIn  DriverTransfer[]
 }
 
 model TruckNote {
@@ -122,6 +123,8 @@ model User {
   sessionsAsManager      TripChatSession[]       @relation("SessionManager")
   pushTokens             PushToken[]
   passwordResetTokens    PasswordResetToken[]
+  transfersAsDriver      DriverTransfer[]        @relation("TransferDriver")
+  transfersRequested     DriverTransfer[]        @relation("TransferRequester")
   hiddenConversations    HiddenConversation[]    @relation("HiddenConversations")
   groupMessageReads      GroupMessageRead[]      @relation("GroupMessageReads")
   messageReactions       MessageReaction[]       @relation("MessageReactions")
@@ -155,6 +158,30 @@ model PasswordResetToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// A company's request to take over a driver registered in another company.
+/// Nothing moves until the driver opens the SMS link and accepts — the phone
+/// number alone must not let one company take another's driver. Only a
+/// SHA-256 hash of the link token is stored. fromCompanyId is kept as a plain
+/// column (history), the move re-checks the driver is still there.
+model DriverTransfer {
+  id            String    @id @default(uuid())
+  tokenHash     String    @unique
+  driverId      String
+  fromCompanyId String
+  toCompanyId   String
+  requestedById String
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  declinedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  driver      User    @relation("TransferDriver", fields: [driverId], references: [id], onDelete: Cascade)
+  requestedBy User    @relation("TransferRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  toCompany   Company @relation(fields: [toCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, toCompanyId])
 }
 
 // Long-lived refresh tokens for the access+refresh flow. We store only a

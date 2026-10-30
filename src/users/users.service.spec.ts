@@ -6,6 +6,7 @@ import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.se
 import { MailService } from 'src/mail/mail.service';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
+import { DriverTransfersService } from 'src/driver-transfers/driver-transfers.service';
 
 // expo-server-sdk is ESM-only, pulled in transitively via the gateway / push
 // import chain; the real deps are useValue mocks, so this stub just keeps the
@@ -37,9 +38,14 @@ describe('UsersService', () => {
     user: Record<string, jest.Mock>;
     driverRating: Record<string, jest.Mock>;
   };
+  let transfers: { request: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    transfers = {
+      request: jest.fn().mockResolvedValue({ pending: true, code: 'DRIVER_TRANSFER_PENDING' }),
+    };
 
     prisma = {
       user: {
@@ -57,6 +63,7 @@ describe('UsersService', () => {
         { provide: MailService, useValue: {} },
         { provide: MessagesGateway, useValue: { server: { to: jest.fn() } } },
         { provide: PushService, useValue: {} },
+        { provide: DriverTransfersService, useValue: transfers },
       ],
     }).compile();
 
@@ -123,6 +130,46 @@ describe('UsersService', () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'DRIVER' }));
       await service.deactivate('u1', 'c1', 'MANAGER');
       expect(prisma.user.update).toHaveBeenCalled();
+    });
+  });
+
+  // ─── createDriver: a driver of another company moves only with consent ─────
+  describe('createDriver — driver registered elsewhere', () => {
+    const other = {
+      id: 'drvB',
+      role: 'DRIVER',
+      companyId: 'cB',
+      firstName: 'ivan',
+      lastName: 'Kovalenko',
+      phone: '+380971234567',
+      language: 'UK',
+    };
+    const dto = { firstName: 'Ivan', phone: '+380971234567' };
+
+    beforeEach(() => {
+      prisma.user.findUnique = jest.fn().mockResolvedValue(other);
+    });
+
+    it('409 shows initials only — no id, no full name', async () => {
+      const err = await service
+        .createDriver('cA', 'mgrA', dto as never)
+        .catch((e: { getResponse(): unknown }) => e.getResponse());
+      expect(err).toEqual(
+        expect.objectContaining({
+          code: 'DRIVER_EXISTS_ELSEWHERE',
+          driver: { id: '', firstName: 'I.', lastName: 'K.' },
+        }),
+      );
+    });
+
+    it('confirmTransfer opens a consent request and moves nothing', async () => {
+      const res = await service.createDriver('cA', 'mgrA', {
+        ...dto,
+        confirmTransfer: true,
+      } as never);
+      expect(res).toEqual({ pending: true, code: 'DRIVER_TRANSFER_PENDING' });
+      expect(transfers.request).toHaveBeenCalledWith(other, 'cA', 'mgrA');
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 
