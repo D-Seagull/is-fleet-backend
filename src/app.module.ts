@@ -29,11 +29,14 @@ import { ChatModule } from './chat/chat.module';
 import { BugReportsModule } from './bug-reports/bug-reports.module';
 import { SignupModule } from './signup/signup.module';
 import { HealthController } from './health/health.controller';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // Refuse to boot on a missing / malformed variable. See config/env.validation.
+      validate: validateEnv,
     }),
     // Structured request-scoped logging (JSON in prod, pretty in dev) with
     // per-request ids. See src/common/logging.ts.

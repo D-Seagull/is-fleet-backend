@@ -129,6 +129,9 @@ model User {
   groupMessageReads      GroupMessageRead[]      @relation("GroupMessageReads")
   messageReactions       MessageReaction[]       @relation("MessageReactions")
   bugReports             BugReport[]
+
+  // Company directories: drivers / managers of one company (role filter).
+  @@index([companyId, role])
 }
 
 model PushToken {
@@ -271,6 +274,8 @@ model Truck {
   currentDriver User?        @relation("CurrentDriver", fields: [currentDriverId], references: [id])
   manager       User?        @relation("TruckManager", fields: [managerId], references: [id])
   trips         Trip[]
+
+  @@index([companyId])
 }
 
 enum TruckStatus {
@@ -308,6 +313,13 @@ model Trip {
   comments     TripComment[]
   alarms       Alarm[]
   chatSessions TripChatSession[]
+
+  @@index([companyId])
+  // A driver's / a truck's active trip: driverId|truckId + status IN (...).
+  @@index([driverId, status])
+  @@index([truckId, status])
+  // The once-a-minute "heading to loading?" sweep (departPromptAt <= now).
+  @@index([departPromptAt])
 }
 
 model TripChatSession {
