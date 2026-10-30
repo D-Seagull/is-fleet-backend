@@ -31,6 +31,8 @@ import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { authThrottle } from '../common/throttle';
 import { isAllowedOrigin } from '../common/cors-origin';
 import { JwtGuard } from './guards/jwt.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
 import { GetUser } from './decorators/get-user.decorator';
 import type { JwtUser } from './interfaces/jwt-user.interface';
 // The refresh cookie is SameSite=None in prod, so the browser attaches it to
@@ -106,6 +108,29 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   requestDriverOtp(@Body() dto: RequestOtpDto) {
     return this.AuthService.requestDriverOtp(dto.phone);
+  }
+
+  // SMS doesn't reach the driver → the code is emailed to their assigned
+  // manager instead. Same per-phone / per-IP budget as request-otp.
+  @Throttle(authThrottle('phone', 3, 30))
+  @Post('driver/request-otp-manager')
+  @HttpCode(HttpStatus.OK)
+  requestDriverOtpViaManager(@Body() dto: RequestOtpDto) {
+    return this.AuthService.requestDriverOtpViaManager(dto.phone);
+  }
+
+  // The assigned manager mints a one-time login code to dictate to the
+  // driver. Per-manager budget: each code is another 5 guesses at the phone.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(JwtGuard, RolesGuard)
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Post('driver/:id/login-code')
+  @HttpCode(HttpStatus.OK)
+  issueDriverLoginCode(
+    @Param('id') driverId: string,
+    @GetUser('id') requesterId: string,
+  ) {
+    return this.AuthService.issueDriverLoginCode(requesterId, driverId);
   }
 
   @Throttle(authThrottle('phone', 10, 100))

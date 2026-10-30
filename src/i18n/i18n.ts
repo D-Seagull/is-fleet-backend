@@ -106,6 +106,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Час на редагування минув (15 хв)',
     'errors.cannotDeleteMessage': 'Ви не можете видалити це повідомлення',
     'errors.driverNotActive': 'Акаунт водія неактивний.',
+    'errors.notAssignedManager': 'Код входу може видати лише закріплений менеджер водія.',
     // errors — bad request / conflict / auth
     'errors.phoneFormat':
       'Номер має бути в міжнародному форматі, напр. +380501234567',
@@ -223,6 +224,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'The edit window has passed (15 min)',
     'errors.cannotDeleteMessage': "You can't delete this message",
     'errors.driverNotActive': 'Driver account is not active.',
+    'errors.notAssignedManager': "Only the driver's assigned manager can issue a login code.",
     'errors.phoneFormat':
       'Phone must be in international format, e.g. +380501234567',
     'errors.userExists': 'A user with this email or phone already exists.',
@@ -342,6 +344,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Czas na edycję minął (15 min)',
     'errors.cannotDeleteMessage': 'Nie możesz usunąć tej wiadomości',
     'errors.driverNotActive': 'Konto kierowcy nie jest aktywne.',
+    'errors.notAssignedManager': 'Kod logowania może wydać tylko przypisany menedżer kierowcy.',
     'errors.phoneFormat':
       'Numer musi być w formacie międzynarodowym, np. +380501234567',
     'errors.userExists':
@@ -461,6 +464,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Redagavimo laikas baigėsi (15 min)',
     'errors.cannotDeleteMessage': 'Negalite ištrinti šios žinutės',
     'errors.driverNotActive': 'Vairuotojo paskyra neaktyvi.',
+    'errors.notAssignedManager': 'Prisijungimo kodą gali išduoti tik priskirtas vairuotojo vadybininkas.',
     'errors.phoneFormat':
       'Telefonas turi būti tarptautiniu formatu, pvz. +380501234567',
     'errors.userExists':
@@ -582,6 +586,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Время на редактирование истекло (15 мин)',
     'errors.cannotDeleteMessage': 'Вы не можете удалить это сообщение',
     'errors.driverNotActive': 'Аккаунт водителя неактивен.',
+    'errors.notAssignedManager': 'Код входа может выдать только закреплённый менеджер водителя.',
     'errors.phoneFormat':
       'Номер должен быть в международном формате, напр. +380501234567',
     'errors.userExists':
