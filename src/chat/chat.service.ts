@@ -35,8 +35,8 @@ export class ChatService {
 
     const [conversations, dmUnread, groupUnread, tripUnread] =
       await Promise.all([
-        this.directMessages.getConversations(userId),
-        this.directMessages.getUnreadSummary(userId),
+        this.directMessages.getConversations(userId, role),
+        this.directMessages.getUnreadSummary(userId, role),
         this.groupMessages.getUnreadSummary(userId),
         tripUnreadPromise,
       ]);

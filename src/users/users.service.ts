@@ -40,6 +40,20 @@ function initial(name: string | null | undefined): string {
   return c ? `${c.toUpperCase()}.` : '';
 }
 
+/** Fields every user row carries when a DRIVER is the reader (P1-5). */
+const DRIVER_VIEW_BASE_SELECT = {
+  id: true,
+  isSystem: true,
+  firstName: true,
+  lastName: true,
+  avatar: true,
+  status: true,
+  statusUntil: true,
+  lastSeenAt: true,
+  role: true,
+  isActive: true,
+} as const;
+
 function requireValidPhone(input: string): string {
   const canonical = toCanonicalPhone(input);
   if (!canonical) {
@@ -199,7 +213,13 @@ export class UsersService {
     }
   }
 
-  async getCompanyUsers(companyId: string | null) {
+  async getCompanyUsers(
+    companyId: string | null,
+    viewer?: { id: string; role: string },
+  ) {
+    if (viewer?.role === 'DRIVER' && companyId) {
+      return this.getDriverDirectory(companyId);
+    }
     const users = await this.prisma.user.findMany({
       where: companyId ? { companyId } : {},
       select: {
@@ -703,9 +723,102 @@ export class UsersService {
     return { message: `User ${fullName(user)} deactivated!` };
   }
 
+  /**
+   * The company directory as a DRIVER sees it (audit P1-5) — exactly what the
+   * driver app's chat directory reads:
+   *  - staff (MANAGER / TEAMLEAD / ADMIN): name, avatar, role, presence, plus
+   *    phone and email — drivers call their dispatch from the app;
+   *  - other drivers: name, avatar, presence and their current truck's plate
+   *    (row subtitle + search) — no phone, no email, no ratings / team data.
+   */
+  private async getDriverDirectory(companyId: string) {
+    const users = await this.prisma.user.findMany({
+      where: { companyId },
+      select: {
+        ...DRIVER_VIEW_BASE_SELECT,
+        email: true,
+        phone: true,
+        currentTruck: { select: { id: true, plate: true } },
+      },
+    });
+    return users.map(({ email, phone, currentTruck, ...u }) =>
+      u.role === 'DRIVER'
+        ? { ...u, email: null, phone: null, currentTruck }
+        : { ...u, email, phone, currentTruck: null },
+    );
+  }
+
+  /**
+   * One profile as a DRIVER sees it — same split as getDriverDirectory.
+   * Staff keep the contact card the "My manager" screen shows (phone, email,
+   * language, team lead, rating); another driver is name / avatar / presence.
+   */
+  private async getUserForDriver(id: string, companyId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id, companyId },
+      select: {
+        ...DRIVER_VIEW_BASE_SELECT,
+        email: true,
+        phone: true,
+        language: true,
+        teamlead: { select: { id: true, firstName: true, lastName: true } },
+        managerRatingsReceived: { select: { score: true } },
+      },
+    });
+    if (!user) return null;
+    const { email, phone, language, teamlead, managerRatingsReceived, ...base } =
+      user;
+    if (user.role === 'DRIVER') return base;
+    return {
+      ...base,
+      email,
+      phone,
+      language,
+      teamlead,
+      managerAverageRating:
+        managerRatingsReceived.length > 0
+          ? managerRatingsReceived.reduce((s, r) => s + r.score, 0) /
+            managerRatingsReceived.length
+          : null,
+      managerRatingCount: managerRatingsReceived.length,
+    };
+  }
+
   // companyId is null only for ADMIN (AdminInterceptor) — everyone else sees
-  // profiles of their own company.
-  async getUserById(id: string, companyId: string | null) {
+  // profiles of their own company. A DRIVER gets a minimal view
+  // (getUserForDriver).
+  /** Public card of a platform ADMIN (any company) — no contacts, no team. */
+  private platformAdminCard(id: string) {
+    return this.prisma.user.findFirst({
+      where: { id, role: 'ADMIN', deletedAt: null },
+      select: {
+        id: true,
+        // The IS Fleet contact is such an ADMIN (clients badge it).
+        isSystem: true,
+        firstName: true,
+        lastName: true,
+        avatar: true,
+        status: true,
+        statusUntil: true,
+        lastSeenAt: true,
+        role: true,
+      },
+    });
+  }
+
+  async getUserById(
+    id: string,
+    companyId: string | null,
+    viewer?: { id: string; role: string },
+  ) {
+    if (viewer?.role === 'DRIVER' && companyId) {
+      const forDriver = await this.getUserForDriver(id, companyId);
+      if (forDriver) return forDriver;
+      // Not in the company: only a platform ADMIN's public card (below).
+      const admin = await this.platformAdminCard(id);
+      if (admin) return admin;
+      throw new NotFoundException('errors.userNotFound');
+    }
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
       select: {
@@ -785,23 +898,7 @@ export class UsersService {
       // A platform ADMIN of another company is reachable by DM (support /
       // bug-report replies), so the DM header may ask for them: answer with
       // a public card only — no email, phone, team or ratings.
-      const admin = companyId
-        ? await this.prisma.user.findFirst({
-            where: { id, role: 'ADMIN', deletedAt: null },
-            select: {
-              id: true,
-              // The IS Fleet contact is such an ADMIN (clients badge it).
-              isSystem: true,
-              firstName: true,
-              lastName: true,
-              avatar: true,
-              status: true,
-              statusUntil: true,
-              lastSeenAt: true,
-              role: true,
-            },
-          })
-        : null;
+      const admin = companyId ? await this.platformAdminCard(id) : null;
       if (admin) return admin;
     }
     if (!user) throw new NotFoundException('errors.userNotFound');

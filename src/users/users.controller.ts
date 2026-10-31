@@ -60,8 +60,12 @@ export class UsersController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get()
-  getUsers(@GetUser('companyId') companyId: string) {
-    return this.usersService.getCompanyUsers(companyId);
+  getUsers(
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.usersService.getCompanyUsers(companyId, { id: userId, role });
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
@@ -69,8 +73,10 @@ export class UsersController {
   getUserById(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string | null,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
   ) {
-    return this.usersService.getUserById(id, companyId);
+    return this.usersService.getUserById(id, companyId, { id: userId, role });
   }
 
   // Self-update: every authenticated role can edit their own profile here.
