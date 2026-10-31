@@ -122,6 +122,76 @@ describe('TripsService', () => {
     });
   });
 
+  // ─── driver data scope (P1-5) ───────────────────────────────────────────────
+  describe('driver scope', () => {
+    const driver = { id: 'drvA', role: 'DRIVER' };
+    const ownTripScope = {
+      OR: [
+        { driverId: 'drvA' },
+        { chatSessions: { some: { driverId: 'drvA' } } },
+      ],
+    };
+
+    it("a driver opens only trips they drive or drove — another driver's trip is 404", async () => {
+      prisma.trip.findFirst.mockResolvedValue(null);
+      await expect(
+        service.findOne('tOther', 'c1', driver),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.trip.findFirst.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({
+          id: 'tOther',
+          companyId: 'c1',
+          ...ownTripScope,
+        }),
+      );
+    });
+
+    it('on a trip they drove before, the new driver’s phone is hidden', async () => {
+      prisma.trip.findFirst.mockResolvedValue({
+        id: 't1',
+        driver: { id: 'drvB', firstName: 'B', phone: '+48500111222' },
+      });
+      const trip = await service.findOne('t1', 'c1', driver);
+      expect(trip.driver).toEqual({ id: 'drvB', firstName: 'B', phone: null });
+    });
+
+    it('their own phone stays on their own trip', async () => {
+      prisma.trip.findFirst.mockResolvedValue({
+        id: 't1',
+        driver: { id: 'drvA', phone: '+48500111222' },
+      });
+      const trip = await service.findOne('t1', 'c1', driver);
+      expect(trip.driver?.phone).toBe('+48500111222');
+    });
+
+    it('trips of a truck: a driver gets only their own', async () => {
+      prisma.trip.findMany.mockResolvedValue([]);
+      await service.findByTruck('tr1', 'c1', driver);
+      expect(prisma.trip.findMany.mock.calls[0][0].where).toEqual({
+        truckId: 'tr1',
+        companyId: 'c1',
+        deletedAt: null,
+        ...ownTripScope,
+      });
+    });
+
+    it('managers are unaffected: every trip of the truck, phones included', async () => {
+      prisma.trip.findMany.mockResolvedValue([
+        { id: 't1', driver: { id: 'drvB', phone: '+48500111222' } },
+      ]);
+      const trips = await service.findByTruck('tr1', 'c1', {
+        id: 'm1',
+        role: 'MANAGER',
+      });
+      expect(prisma.trip.findMany.mock.calls[0][0].where).toEqual({
+        truckId: 'tr1',
+        companyId: 'c1',
+        deletedAt: null,
+      });
+      expect(trips[0].driver?.phone).toBe('+48500111222');
+    });
+  });
+
   // ─── updateStatus (guarded by findOne) ──────────────────────────────────────
   describe('updateStatus', () => {
     it('refuses to update a trip outside the company', async () => {
@@ -205,7 +275,10 @@ describe('TripsService', () => {
       ).rejects.toThrow('errors.driverNotFound');
       expect(prisma.user.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ id: 'foreignDriver', companyId: 'c1' }),
+          where: expect.objectContaining({
+            id: 'foreignDriver',
+            companyId: 'c1',
+          }),
         }),
       );
       expect(prisma.trip.update).not.toHaveBeenCalled();
@@ -310,7 +383,9 @@ describe('TripsService', () => {
       prisma.trip.update.mockResolvedValue({ ...accepted, driver: null });
       prisma.trip.findMany.mockResolvedValue([accepted]);
 
-      await service.driverUpdateStatus('t1', 'd1', { status: 'ACCEPTED' } as never);
+      await service.driverUpdateStatus('t1', 'd1', {
+        status: 'ACCEPTED',
+      } as never);
 
       expect(prisma.trip.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -337,7 +412,9 @@ describe('TripsService', () => {
         { ...accepted, id: 'cur', status: 'ON_WAY', createdAt: new Date(10) },
       ]);
 
-      await service.driverUpdateStatus('t1', 'd1', { status: 'ACCEPTED' } as never);
+      await service.driverUpdateStatus('t1', 'd1', {
+        status: 'ACCEPTED',
+      } as never);
 
       expect(pushTypes()).toEqual(['TRIP_STATUS']);
     });
@@ -348,13 +425,18 @@ describe('TripsService', () => {
       // After delivery only the queued, already-accepted load is open.
       prisma.trip.findMany.mockResolvedValue([accepted]);
 
-      await service.driverUpdateStatus('cur', 'd1', { status: 'DELIVERED' } as never);
+      await service.driverUpdateStatus('cur', 'd1', {
+        status: 'DELIVERED',
+      } as never);
 
       expect(pushTypes()).toContain('DEPART_PROMPT');
     });
 
     it('"No" re-schedules the question in 20 minutes', async () => {
-      prisma.trip.findFirst.mockResolvedValue({ ...accepted, departPromptCount: 1 });
+      prisma.trip.findFirst.mockResolvedValue({
+        ...accepted,
+        departPromptCount: 1,
+      });
       const before = Date.now();
 
       await service.answerDepart('t1', 'd1', false);
@@ -369,7 +451,10 @@ describe('TripsService', () => {
     });
 
     it('"No" to the 3rd question tells the manager and stops asking', async () => {
-      prisma.trip.findFirst.mockResolvedValue({ ...accepted, departPromptCount: 3 });
+      prisma.trip.findFirst.mockResolvedValue({
+        ...accepted,
+        departPromptCount: 3,
+      });
 
       await service.answerDepart('t1', 'd1', false);
 
@@ -387,7 +472,11 @@ describe('TripsService', () => {
 
     it('"Yes" sets the trip on its way', async () => {
       prisma.trip.findFirst.mockResolvedValue(accepted);
-      prisma.trip.update.mockResolvedValue({ ...accepted, status: 'ON_WAY', driver: null });
+      prisma.trip.update.mockResolvedValue({
+        ...accepted,
+        status: 'ON_WAY',
+        driver: null,
+      });
       prisma.trip.findMany.mockResolvedValue([]);
 
       await service.answerDepart('t1', 'd1', true);

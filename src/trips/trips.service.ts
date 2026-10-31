@@ -38,7 +38,8 @@ const tripInclude = {
       lastName: true,
       avatar: true,
       status: true,
-      statusUntil: true, lastSeenAt: true,
+      statusUntil: true,
+      lastSeenAt: true,
       phone: true,
     },
   },
@@ -55,6 +56,42 @@ const tripInclude = {
 };
 
 const ACTIVE_STATUSES = OPEN_TRIP_STATUSES;
+
+/** Who is reading a trip — drivers get a narrower view (audit P1-5). */
+type TripViewer = { id: string; role: string };
+
+/**
+ * A driver sees only trips they drive or drove (an earlier chat session on
+ * the trip), never every trip of the company — the same set the driver app
+ * shows (Trips list, trip card).
+ */
+function driverTripScope(viewer?: TripViewer): Prisma.TripWhereInput {
+  if (viewer?.role !== 'DRIVER') return {};
+  return {
+    OR: [
+      { driverId: viewer.id },
+      { chatSessions: { some: { driverId: viewer.id } } },
+    ],
+  };
+}
+
+/**
+ * Another driver's phone never reaches a driver: on a trip they drove before,
+ * `driver` is now someone else. Their own phone (and anyone else's view) is
+ * left as is.
+ */
+function hideOtherDriversPhone<
+  T extends { driver?: { id: string; phone?: string | null } | null },
+>(trip: T, viewer?: TripViewer): T {
+  if (
+    viewer?.role !== 'DRIVER' ||
+    !trip.driver ||
+    trip.driver.id === viewer.id
+  ) {
+    return trip;
+  }
+  return { ...trip, driver: { ...trip.driver, phone: null } };
+}
 
 /** Push body: trip title + first loading address (when there is one). */
 function tripSummary(trip: {
@@ -186,21 +223,29 @@ export class TripsService {
   }
 
   // trips for a specific truck (Chat + Trips tabs)
-  async findByTruck(truckId: string, companyId: string) {
-    return this.prisma.trip.findMany({
-      where: { truckId, companyId, deletedAt: null },
+  async findByTruck(truckId: string, companyId: string, viewer?: TripViewer) {
+    const trips = await this.prisma.trip.findMany({
+      where: {
+        truckId,
+        companyId,
+        deletedAt: null,
+        ...driverTripScope(viewer),
+      },
       include: tripInclude,
       orderBy: { createdAt: 'desc' },
     });
+    return trips.map((t) => hideOtherDriversPhone(t, viewer));
   }
 
-  async findOne(id: string, companyId: string) {
+  // `viewer` narrows the result for a DRIVER (own trips only, no other
+  // drivers' phones); internal callers pass none and get the full row.
+  async findOne(id: string, companyId: string, viewer?: TripViewer) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, companyId, deletedAt: null },
+      where: { id, companyId, deletedAt: null, ...driverTripScope(viewer) },
       include: tripInclude,
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
-    return trip;
+    return hideOtherDriversPhone(trip, viewer);
   }
 
   // Driver's own trips — used by the driver mobile app.
@@ -278,7 +323,8 @@ export class TripsService {
               lastName: true,
               avatar: true,
               status: true,
-              statusUntil: true, lastSeenAt: true,
+              statusUntil: true,
+              lastSeenAt: true,
               role: true,
             },
           },
@@ -585,7 +631,12 @@ export class TripsService {
     // рейс і нову машину, щоб клієнт показав вікно з переходом.
     const notifyTruckSwapped = (
       managerId: string,
-      payload: { tripId: string; truckId: string; plate: string; title: string },
+      payload: {
+        tripId: string;
+        truckId: string;
+        plate: string;
+        title: string;
+      },
     ) => {
       // Той, хто робив заміну, бачить результат у власному діалозі.
       if (managerId === actor.id) return;
@@ -701,7 +752,9 @@ export class TripsService {
       newDriverId: null,
       previousDriverId: null,
     };
-    this.gateway.server.to(`company-${companyId}`).emit('truckChanged', payload);
+    this.gateway.server
+      .to(`company-${companyId}`)
+      .emit('truckChanged', payload);
     for (const managerId of new Set(
       [targetManagerId, sourceManagerId, targetTruck.managerId].filter(
         (x): x is string => !!x,
@@ -1384,7 +1437,8 @@ export class TripsService {
                 lastName: true,
                 avatar: true,
                 status: true,
-                statusUntil: true, lastSeenAt: true,
+                statusUntil: true,
+                lastSeenAt: true,
                 role: true,
               },
             },
