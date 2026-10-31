@@ -39,7 +39,9 @@ export class DocumentsService {
 
     // A trip of the uploader's company (a driver: their own) — never a
     // foreign trip id from the request body.
-    await assertTripAccess(this.prisma, tripId, uploader);
+    await assertTripAccess(this.prisma, tripId, uploader, {
+      currentDriverOnly: true,
+    });
     await assertReplyTargets(
       this.prisma,
       { trip: tripId },

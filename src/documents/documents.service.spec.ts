@@ -137,4 +137,18 @@ describe('DocumentsService — driver scope', () => {
     });
     expect(prisma.tripDocument.findMany).toHaveBeenCalled();
   });
+
+  it('a replaced driver can no longer upload into the trip (N1)', async () => {
+    // drvOld drove the trip (a past chat session), drvNew drives it now.
+    // Plain trip access would pass on the past session — a live upload
+    // needs the CURRENT driver.
+    prisma.trip.findFirst.mockResolvedValue({ ...oldTrip, driverId: 'drvNew' });
+    prisma.tripChatSession.findFirst.mockResolvedValue({ id: 's0' });
+    const oldDriver = { id: 'drvOld', role: 'DRIVER', companyId: 'c1' };
+    await expect(
+      service.uploadMany('tOld', oldDriver, [
+        { mimetype: 'image/png' } as Express.Multer.File,
+      ]),
+    ).rejects.toThrow('errors.tripNotFound');
+  });
 });

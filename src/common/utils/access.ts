@@ -67,7 +67,16 @@ export async function assertTripAccess(
   prisma: PrismaService,
   tripId: unknown,
   requester: Requester,
-  opts: { includeDeleted?: boolean } = {},
+  opts: {
+    includeDeleted?: boolean;
+    /**
+     * For live actions (joining the trip's socket room, uploading into the
+     * trip): a DRIVER must be the trip's CURRENT driver. A replaced driver
+     * keeps read-only access to their own past chats via the archive
+     * endpoints and to their past trip's files, nothing live (audit N1).
+     */
+    currentDriverOnly?: boolean;
+  } = {},
 ): Promise<TripAccessRow> {
   const trip = isId(tripId)
     ? await prisma.trip.findFirst({
@@ -85,6 +94,13 @@ export async function assertTripAccess(
       })
     : null;
   if (!trip || !(await canAccessTrip(prisma, trip, requester))) {
+    throw new NotFoundException('errors.tripNotFound');
+  }
+  if (
+    opts.currentDriverOnly &&
+    requester.role === 'DRIVER' &&
+    trip.driverId !== requester.id
+  ) {
     throw new NotFoundException('errors.tripNotFound');
   }
   return trip;
