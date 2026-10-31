@@ -150,6 +150,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компанію деактивовано — зміни тимчасово недоступні',
     'errors.driverExistsElsewhere':
       'Цей водій вже зареєстрований в іншій компанії',
+    'errors.cannotManageUser': 'Ви можете змінювати лише користувачів нижчої ролі',
     'errors.transferInvalid': 'Посилання недійсне або застаріло',
     'sms.driverTransfer':
       'IS Fleet: компанія «{{company}}» хоче додати вас як водія. Підтвердіть або відхиліть: {{link}}',
@@ -275,6 +276,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Company is deactivated — changes are temporarily unavailable',
     'errors.driverExistsElsewhere':
       'This driver is already registered with another company',
+    'errors.cannotManageUser': 'You can only manage users with a lower role',
     'errors.transferInvalid': 'This link is invalid or has expired',
     'sms.driverTransfer':
       'IS Fleet: "{{company}}" wants to add you as a driver. Accept or decline: {{link}}',
@@ -409,6 +411,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
       'Ten kierowca jest już zarejestrowany w innej firmie',
+    'errors.cannotManageUser': 'Możesz zarządzać tylko użytkownikami o niższej roli',
     'errors.transferInvalid': 'Link jest nieprawidłowy lub wygasł',
     'sms.driverTransfer':
       'IS Fleet: firma „{{company}}” chce dodać Cię jako kierowcę. Zaakceptuj lub odrzuć: {{link}}',
@@ -537,6 +540,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
     'errors.driverExistsElsewhere':
       'Šis vairuotojas jau užregistruotas kitoje įmonėje',
+    'errors.cannotManageUser': 'Galite valdyti tik žemesnio vaidmens naudotojus',
     'errors.transferInvalid': 'Nuoroda neteisinga arba nebegalioja',
     'sms.driverTransfer':
       'IS Fleet: „{{company}}“ nori pridėti jus kaip vairuotoją. Patvirtinkite arba atmeskite: {{link}}',
@@ -670,6 +674,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компания деактивирована — изменения временно недоступны',
     'errors.driverExistsElsewhere':
       'Этот водитель уже зарегистрирован в другой компании',
+    'errors.cannotManageUser': 'Вы можете изменять только пользователей с более низкой ролью',
     'errors.transferInvalid': 'Ссылка недействительна или устарела',
     'sms.driverTransfer':
       'IS Fleet: компания «{{company}}» хочет добавить вас как водителя. Подтвердите или отклоните: {{link}}',

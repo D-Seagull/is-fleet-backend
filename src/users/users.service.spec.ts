@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
@@ -85,56 +89,80 @@ describe('UsersService', () => {
     service = moduleRef.get(UsersService);
   });
 
-  // ─── activate (company scoping) ─────────────────────────────────────────────
+  const as = (role: string, id = 'req1') => ({ id, role });
+
+  // ─── activate (company scoping + hierarchy) ─────────────────────────────────
   describe('activate', () => {
     it('throws NotFound for a user outside the company', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
-      await expect(service.activate('u1', 'c1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.activate('u1', 'c1', as('TEAMLEAD')),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.user.update).not.toHaveBeenCalled();
       expect(prisma.user.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'u1', companyId: 'c1' } }),
       );
     });
 
-    it('reactivates an in-company user', async () => {
+    it('reactivates a user ranked below the requester', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow());
-      await service.activate('u1', 'c1');
+      await service.activate('u1', 'c1', as('MANAGER'));
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'u1' },
         data: { isActive: true },
       });
     });
+
+    it('a MANAGER can no longer reactivate a TEAMLEAD', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow({ role: 'TEAMLEAD' }));
+      await expect(
+        service.activate('u1', 'c1', as('MANAGER')),
+      ).rejects.toThrow(new ForbiddenException('errors.cannotManageUser'));
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
   });
 
-  // ─── deactivate (role permission matrix) ────────────────────────────────────
+  // ─── deactivate (hierarchy) ─────────────────────────────────────────────────
   describe('deactivate', () => {
     it('throws NotFound for an unknown / out-of-company user', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
       await expect(
-        service.deactivate('u1', 'c1', 'ADMIN'),
+        service.deactivate('u1', 'c1', as('ADMIN')),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('forbids a non-admin from deactivating a TEAMLEAD', async () => {
+    it('forbids a TEAMLEAD deactivating another TEAMLEAD', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'TEAMLEAD' }));
-      await expect(service.deactivate('u1', 'c1', 'TEAMLEAD')).rejects.toThrow(
-        /onlyAdminDeactivate/,
-      );
+      await expect(
+        service.deactivate('u1', 'c1', as('TEAMLEAD')),
+      ).rejects.toThrow(/cannotManageUser/);
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('forbids a manager from deactivating another manager', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'MANAGER' }));
-      await expect(service.deactivate('u1', 'c1', 'MANAGER')).rejects.toThrow(
-        /noPermissionDeactivate/,
-      );
+      await expect(
+        service.deactivate('u1', 'c1', as('MANAGER')),
+      ).rejects.toThrow(/cannotManageUser/);
+    });
+
+    it('protects ADMIN accounts from a TEAMLEAD', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow({ role: 'ADMIN' }));
+      await expect(
+        service.deactivate('u1', 'c1', as('TEAMLEAD')),
+      ).rejects.toThrow(/cannotManageUser/);
+    });
+
+    it('nobody deactivates themselves', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow({ role: 'MANAGER' }));
+      await expect(
+        service.deactivate('u1', 'c1', as('ADMIN', 'u1')),
+      ).rejects.toThrow(/cannotManageUser/);
     });
 
     it('lets an admin deactivate a manager', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'MANAGER' }));
-      await service.deactivate('u1', 'c1', 'ADMIN');
+      await service.deactivate('u1', 'c1', as('ADMIN'));
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'u1' },
         data: { isActive: false },
@@ -143,13 +171,13 @@ describe('UsersService', () => {
 
     it('lets a manager deactivate a driver', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'DRIVER' }));
-      await service.deactivate('u1', 'c1', 'MANAGER');
+      await service.deactivate('u1', 'c1', as('MANAGER'));
       expect(prisma.user.update).toHaveBeenCalled();
     });
 
     it('ends every session at once: revokes refresh tokens, drops sockets', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'DRIVER' }));
-      await service.deactivate('u1', 'c1', 'MANAGER');
+      await service.deactivate('u1', 'c1', as('MANAGER'));
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'u1', revokedAt: null },
         data: { revokedAt: expect.any(Date), expiresAt: expect.any(Date) },
@@ -160,23 +188,76 @@ describe('UsersService', () => {
 
     it('leaves sessions alone when refused', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'TEAMLEAD' }));
-      await service.deactivate('u1', 'c1', 'MANAGER').catch(() => {});
+      await service.deactivate('u1', 'c1', as('MANAGER')).catch(() => {});
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(gateway.disconnectSockets).not.toHaveBeenCalled();
     });
   });
 
-  // ─── phone change → driver is told in the IS Fleet contact chat ────────────
+  // ─── PATCH /users/:id: hierarchy for every requester × target ──────────────
+  describe('updateDriver — role hierarchy', () => {
+    const ROLES = ['DRIVER', 'MANAGER', 'TEAMLEAD', 'ADMIN'];
+    const RANK: Record<string, number> = {
+      DRIVER: 0,
+      MANAGER: 1,
+      TEAMLEAD: 2,
+      ADMIN: 3,
+    };
+    const cases = ROLES.filter((r) => r !== 'DRIVER').flatMap((req) =>
+      ROLES.map((target) => [req, target] as const),
+    );
+
+    beforeEach(() => {
+      prisma.user.update.mockResolvedValue({ id: 'u1', companyId: 'c1' });
+      prisma.user.findUnique = jest.fn().mockResolvedValue(null);
+    });
+
+    it.each(cases)('%s editing a %s', async (req, target) => {
+      prisma.user.findFirst.mockResolvedValue(userRow({ role: target }));
+      const allowed =
+        target === 'ADMIN' ? req === 'ADMIN' : RANK[req] > RANK[target];
+      const call = service.updateDriver(
+        'u1',
+        'c1',
+        { firstName: 'X' },
+        as(req, 'other'),
+      );
+      if (allowed) {
+        await expect(call).resolves.toBeDefined();
+        expect(prisma.user.update).toHaveBeenCalled();
+      } else {
+        await expect(call).rejects.toThrow(
+          new ForbiddenException('errors.cannotManageUser'),
+        );
+        expect(prisma.user.update).not.toHaveBeenCalled();
+      }
+    });
+
+    it('editing yourself through /users/:id is refused (use /users/me)', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow({ role: 'MANAGER' }));
+      await expect(
+        service.updateDriver('u1', 'c1', { firstName: 'X' }, as('MANAGER', 'u1')),
+      ).rejects.toThrow(/cannotManageUser/);
+    });
+  });
+
+  // ─── PATCH /users/:id phone: validated + driver told about the change ──────
   describe('updateDriver phone', () => {
     beforeEach(() => {
       prisma.user.update.mockResolvedValue({ id: 'u1', companyId: 'c1' });
+      prisma.user.findUnique = jest.fn().mockResolvedValue(null);
     });
 
     it("tells the driver when a manager changes their phone", async () => {
       prisma.user.findFirst.mockResolvedValue(
         userRow({ phone: '+380971234567' }),
       );
-      await service.updateDriver('u1', 'c1', { phone: '+48500111222' }, 'm1');
+      await service.updateDriver(
+        'u1',
+        'c1',
+        { phone: '+48500111222' },
+        as('MANAGER', 'm1'),
+      );
       expect(notices.phoneChanged).toHaveBeenCalledWith(
         'u1',
         'm1',
@@ -188,16 +269,55 @@ describe('UsersService', () => {
       prisma.user.findFirst.mockResolvedValue(
         userRow({ phone: '+380971234567' }),
       );
-      await service.updateDriver('u1', 'c1', { phone: '+380971234567' }, 'm1');
+      await service.updateDriver(
+        'u1',
+        'c1',
+        { phone: '+380971234567' },
+        as('MANAGER', 'm1'),
+      );
       expect(notices.phoneChanged).not.toHaveBeenCalled();
     });
 
-    it("stays quiet for a manager's own phone", async () => {
+    it("stays quiet for a manager's phone (changed by their team lead)", async () => {
       prisma.user.findFirst.mockResolvedValue(
         userRow({ role: 'MANAGER', phone: '+380971234567' }),
       );
-      await service.updateDriver('u1', 'c1', { phone: '+48500111222' }, 'm1');
+      await service.updateDriver(
+        'u1',
+        'c1',
+        { phone: '+48500111222' },
+        as('TEAMLEAD', 't1'),
+      );
       expect(notices.phoneChanged).not.toHaveBeenCalled();
+    });
+
+    it('rejects a malformed phone with the driver-creation rule', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow());
+      await expect(
+        service.updateDriver('u1', 'c1', { phone: 'call me' }, as('MANAGER')),
+      ).rejects.toThrow(new BadRequestException('errors.phoneFormat'));
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('stores the canonical form (spaces / dashes stripped)', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow());
+      await service.updateDriver(
+        'u1',
+        'c1',
+        { phone: '+48 500-111-222' },
+        as('MANAGER'),
+      );
+      expect(prisma.user.update.mock.calls[0][0].data.phone).toBe(
+        '+48500111222',
+      );
+    });
+
+    it("refuses a number that already signs someone else in", async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow());
+      prisma.user.findUnique = jest.fn().mockResolvedValue({ id: 'someoneElse' });
+      await expect(
+        service.updateDriver('u1', 'c1', { phone: '+48500111222' }, as('MANAGER')),
+      ).rejects.toThrow(/phoneUsedUser/);
     });
   });
 

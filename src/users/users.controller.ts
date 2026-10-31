@@ -23,6 +23,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
+import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
@@ -85,16 +86,20 @@ export class UsersController {
   updateDriver(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
-    @GetUser('id') requesterId: string,
+    @GetUser() requester: JwtUser,
     @Body() dto: UpdateDriverDto,
   ) {
-    return this.usersService.updateDriver(id, companyId, dto, requesterId);
+    return this.usersService.updateDriver(id, companyId, dto, requester);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Patch(':id/activate')
-  activate(@Param('id') id: string, @GetUser('companyId') companyId: string) {
-    return this.usersService.activate(id, companyId);
+  activate(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @GetUser() requester: JwtUser,
+  ) {
+    return this.usersService.activate(id, companyId, requester);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -102,9 +107,9 @@ export class UsersController {
   deactivate(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
-    @GetUser('role') role: string,
+    @GetUser() requester: JwtUser,
   ) {
-    return this.usersService.deactivate(id, companyId, role);
+    return this.usersService.deactivate(id, companyId, requester);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

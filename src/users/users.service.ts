@@ -24,6 +24,7 @@ import {
   assertUserInCompany,
   MANAGER_ROLES,
 } from 'src/common/utils/access';
+import { canManageUser } from 'src/common/utils/role-rank';
 import { t } from 'src/i18n/i18n';
 import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
 import {
@@ -264,12 +265,30 @@ export class UsersService {
       teamleadId?: string | null;
       truckId?: string | null;
     },
-    requesterId?: string,
+    requester: { id: string; role: string },
   ) {
+    const requesterId = requester.id;
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
     if (!user) throw new NotFoundException('errors.userNotFound');
+    // Only users ranked below you (role-rank.ts). Your own profile goes
+    // through PATCH /users/me.
+    this.assertCanManage(requester, user);
+
+    // Same phone rules as driver creation; stored in canonical form. A number
+    // that already signs someone else in is refused up front (it's unique) —
+    // otherwise the write fails with a bare 500.
+    if (dto.phone !== undefined) {
+      dto.phone = requireValidPhone(dto.phone);
+      const owner = await this.prisma.user.findUnique({
+        where: { phone: dto.phone },
+        select: { id: true },
+      });
+      if (owner && owner.id !== id) {
+        throw new ConflictException('errors.phoneUsedUser');
+      }
+    }
 
     // Truck / manager / teamlead ids must be from the edited user's company —
     // no attaching another company's truck (or boss) to our driver.
@@ -543,11 +562,29 @@ export class UsersService {
     }
   }
 
-  async activate(id: string, companyId: string | null) {
+  /**
+   * 403 unless `requester` outranks `target` (ADMIN targets: ADMIN only;
+   * never yourself) — see common/utils/role-rank.ts.
+   */
+  private assertCanManage(
+    requester: { id: string; role: string },
+    target: { id: string; role: string },
+  ) {
+    if (!canManageUser(requester, target)) {
+      throw new ForbiddenException('errors.cannotManageUser');
+    }
+  }
+
+  async activate(
+    id: string,
+    companyId: string | null,
+    requester: { id: string; role: string },
+  ) {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
     if (!user) throw new NotFoundException('errors.userNotFound');
+    this.assertCanManage(requester, user);
     // A self-deleted account has no phone/email left, so reactivating it
     // would produce a user nobody can ever sign in as.
     if (user.deletedAt) throw new ForbiddenException('errors.accountDeleted');
@@ -639,22 +676,16 @@ export class UsersService {
   async deactivate(
     id: string,
     companyId: string | null,
-    requesterRole: string,
+    requester: { id: string; role: string },
   ) {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
     if (!user) throw new NotFoundException('errors.userNotFound');
-
-    if (user.role === 'TEAMLEAD' && requesterRole !== 'ADMIN') {
-      throw new ForbiddenException('errors.onlyAdminDeactivate');
-    }
-
-    if (user.role === 'MANAGER' && requesterRole === 'MANAGER') {
-      throw new ForbiddenException(
-        'errors.noPermissionDeactivate',
-      );
-    }
+    // Replaces the old two special cases (TEAMLEAD only by ADMIN, MANAGER not
+    // by MANAGER) with the full hierarchy — ADMIN targets are now protected
+    // too, and nobody deactivates themselves.
+    this.assertCanManage(requester, user);
 
     await this.prisma.$transaction([
       this.prisma.user.update({
