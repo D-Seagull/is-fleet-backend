@@ -88,6 +88,42 @@ class EnvironmentVariables {
   @IsIn(['true', 'false'])
   SWAGGER_ENABLED?: string;
 
+  // ── Driver sign-in methods: each on/off on its own (exactly "true"/"false") ──
+  // Default on.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_SMS_ENABLED?: string;
+
+  // Default on: the code is emailed to the manager of the driver's truck.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_MANAGER_EMAIL_ENABLED?: string;
+
+  // Default off. WhatsApp is a stub until Twilio Verify WhatsApp; Telegram
+  // also needs TELEGRAM_GATEWAY_URL + TELEGRAM_GATEWAY_TOKEN.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_WHATSAPP_ENABLED?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_TELEGRAM_ENABLED?: string;
+
+  // Telegram Gateway (core.telegram.org/gateway): API base + token from
+  // gateway.telegram.org → API. Telegram sign-in stays hidden until both set.
+  @IsOptional()
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
+  TELEGRAM_GATEWAY_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  TELEGRAM_GATEWAY_TOKEN?: string;
+
+  // Default off: managers mint a sign-in code on the driver page.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  MANAGER_LOGIN_CODE_ENABLED?: string;
+
   @IsOptional()
   @Matches(/^\d{6}$/, { message: 'REVIEW_OTP must be exactly 6 digits' })
   REVIEW_OTP?: string;
@@ -146,7 +182,9 @@ export function validateEnv(
     try {
       new RegExp(previewRe);
     } catch {
-      problems.push('  - CORS_PREVIEW_ORIGIN_RE: not a valid regular expression');
+      problems.push(
+        '  - CORS_PREVIEW_ORIGIN_RE: not a valid regular expression',
+      );
     }
   }
 

@@ -76,10 +76,7 @@ export class UsersController {
   // Declared before the `:id` patch so Nest doesn't treat "me" as a UUID.
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Patch('me')
-  updateMe(
-    @GetUser('id') userId: string,
-    @Body() dto: UpdateMeDto,
-  ) {
+  updateMe(@GetUser('id') userId: string, @Body() dto: UpdateMeDto) {
     return this.usersService.updateMe(userId, dto);
   }
 
@@ -88,9 +85,10 @@ export class UsersController {
   updateDriver(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') requesterId: string,
     @Body() dto: UpdateDriverDto,
   ) {
-    return this.usersService.updateDriver(id, companyId, dto);
+    return this.usersService.updateDriver(id, companyId, dto, requesterId);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -221,10 +219,7 @@ export class UsersController {
    *  alarms scheduled by others fire on the user's wall-clock time. */
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Patch('me/timezone')
-  setTimezone(
-    @GetUser('id') userId: string,
-    @Body() dto: SetTimezoneDto,
-  ) {
+  setTimezone(@GetUser('id') userId: string, @Body() dto: SetTimezoneDto) {
     return this.usersService.setTimezone(userId, dto.timezone);
   }
 }

@@ -28,7 +28,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
-import { authThrottle } from '../common/throttle';
+import { authThrottle, clientIp } from '../common/throttle';
 import { isAllowedOrigin } from '../common/cors-origin';
 import { JwtGuard } from './guards/jwt.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -50,7 +50,9 @@ function assertCookieOrigin(req: Request) {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private AuthService: AuthService) {}
+  constructor(
+    private AuthService: AuthService,
+  ) {}
 
   // Auth limits: per phone / email / token tried, plus per IP — sized so a
   // shipload of drivers behind one NAT can all sign in. common/throttle.ts.
@@ -101,26 +103,51 @@ export class AuthController {
     return this.AuthService.getMe(user.id);
   }
 
-  // Twilio SMS is billed: 3/min per phone, and 30/min per IP so one address
-  // can't pump SMS to many numbers (still room for a ship's crew at once).
+  // Billed channels (SMS, later WhatsApp): 3/min per phone, and 30/min per
+  // IP so one address can't pump codes to many numbers (still room for a
+  // ship's crew at once). The same budget covers every channel.
   @Throttle(authThrottle('phone', 3, 30))
   @Post('driver/request-otp')
   @HttpCode(HttpStatus.OK)
-  requestDriverOtp(@Body() dto: RequestOtpDto) {
-    return this.AuthService.requestDriverOtp(dto.phone);
+  requestDriverOtp(@Body() dto: RequestOtpDto, @Req() req: Request) {
+    return this.AuthService.requestDriverOtp(
+      dto.phone,
+      dto.channel ?? 'sms',
+      clientIp(req),
+    );
   }
 
-  // SMS doesn't reach the driver → the code is emailed to their assigned
-  // manager instead. Same per-phone / per-IP budget as request-otp.
+  // Kept for app builds that shipped the first "send to my manager" button;
+  // newer ones call request-otp with channel=manager.
   @Throttle(authThrottle('phone', 3, 30))
   @Post('driver/request-otp-manager')
   @HttpCode(HttpStatus.OK)
-  requestDriverOtpViaManager(@Body() dto: RequestOtpDto) {
-    return this.AuthService.requestDriverOtpViaManager(dto.phone);
+  requestDriverOtpViaManager(@Body() dto: RequestOtpDto, @Req() req: Request) {
+    return this.AuthService.requestDriverOtp(
+      dto.phone,
+      'manager',
+      clientIp(req),
+    );
   }
 
-  // The assigned manager mints a one-time login code to dictate to the
-  // driver. Per-manager budget: each code is another 5 guesses at the phone.
+  // "Didn't get the code?" — which fallbacks to offer for this phone. Same
+  // shape for unknown phones (see AuthService.driverOtpChannels).
+  @Throttle(authThrottle('phone', 10, 100))
+  @Post('driver/otp-channels')
+  @HttpCode(HttpStatus.OK)
+  driverOtpChannels(@Body() dto: RequestOtpDto) {
+    return this.AuthService.driverOtpChannels();
+  }
+
+  // Lets the web / manager app hide buttons for features that are off here.
+  @Get('features')
+  features() {
+    return { managerLoginCode: this.AuthService.managerLoginCodeEnabled() };
+  }
+
+  // The truck's manager mints a one-time login code to dictate to the
+  // driver. Off unless MANAGER_LOGIN_CODE_ENABLED=true (dev). Per-manager
+  // budget: each code is another 5 guesses at the phone.
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @UseGuards(JwtGuard, RolesGuard)
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -129,15 +156,20 @@ export class AuthController {
   issueDriverLoginCode(
     @Param('id') driverId: string,
     @GetUser('id') requesterId: string,
+    @Req() req: Request,
   ) {
-    return this.AuthService.issueDriverLoginCode(requesterId, driverId);
+    return this.AuthService.issueDriverLoginCode(
+      requesterId,
+      driverId,
+      clientIp(req),
+    );
   }
 
   @Throttle(authThrottle('phone', 10, 100))
   @Post('driver/verify-otp')
   @HttpCode(HttpStatus.OK)
-  verifyDriverOtp(@Body() dto: VerifyOtpDto) {
-    return this.AuthService.verifyDriverOtp(dto.phone, dto.code);
+  verifyDriverOtp(@Body() dto: VerifyOtpDto, @Req() req: Request) {
+    return this.AuthService.verifyDriverOtp(dto.phone, dto.code, clientIp(req));
   }
 
   @Throttle(authThrottle('email', 5, 30))

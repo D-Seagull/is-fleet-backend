@@ -25,6 +25,7 @@ import {
   MANAGER_ROLES,
 } from 'src/common/utils/access';
 import { t } from 'src/i18n/i18n';
+import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
 import {
   SELF_PROFILE_FIELDS,
   SELF_PROFILE_SELECT,
@@ -62,6 +63,7 @@ export class UsersService {
     private gateway: MessagesGateway,
     private push: PushService,
     private transfers: DriverTransfersService,
+    private notices: DriverLoginNoticeService,
   ) {}
 
   async createManager(
@@ -262,6 +264,7 @@ export class UsersService {
       teamleadId?: string | null;
       truckId?: string | null;
     },
+    requesterId?: string,
   ) {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
@@ -373,6 +376,17 @@ export class UsersService {
         (k) => dto[k] !== undefined,
       ),
     );
+
+    // The phone is the driver's sign-in — tell them, in the IS Fleet contact
+    // chat, when someone else moves their account to a new number.
+    if (
+      user.role === 'DRIVER' &&
+      dto.phone !== undefined &&
+      dto.phone !== user.phone &&
+      requesterId !== id
+    ) {
+      await this.notices.phoneChanged(id, requesterId ?? null, dto.phone);
+    }
 
     // Realtime + push side-effects mirror TrucksService.update so both entry
     // points (truck card and driver card) feel identical.
@@ -618,6 +632,7 @@ export class UsersService {
       }),
     ]);
 
+    this.gateway.disconnectSockets(id);
     return { message: 'Account deleted' };
   }
 
@@ -641,10 +656,18 @@ export class UsersService {
       );
     }
 
-    await this.prisma.user.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { isActive: false },
+      }),
+      // Sessions end now, not when the (90-day, for drivers) token expires.
+      this.prisma.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date(), expiresAt: new Date() },
+      }),
+    ]);
+    this.gateway.disconnectSockets(id);
 
     return { message: `User ${fullName(user)} deactivated!` };
   }
@@ -656,6 +679,7 @@ export class UsersService {
       where: companyId ? { id, companyId } : { id },
       select: {
         id: true,
+        isSystem: true,
         firstName: true,
         lastName: true,
         email: true,
@@ -673,8 +697,9 @@ export class UsersService {
         teamlead: {
           select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, email: true, phone: true,  },
         },
+        // managerId = the driver's actual manager (the truck's).
         currentTruck: {
-          select: { id: true, plate: true, status: true },
+          select: { id: true, plate: true, status: true, managerId: true },
         },
         // For MANAGER pages: trucks where this user is the assigned manager.
         // Empty for non-manager rows, so it costs nothing extra to include.
@@ -734,6 +759,8 @@ export class UsersService {
             where: { id, role: 'ADMIN', deletedAt: null },
             select: {
               id: true,
+              // The IS Fleet contact is such an ADMIN (clients badge it).
+              isSystem: true,
               firstName: true,
               lastName: true,
               avatar: true,

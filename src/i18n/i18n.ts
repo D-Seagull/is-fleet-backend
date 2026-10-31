@@ -41,7 +41,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Вирушаємо на завантаження?',
     'push.notDepartedTitle': 'Водій ще не виїхав',
-    'push.notDepartedBody': '{{plate}} · {{title}}: виїзд не підтверджено після 3 нагадувань',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: виїзд не підтверджено після 3 нагадувань',
     'tripStatus.ASSIGNED': 'Призначено',
     'tripStatus.ACCEPTED': 'Прийнято',
     'tripStatus.ON_WAY': 'У дорозі',
@@ -106,7 +107,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Час на редагування минув (15 хв)',
     'errors.cannotDeleteMessage': 'Ви не можете видалити це повідомлення',
     'errors.driverNotActive': 'Акаунт водія неактивний.',
-    'errors.notAssignedManager': 'Код входу може видати лише закріплений менеджер водія.',
+    'contact.loginCode.issued':
+      "Ваш менеджер {{manager}} отримав код входу у ваш акаунт ({{time}}). Якщо ви його не просили — напишіть нам тут.",
+    'contact.loginCode.used':
+      "У ваш акаунт увійшли за кодом від менеджера {{manager}} ({{time}}). Якщо це були не ви — напишіть нам тут.",
+    'contact.phoneChanged':
+      "Менеджер {{manager}} змінив номер телефону вашого акаунта на {{phone}} ({{time}}). Тепер входьте з цим номером. Якщо це помилка — напишіть нам тут.",
+    'errors.featureDisabled': 'Ця функція вимкнена.',
+    'sms.otp': 'Ваш код IS Fleet: {{code}}',
+    'errors.notAssignedManager':
+      'Код входу може видати лише закріплений менеджер водія.',
     // errors — bad request / conflict / auth
     'errors.phoneFormat':
       'Номер має бути в міжнародному форматі, напр. +380501234567',
@@ -167,7 +177,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Heading to loading?',
     'push.notDepartedTitle': 'Driver has not set off yet',
-    'push.notDepartedBody': '{{plate}} · {{title}}: departure not confirmed after 3 reminders',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: departure not confirmed after 3 reminders',
     'tripStatus.ASSIGNED': 'Assigned',
     'tripStatus.ACCEPTED': 'Accepted',
     'tripStatus.ON_WAY': 'On Way',
@@ -224,7 +235,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'The edit window has passed (15 min)',
     'errors.cannotDeleteMessage': "You can't delete this message",
     'errors.driverNotActive': 'Driver account is not active.',
-    'errors.notAssignedManager': "Only the driver's assigned manager can issue a login code.",
+    'contact.loginCode.issued':
+      "Your manager {{manager}} received a sign-in code for your account ({{time}}). If you did not ask for it, write to us here.",
+    'contact.loginCode.used':
+      "Someone signed in to your account with a code from your manager {{manager}} ({{time}}). If it was not you, write to us here.",
+    'contact.phoneChanged':
+      "Manager {{manager}} changed your account phone number to {{phone}} ({{time}}). Sign in with this number from now on. If this is a mistake, write to us here.",
+    'errors.featureDisabled': 'This feature is turned off.',
+    'sms.otp': 'Your IS Fleet code: {{code}}',
+    'errors.notAssignedManager':
+      "Only the driver's assigned manager can issue a login code.",
     'errors.phoneFormat':
       'Phone must be in international format, e.g. +380501234567',
     'errors.userExists': 'A user with this email or phone already exists.',
@@ -282,7 +302,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Jedziemy na załadunek?',
     'push.notDepartedTitle': 'Kierowca jeszcze nie wyjechał',
-    'push.notDepartedBody': '{{plate}} · {{title}}: wyjazd niepotwierdzony po 3 przypomnieniach',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: wyjazd niepotwierdzony po 3 przypomnieniach',
     'tripStatus.ASSIGNED': 'Przypisany',
     'tripStatus.ACCEPTED': 'Zaakceptowany',
     'tripStatus.ON_WAY': 'W drodze',
@@ -344,7 +365,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Czas na edycję minął (15 min)',
     'errors.cannotDeleteMessage': 'Nie możesz usunąć tej wiadomości',
     'errors.driverNotActive': 'Konto kierowcy nie jest aktywne.',
-    'errors.notAssignedManager': 'Kod logowania może wydać tylko przypisany menedżer kierowcy.',
+    'contact.loginCode.issued':
+      "Twój menedżer {{manager}} otrzymał kod logowania do Twojego konta ({{time}}). Jeśli o niego nie prosiłeś — napisz do nas tutaj.",
+    'contact.loginCode.used':
+      "Ktoś zalogował się na Twoje konto kodem od menedżera {{manager}} ({{time}}). Jeśli to nie Ty — napisz do nas tutaj.",
+    'contact.phoneChanged':
+      "Menedżer {{manager}} zmienił numer telefonu Twojego konta na {{phone}} ({{time}}). Od teraz loguj się tym numerem. Jeśli to pomyłka — napisz do nas tutaj.",
+    'errors.featureDisabled': 'Ta funkcja jest wyłączona.',
+    'sms.otp': 'Twój kod IS Fleet: {{code}}',
+    'errors.notAssignedManager':
+      'Kod logowania może wydać tylko przypisany menedżer kierowcy.',
     'errors.phoneFormat':
       'Numer musi być w formacie międzynarodowym, np. +380501234567',
     'errors.userExists':
@@ -373,7 +403,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
     'errors.truckHasNoDriver': 'Ten pojazd nie ma kierowcy',
     'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
-    'errors.truckPlateExists': 'Pojazd o tym numerze rejestracyjnym już istnieje',
+    'errors.truckPlateExists':
+      'Pojazd o tym numerze rejestracyjnym już istnieje',
     'errors.companyDeactivated':
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
@@ -405,7 +436,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Vykstame į pakrovimą?',
     'push.notDepartedTitle': 'Vairuotojas dar neišvyko',
-    'push.notDepartedBody': '{{plate}} · {{title}}: išvykimas nepatvirtintas po 3 priminimų',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: išvykimas nepatvirtintas po 3 priminimų',
     'tripStatus.ASSIGNED': 'Priskirtas',
     'tripStatus.ACCEPTED': 'Priimtas',
     'tripStatus.ON_WAY': 'Kelyje',
@@ -464,7 +496,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Redagavimo laikas baigėsi (15 min)',
     'errors.cannotDeleteMessage': 'Negalite ištrinti šios žinutės',
     'errors.driverNotActive': 'Vairuotojo paskyra neaktyvi.',
-    'errors.notAssignedManager': 'Prisijungimo kodą gali išduoti tik priskirtas vairuotojo vadybininkas.',
+    'contact.loginCode.issued':
+      "Jūsų vadybininkas {{manager}} gavo prisijungimo prie jūsų paskyros kodą ({{time}}). Jei jo neprašėte — parašykite mums čia.",
+    'contact.loginCode.used':
+      "Kažkas prisijungė prie jūsų paskyros vadybininko {{manager}} kodu ({{time}}). Jei tai ne jūs — parašykite mums čia.",
+    'contact.phoneChanged':
+      "Vadybininkas {{manager}} pakeitė jūsų paskyros telefono numerį į {{phone}} ({{time}}). Nuo šiol junkitės šiuo numeriu. Jei tai klaida — parašykite mums čia.",
+    'errors.featureDisabled': 'Ši funkcija išjungta.',
+    'sms.otp': 'Jūsų IS Fleet kodas: {{code}}',
+    'errors.notAssignedManager':
+      'Prisijungimo kodą gali išduoti tik priskirtas vairuotojo vadybininkas.',
     'errors.phoneFormat':
       'Telefonas turi būti tarptautiniu formatu, pvz. +380501234567',
     'errors.userExists':
@@ -523,7 +564,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Выезжаем на погрузку?',
     'push.notDepartedTitle': 'Водитель ещё не выехал',
-    'push.notDepartedBody': '{{plate}} · {{title}}: выезд не подтверждён после 3 напоминаний',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: выезд не подтверждён после 3 напоминаний',
     'tripStatus.ASSIGNED': 'Назначен',
     'tripStatus.ACCEPTED': 'Принят',
     'tripStatus.ON_WAY': 'В пути',
@@ -586,7 +628,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Время на редактирование истекло (15 мин)',
     'errors.cannotDeleteMessage': 'Вы не можете удалить это сообщение',
     'errors.driverNotActive': 'Аккаунт водителя неактивен.',
-    'errors.notAssignedManager': 'Код входа может выдать только закреплённый менеджер водителя.',
+    'contact.loginCode.issued':
+      "Ваш менеджер {{manager}} получил код входа в ваш аккаунт ({{time}}). Если вы его не просили — напишите нам здесь.",
+    'contact.loginCode.used':
+      "В ваш аккаунт вошли по коду от менеджера {{manager}} ({{time}}). Если это были не вы — напишите нам здесь.",
+    'contact.phoneChanged':
+      "Менеджер {{manager}} изменил номер телефона вашего аккаунта на {{phone}} ({{time}}). Теперь входите с этим номером. Если это ошибка — напишите нам здесь.",
+    'errors.featureDisabled': 'Эта функция отключена.',
+    'sms.otp': 'Ваш код IS Fleet: {{code}}',
+    'errors.notAssignedManager':
+      'Код входа может выдать только закреплённый менеджер водителя.',
     'errors.phoneFormat':
       'Номер должен быть в международном формате, напр. +380501234567',
     'errors.userExists':

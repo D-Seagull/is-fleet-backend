@@ -1,11 +1,12 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.service';
 import { MailService } from 'src/mail/mail.service';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
+import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
 import { DriverTransfersService } from 'src/driver-transfers/driver-transfers.service';
 
 // expo-server-sdk is ESM-only, pulled in transitively via the gateway / push
@@ -37,14 +38,20 @@ describe('UsersService', () => {
   let prisma: {
     user: Record<string, jest.Mock>;
     driverRating: Record<string, jest.Mock>;
+    refreshToken: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
   };
   let transfers: { request: jest.Mock };
+  let gateway: { server: { to: jest.Mock }; disconnectSockets: jest.Mock };
+  let notices: { phoneChanged: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
 
     transfers = {
-      request: jest.fn().mockResolvedValue({ pending: true, code: 'DRIVER_TRANSFER_PENDING' }),
+      request: jest
+        .fn()
+        .mockResolvedValue({ pending: true, code: 'DRIVER_TRANSFER_PENDING' }),
     };
 
     prisma = {
@@ -53,7 +60,14 @@ describe('UsersService', () => {
         update: jest.fn().mockResolvedValue({}),
       },
       driverRating: { upsert: jest.fn().mockResolvedValue({ id: 'dr1' }) },
+      refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+      $transaction: jest.fn().mockResolvedValue([]),
     };
+    gateway = {
+      server: { to: jest.fn().mockReturnValue({ emit: jest.fn() }) },
+      disconnectSockets: jest.fn(),
+    };
+    notices = { phoneChanged: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -61,9 +75,10 @@ describe('UsersService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: SupabaseStorageService, useValue: {} },
         { provide: MailService, useValue: {} },
-        { provide: MessagesGateway, useValue: { server: { to: jest.fn() } } },
+        { provide: MessagesGateway, useValue: gateway },
         { provide: PushService, useValue: {} },
         { provide: DriverTransfersService, useValue: transfers },
+        { provide: DriverLoginNoticeService, useValue: notices },
       ],
     }).compile();
 
@@ -104,17 +119,17 @@ describe('UsersService', () => {
 
     it('forbids a non-admin from deactivating a TEAMLEAD', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'TEAMLEAD' }));
-      await expect(
-        service.deactivate('u1', 'c1', 'TEAMLEAD'),
-      ).rejects.toThrow(/onlyAdminDeactivate/);
+      await expect(service.deactivate('u1', 'c1', 'TEAMLEAD')).rejects.toThrow(
+        /onlyAdminDeactivate/,
+      );
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('forbids a manager from deactivating another manager', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'MANAGER' }));
-      await expect(
-        service.deactivate('u1', 'c1', 'MANAGER'),
-      ).rejects.toThrow(/noPermissionDeactivate/);
+      await expect(service.deactivate('u1', 'c1', 'MANAGER')).rejects.toThrow(
+        /noPermissionDeactivate/,
+      );
     });
 
     it('lets an admin deactivate a manager', async () => {
@@ -130,6 +145,59 @@ describe('UsersService', () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'DRIVER' }));
       await service.deactivate('u1', 'c1', 'MANAGER');
       expect(prisma.user.update).toHaveBeenCalled();
+    });
+
+    it('ends every session at once: revokes refresh tokens, drops sockets', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow({ role: 'DRIVER' }));
+      await service.deactivate('u1', 'c1', 'MANAGER');
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', revokedAt: null },
+        data: { revokedAt: expect.any(Date), expiresAt: expect.any(Date) },
+      });
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(gateway.disconnectSockets).toHaveBeenCalledWith('u1');
+    });
+
+    it('leaves sessions alone when refused', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow({ role: 'TEAMLEAD' }));
+      await service.deactivate('u1', 'c1', 'MANAGER').catch(() => {});
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(gateway.disconnectSockets).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── phone change → driver is told in the IS Fleet contact chat ────────────
+  describe('updateDriver phone', () => {
+    beforeEach(() => {
+      prisma.user.update.mockResolvedValue({ id: 'u1', companyId: 'c1' });
+    });
+
+    it("tells the driver when a manager changes their phone", async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        userRow({ phone: '+380971234567' }),
+      );
+      await service.updateDriver('u1', 'c1', { phone: '+48500111222' }, 'm1');
+      expect(notices.phoneChanged).toHaveBeenCalledWith(
+        'u1',
+        'm1',
+        '+48500111222',
+      );
+    });
+
+    it('stays quiet when the phone did not change', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        userRow({ phone: '+380971234567' }),
+      );
+      await service.updateDriver('u1', 'c1', { phone: '+380971234567' }, 'm1');
+      expect(notices.phoneChanged).not.toHaveBeenCalled();
+    });
+
+    it("stays quiet for a manager's own phone", async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        userRow({ role: 'MANAGER', phone: '+380971234567' }),
+      );
+      await service.updateDriver('u1', 'c1', { phone: '+48500111222' }, 'm1');
+      expect(notices.phoneChanged).not.toHaveBeenCalled();
     });
   });
 

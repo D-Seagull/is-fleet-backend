@@ -35,4 +35,5 @@ export class UpdateDriverDto {
   @IsString()
   @IsOptional()
   truckId?: string | null;
+
 }

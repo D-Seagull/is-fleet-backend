@@ -50,6 +50,13 @@ model User {
   firstName        String
   lastName         String?
   email            String?         @unique
+  /// Set once the address owner clicked the confirmation link. Drivers get
+  /// sign-in codes by email only while this is set; changing `email` clears it.
+  emailVerifiedAt  DateTime?
+  /// The built-in "IS Fleet contact" account: posts service notices into
+  /// users' chats, and admins answer as it. Never signs in (no phone, email
+  /// or password). Exactly one row has this set.
+  isSystem         Boolean         @default(false)
   phone            String?         @unique
   password         String?
   avatar           String?
@@ -90,45 +97,48 @@ model User {
   groupMessages    GroupMessage[]
   refreshTokens    RefreshToken[]
 
-  manager                User?                   @relation("DriverManager", fields: [managerId], references: [id])
-  teamlead               User?                   @relation("ManagerTeamlead", fields: [teamleadId], references: [id])
-  drivers                User[]                  @relation("DriverManager")
-  managers               User[]                  @relation("ManagerTeamlead")
-  groupsCreated          Group[]                 @relation("GroupCreator")
-  groupManagers          GroupManager[]
-  truckNotes             TruckNote[]
-  company                Company                 @relation(fields: [companyId], references: [id])
-  tripsAsDriver          Trip[]                  @relation("DriverTrips")
-  tripsAsManager         Trip[]                  @relation("ManagerTrips")
-  messages               Message[]
-  comments               TripComment[]
-  alarmsCreated          Alarm[]                 @relation("AlarmCreator")
-  alarmsTargeted         Alarm[]                 @relation("AlarmTarget")
-  uploadedDocuments      TripDocument[]
-  dmDocsUploaded         DirectMessageDocument[] @relation("DMDocsUploader")
-  dmDocsReceived         DirectMessageDocument[] @relation("DMDocsOtherUser")
-  groupDocsUploaded      GroupMessageDocument[]  @relation("GroupDocsUploader")
-  announcementReads      AnnouncementRead[]
-  announcements          Announcement[]
-  announcementDrafts     AnnouncementDraft[]
-  currentTruck           Truck?                  @relation("CurrentDriver")
-  assignedTrucks         Truck[]                 @relation("TruckManager")
-  advanceRequests        AdvanceRequest[]        @relation("DriverAdvanceRequests")
-  otpCodes               OtpCode[]
-  ratingsReceived        DriverRating[]          @relation("DriverRatings")
-  ratingsGiven           DriverRating[]          @relation("GivenRatings")
-  managerRatingsReceived ManagerRating[]         @relation("ManagerRatings")
-  managerRatingsGiven    ManagerRating[]         @relation("GivenManagerRatings")
-  sessionsAsDriver       TripChatSession[]       @relation("SessionDriver")
-  sessionsAsManager      TripChatSession[]       @relation("SessionManager")
-  pushTokens             PushToken[]
-  passwordResetTokens    PasswordResetToken[]
-  transfersAsDriver      DriverTransfer[]        @relation("TransferDriver")
-  transfersRequested     DriverTransfer[]        @relation("TransferRequester")
-  hiddenConversations    HiddenConversation[]    @relation("HiddenConversations")
-  groupMessageReads      GroupMessageRead[]      @relation("GroupMessageReads")
-  messageReactions       MessageReaction[]       @relation("MessageReactions")
-  bugReports             BugReport[]
+  manager                 User?                    @relation("DriverManager", fields: [managerId], references: [id])
+  teamlead                User?                    @relation("ManagerTeamlead", fields: [teamleadId], references: [id])
+  drivers                 User[]                   @relation("DriverManager")
+  managers                User[]                   @relation("ManagerTeamlead")
+  groupsCreated           Group[]                  @relation("GroupCreator")
+  groupManagers           GroupManager[]
+  truckNotes              TruckNote[]
+  company                 Company                  @relation(fields: [companyId], references: [id])
+  tripsAsDriver           Trip[]                   @relation("DriverTrips")
+  tripsAsManager          Trip[]                   @relation("ManagerTrips")
+  messages                Message[]
+  comments                TripComment[]
+  alarmsCreated           Alarm[]                  @relation("AlarmCreator")
+  alarmsTargeted          Alarm[]                  @relation("AlarmTarget")
+  uploadedDocuments       TripDocument[]
+  dmDocsUploaded          DirectMessageDocument[]  @relation("DMDocsUploader")
+  dmDocsReceived          DirectMessageDocument[]  @relation("DMDocsOtherUser")
+  groupDocsUploaded       GroupMessageDocument[]   @relation("GroupDocsUploader")
+  announcementReads       AnnouncementRead[]
+  announcements           Announcement[]
+  announcementDrafts      AnnouncementDraft[]
+  currentTruck            Truck?                   @relation("CurrentDriver")
+  assignedTrucks          Truck[]                  @relation("TruckManager")
+  advanceRequests         AdvanceRequest[]         @relation("DriverAdvanceRequests")
+  otpCodes                OtpCode[]
+  ratingsReceived         DriverRating[]           @relation("DriverRatings")
+  ratingsGiven            DriverRating[]           @relation("GivenRatings")
+  managerRatingsReceived  ManagerRating[]          @relation("ManagerRatings")
+  managerRatingsGiven     ManagerRating[]          @relation("GivenManagerRatings")
+  sessionsAsDriver        TripChatSession[]        @relation("SessionDriver")
+  sessionsAsManager       TripChatSession[]        @relation("SessionManager")
+  pushTokens              PushToken[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  authAuditAsDriver       AuthAuditLog[]           @relation("AuthAuditDriver")
+  authAuditAsActor        AuthAuditLog[]           @relation("AuthAuditActor")
+  transfersAsDriver       DriverTransfer[]         @relation("TransferDriver")
+  transfersRequested      DriverTransfer[]         @relation("TransferRequester")
+  hiddenConversations     HiddenConversation[]     @relation("HiddenConversations")
+  groupMessageReads       GroupMessageRead[]       @relation("GroupMessageReads")
+  messageReactions        MessageReaction[]        @relation("MessageReactions")
+  bugReports              BugReport[]
 
   // Company directories: drivers / managers of one company (role filter).
   @@index([companyId, role])
@@ -285,22 +295,22 @@ enum TruckStatus {
 }
 
 model Trip {
-  id          String     @id @default(uuid())
-  title       String
-  status      TripStatus @default(ASSIGNED)
-  managerId   String
-  driverId    String
-  truckId     String
-  companyId   String
-  notes       String?
-  orderNumber String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  chatResetAt DateTime? // встановлюється при зміні водія — чат "починається заново"
-  deletedAt   DateTime? // рейс прихований для всіх; рядок лишається заради історії перевезень
+  id                String     @id @default(uuid())
+  title             String
+  status            TripStatus @default(ASSIGNED)
+  managerId         String
+  driverId          String
+  truckId           String
+  companyId         String
+  notes             String?
+  orderNumber       String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  chatResetAt       DateTime? // встановлюється при зміні водія — чат "починається заново"
+  deletedAt         DateTime? // рейс прихований для всіх; рядок лишається заради історії перевезень
   // «Вирушаємо на завантаження?» — скільки разів уже спитали водія і коли
   // наступна перевірка (повтор через 20 хв, максимум 3 питання). null = не питаємо.
-  departPromptCount Int       @default(0)
+  departPromptCount Int        @default(0)
   departPromptAt    DateTime?
 
   manager      User              @relation("ManagerTrips", fields: [managerId], references: [id])
@@ -418,7 +428,6 @@ model TripDocument {
   docRepliedFrom TripDocument[] @relation("TripDocToDocReplies")
 
   @@index([tripId, isRead])
-
   @@index([batchId])
 }
 
@@ -454,7 +463,6 @@ model DirectMessageDocument {
 
   @@index([uploadedBy, otherUserId])
   @@index([otherUserId, uploadedBy])
-
   @@index([batchId])
 }
 
@@ -650,18 +658,72 @@ model AnnouncementDraft {
 }
 
 model OtpCode {
-  id        String    @id @default(uuid())
-  phone     String
-  code      String
-  userId    String
-  expiresAt DateTime
-  attempts  Int       @default(0)
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  id         String     @id @default(uuid())
+  phone      String
+  code       String
+  userId     String
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  usedAt     DateTime?
+  createdAt  DateTime   @default(now())
+  /// How the code reached the driver (MANAGER = through their manager).
+  channel    OtpChannel @default(SMS)
+  /// MANAGER codes: the manager who received / minted it (audit + notice).
+  issuedById String?
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([phone, createdAt])
+}
+
+enum OtpChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+  TELEGRAM
+  MANAGER
+}
+
+/// Confirms a driver's email before sign-in codes may go there. Only the
+/// SHA-256 of the link token is stored; single use, short TTL.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  email     String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum AuthAuditAction {
+  CODE_ISSUED
+  CODE_USED
+  EMAIL_VERIFICATION_SENT
+  EMAIL_VERIFIED
+}
+
+/// Who did what around driver sign-in. Read by admin/teamlead (no UI yet).
+model AuthAuditLog {
+  id        String          @id @default(uuid())
+  companyId String?
+  driverId  String?
+  /// Who acted: the manager for MANAGER codes, otherwise the driver.
+  actorId   String?
+  action    AuthAuditAction
+  channel   OtpChannel?
+  ip        String?
+  createdAt DateTime        @default(now())
+
+  driver User? @relation("AuthAuditDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  actor  User? @relation("AuthAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([driverId, createdAt])
 }
 
 enum GroupType {
