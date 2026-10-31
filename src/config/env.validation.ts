@@ -88,6 +88,21 @@ class EnvironmentVariables {
   @IsIn(['true', 'false'])
   SWAGGER_ENABLED?: string;
 
+  // ── Driver sign-in fallbacks (all off unless exactly "true") ──
+  // Managers mint a sign-in code on the driver page — dev only.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  MANAGER_LOGIN_CODE_ENABLED?: string;
+
+  // Stubs until Twilio Verify WhatsApp / Telegram Gateway are integrated.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  OTP_WHATSAPP_ENABLED?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  OTP_TELEGRAM_ENABLED?: string;
+
   @IsOptional()
   @Matches(/^\d{6}$/, { message: 'REVIEW_OTP must be exactly 6 digits' })
   REVIEW_OTP?: string;
@@ -146,7 +161,9 @@ export function validateEnv(
     try {
       new RegExp(previewRe);
     } catch {
-      problems.push('  - CORS_PREVIEW_ORIGIN_RE: not a valid regular expression');
+      problems.push(
+        '  - CORS_PREVIEW_ORIGIN_RE: not a valid regular expression',
+      );
     }
   }
 

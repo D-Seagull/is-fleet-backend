@@ -446,6 +446,15 @@ export class MessagesGateway implements OnGatewayInit {
     if (rooms.length) this.server.to(rooms).emit('tripUnreadChanged', signal);
   }
 
+  /**
+   * Drop every live socket of a user (deactivated / deleted). All gateways
+   * share this server, and each socket sits in its user's own room. A
+   * reconnect then fails the handshake (inactive user).
+   */
+  disconnectSockets(userId: string) {
+    this.server.in(userId).disconnectSockets(true);
+  }
+
   emitDocumentDeleted(tripId: string, documentId: string) {
     this.server.to(tripId).emit('documentDeleted', { tripId, documentId });
   }

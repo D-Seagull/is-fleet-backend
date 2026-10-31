@@ -25,6 +25,7 @@ import {
   MANAGER_ROLES,
 } from 'src/common/utils/access';
 import { t } from 'src/i18n/i18n';
+import { EmailVerificationService } from 'src/driver-login/email-verification.service';
 import {
   SELF_PROFILE_FIELDS,
   SELF_PROFILE_SELECT,
@@ -62,6 +63,7 @@ export class UsersService {
     private gateway: MessagesGateway,
     private push: PushService,
     private transfers: DriverTransfersService,
+    private emailVerification: EmailVerificationService,
   ) {}
 
   async createManager(
@@ -261,12 +263,36 @@ export class UsersService {
       managerId?: string | null;
       teamleadId?: string | null;
       truckId?: string | null;
+      email?: string | null;
     },
+    requesterId?: string,
   ) {
     const user = await this.prisma.user.findFirst({
       where: companyId ? { id, companyId } : { id },
     });
     if (!user) throw new NotFoundException('errors.userNotFound');
+
+    // A driver's email is only a sign-in fallback, and becomes usable once
+    // the driver confirms it. Other roles sign in WITH their email — that
+    // stays out of this generic edit.
+    const email =
+      dto.email === undefined
+        ? undefined
+        : dto.email === null || !dto.email.trim()
+          ? null
+          : dto.email.trim().toLowerCase();
+    const emailChanged = email !== undefined && email !== user.email;
+    if (emailChanged) {
+      if (user.role !== 'DRIVER') {
+        throw new BadRequestException('errors.emailOnlyDrivers');
+      }
+      if (email) {
+        const taken = await this.prisma.user.findUnique({ where: { email } });
+        if (taken && taken.id !== id) {
+          throw new ConflictException('errors.emailUsedUser');
+        }
+      }
+    }
 
     // Truck / manager / teamlead ids must be from the edited user's company —
     // no attaching another company's truck (or boss) to our driver.
@@ -351,12 +377,16 @@ export class UsersService {
         ...(dto.language !== undefined ? { language: dto.language } : {}),
         ...(dto.managerId !== undefined ? { managerId: dto.managerId } : {}),
         ...(dto.teamleadId !== undefined ? { teamleadId: dto.teamleadId } : {}),
+        // A new address is unconfirmed until the driver opens the link.
+        ...(emailChanged ? { email, emailVerifiedAt: null } : {}),
       },
       select: {
         id: true,
         firstName: true,
         lastName: true,
         phone: true,
+        email: true,
+        emailVerifiedAt: true,
         language: true,
         managerId: true,
         teamleadId: true,
@@ -365,6 +395,10 @@ export class UsersService {
         currentTruck: { select: { id: true, plate: true, status: true } },
       },
     });
+
+    if (emailChanged && email) {
+      await this.emailVerification.send(id, requesterId ?? null);
+    }
 
     // A manager edited the driver's own fields — repaint the driver's apps.
     this.emitProfileUpdated(
@@ -618,7 +652,22 @@ export class UsersService {
       }),
     ]);
 
+    this.gateway.disconnectSockets(id);
     return { message: 'Account deleted' };
+  }
+
+  /** Manager re-sends a driver's email confirmation (own company only). */
+  async resendEmailVerification(
+    id: string,
+    companyId: string | null,
+    requesterId: string,
+  ) {
+    const user = await this.prisma.user.findFirst({
+      where: companyId ? { id, companyId } : { id },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('errors.userNotFound');
+    return this.emailVerification.send(id, requesterId);
   }
 
   async deactivate(
@@ -641,10 +690,18 @@ export class UsersService {
       );
     }
 
-    await this.prisma.user.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { isActive: false },
+      }),
+      // Sessions end now, not when the (90-day, for drivers) token expires.
+      this.prisma.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date(), expiresAt: new Date() },
+      }),
+    ]);
+    this.gateway.disconnectSockets(id);
 
     return { message: `User ${fullName(user)} deactivated!` };
   }
@@ -659,6 +716,7 @@ export class UsersService {
         firstName: true,
         lastName: true,
         email: true,
+        emailVerifiedAt: true,
         phone: true,
         avatar: true, status: true, statusUntil: true, lastSeenAt: true,
         role: true,
@@ -673,8 +731,9 @@ export class UsersService {
         teamlead: {
           select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, email: true, phone: true,  },
         },
+        // managerId = the driver's actual manager (the truck's).
         currentTruck: {
-          select: { id: true, plate: true, status: true },
+          select: { id: true, plate: true, status: true, managerId: true },
         },
         // For MANAGER pages: trucks where this user is the assigned manager.
         // Empty for non-manager rows, so it costs nothing extra to include.

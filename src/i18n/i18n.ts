@@ -41,7 +41,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Вирушаємо на завантаження?',
     'push.notDepartedTitle': 'Водій ще не виїхав',
-    'push.notDepartedBody': '{{plate}} · {{title}}: виїзд не підтверджено після 3 нагадувань',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: виїзд не підтверджено після 3 нагадувань',
     'tripStatus.ASSIGNED': 'Призначено',
     'tripStatus.ACCEPTED': 'Прийнято',
     'tripStatus.ON_WAY': 'У дорозі',
@@ -106,7 +107,33 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Час на редагування минув (15 хв)',
     'errors.cannotDeleteMessage': 'Ви не можете видалити це повідомлення',
     'errors.driverNotActive': 'Акаунт водія неактивний.',
-    'errors.notAssignedManager': 'Код входу може видати лише закріплений менеджер водія.',
+    'errors.featureDisabled': 'Ця функція вимкнена.',
+    'errors.emailUsedUser': 'Цей email уже використовує інший користувач.',
+    'errors.emailOnlyDrivers': 'Email тут можна змінити лише водієві.',
+    'errors.emailVerifyInvalid': 'Посилання недійсне або застаріле.',
+    'errors.noEmailToVerify': 'У водія немає email для підтвердження.',
+    'sms.otp': 'Ваш код IS Fleet: {{code}}',
+    'push.loginCode.title': 'Вхід за кодом менеджера',
+    'push.loginCode.issued':
+      'Ваш менеджер {{manager}} отримав код входу у ваш акаунт ({{time}}).',
+    'push.loginCode.used':
+      'Вхід за кодом від менеджера {{manager}} ({{time}}).',
+    'sms.loginCode.issued':
+      'IS Fleet: менеджер {{manager}} отримав код входу у ваш акаунт ({{time}}). Якщо ви не просили — повідомте компанію.',
+    'sms.loginCode.used':
+      'IS Fleet: вхід за кодом від менеджера {{manager}} ({{time}}). Якщо це не ви — повідомте компанію.',
+    'mail.otp.subject': 'Код входу IS Fleet',
+    'mail.otp.body': 'Ваш код для входу в IS Fleet:',
+    'mail.otp.ttl':
+      'Код одноразовий і діє {{minutes}} хв. Якщо ви не входили — проігноруйте цей лист.',
+    'mail.verify.subject': 'Підтвердіть email для IS Fleet',
+    'mail.verify.body':
+      'Ваш менеджер додав цю адресу до вашого акаунта водія IS Fleet. Підтвердьте її, щоб отримувати сюди коди входу, коли не приходить SMS.',
+    'mail.verify.button': 'Підтвердити email',
+    'mail.verify.ttl':
+      'Посилання діє {{hours}} год. Якщо це не ви — просто проігноруйте лист.',
+    'errors.notAssignedManager':
+      'Код входу може видати лише закріплений менеджер водія.',
     // errors — bad request / conflict / auth
     'errors.phoneFormat':
       'Номер має бути в міжнародному форматі, напр. +380501234567',
@@ -167,7 +194,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Heading to loading?',
     'push.notDepartedTitle': 'Driver has not set off yet',
-    'push.notDepartedBody': '{{plate}} · {{title}}: departure not confirmed after 3 reminders',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: departure not confirmed after 3 reminders',
     'tripStatus.ASSIGNED': 'Assigned',
     'tripStatus.ACCEPTED': 'Accepted',
     'tripStatus.ON_WAY': 'On Way',
@@ -224,7 +252,33 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'The edit window has passed (15 min)',
     'errors.cannotDeleteMessage': "You can't delete this message",
     'errors.driverNotActive': 'Driver account is not active.',
-    'errors.notAssignedManager': "Only the driver's assigned manager can issue a login code.",
+    'errors.featureDisabled': 'This feature is turned off.',
+    'errors.emailUsedUser': 'This email is already used by another user.',
+    'errors.emailOnlyDrivers': 'Email can only be changed here for drivers.',
+    'errors.emailVerifyInvalid': 'The link is invalid or has expired.',
+    'errors.noEmailToVerify': 'The driver has no email to confirm.',
+    'sms.otp': 'Your IS Fleet code: {{code}}',
+    'push.loginCode.title': 'Sign-in with a manager code',
+    'push.loginCode.issued':
+      'Your manager {{manager}} received a sign-in code for your account ({{time}}).',
+    'push.loginCode.used':
+      'Signed in with a code from your manager {{manager}} ({{time}}).',
+    'sms.loginCode.issued':
+      'IS Fleet: manager {{manager}} received a sign-in code for your account ({{time}}). If you did not ask for it, tell your company.',
+    'sms.loginCode.used':
+      'IS Fleet: sign-in with a code from your manager {{manager}} ({{time}}). If it was not you, tell your company.',
+    'mail.otp.subject': 'IS Fleet sign-in code',
+    'mail.otp.body': 'Your IS Fleet sign-in code:',
+    'mail.otp.ttl':
+      'The code is single-use and valid for {{minutes}} min. If you did not try to sign in, ignore this email.',
+    'mail.verify.subject': 'Confirm your email for IS Fleet',
+    'mail.verify.body':
+      'Your manager added this address to your IS Fleet driver account. Confirm it to receive sign-in codes here when the SMS does not arrive.',
+    'mail.verify.button': 'Confirm email',
+    'mail.verify.ttl':
+      'The link is valid for {{hours}} h. If this was not you, just ignore this email.',
+    'errors.notAssignedManager':
+      "Only the driver's assigned manager can issue a login code.",
     'errors.phoneFormat':
       'Phone must be in international format, e.g. +380501234567',
     'errors.userExists': 'A user with this email or phone already exists.',
@@ -282,7 +336,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Jedziemy na załadunek?',
     'push.notDepartedTitle': 'Kierowca jeszcze nie wyjechał',
-    'push.notDepartedBody': '{{plate}} · {{title}}: wyjazd niepotwierdzony po 3 przypomnieniach',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: wyjazd niepotwierdzony po 3 przypomnieniach',
     'tripStatus.ASSIGNED': 'Przypisany',
     'tripStatus.ACCEPTED': 'Zaakceptowany',
     'tripStatus.ON_WAY': 'W drodze',
@@ -344,7 +399,34 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Czas na edycję minął (15 min)',
     'errors.cannotDeleteMessage': 'Nie możesz usunąć tej wiadomości',
     'errors.driverNotActive': 'Konto kierowcy nie jest aktywne.',
-    'errors.notAssignedManager': 'Kod logowania może wydać tylko przypisany menedżer kierowcy.',
+    'errors.featureDisabled': 'Ta funkcja jest wyłączona.',
+    'errors.emailUsedUser':
+      'Ten e-mail jest już używany przez innego użytkownika.',
+    'errors.emailOnlyDrivers': 'E-mail można tu zmienić tylko kierowcy.',
+    'errors.emailVerifyInvalid': 'Link jest nieprawidłowy lub wygasł.',
+    'errors.noEmailToVerify': 'Kierowca nie ma e-maila do potwierdzenia.',
+    'sms.otp': 'Twój kod IS Fleet: {{code}}',
+    'push.loginCode.title': 'Logowanie kodem od menedżera',
+    'push.loginCode.issued':
+      'Twój menedżer {{manager}} otrzymał kod logowania do Twojego konta ({{time}}).',
+    'push.loginCode.used':
+      'Logowanie kodem od menedżera {{manager}} ({{time}}).',
+    'sms.loginCode.issued':
+      'IS Fleet: menedżer {{manager}} otrzymał kod logowania do Twojego konta ({{time}}). Jeśli o to nie prosiłeś — powiadom firmę.',
+    'sms.loginCode.used':
+      'IS Fleet: logowanie kodem od menedżera {{manager}} ({{time}}). Jeśli to nie Ty — powiadom firmę.',
+    'mail.otp.subject': 'Kod logowania IS Fleet',
+    'mail.otp.body': 'Twój kod logowania do IS Fleet:',
+    'mail.otp.ttl':
+      'Kod jest jednorazowy i ważny {{minutes}} min. Jeśli się nie logowałeś — zignoruj tę wiadomość.',
+    'mail.verify.subject': 'Potwierdź e-mail w IS Fleet',
+    'mail.verify.body':
+      'Twój menedżer dodał ten adres do Twojego konta kierowcy IS Fleet. Potwierdź go, aby otrzymywać tu kody logowania, gdy SMS nie dochodzi.',
+    'mail.verify.button': 'Potwierdź e-mail',
+    'mail.verify.ttl':
+      'Link jest ważny {{hours}} godz. Jeśli to nie Ty — zignoruj tę wiadomość.',
+    'errors.notAssignedManager':
+      'Kod logowania może wydać tylko przypisany menedżer kierowcy.',
     'errors.phoneFormat':
       'Numer musi być w formacie międzynarodowym, np. +380501234567',
     'errors.userExists':
@@ -373,7 +455,8 @@ const messages: Record<Locale, Record<string, string>> = {
       'Trasę może usunąć tylko obecny menedżer tego pojazdu lub teamlead',
     'errors.truckHasNoDriver': 'Ten pojazd nie ma kierowcy',
     'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
-    'errors.truckPlateExists': 'Pojazd o tym numerze rejestracyjnym już istnieje',
+    'errors.truckPlateExists':
+      'Pojazd o tym numerze rejestracyjnym już istnieje',
     'errors.companyDeactivated':
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
@@ -405,7 +488,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Vykstame į pakrovimą?',
     'push.notDepartedTitle': 'Vairuotojas dar neišvyko',
-    'push.notDepartedBody': '{{plate}} · {{title}}: išvykimas nepatvirtintas po 3 priminimų',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: išvykimas nepatvirtintas po 3 priminimų',
     'tripStatus.ASSIGNED': 'Priskirtas',
     'tripStatus.ACCEPTED': 'Priimtas',
     'tripStatus.ON_WAY': 'Kelyje',
@@ -464,7 +548,33 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Redagavimo laikas baigėsi (15 min)',
     'errors.cannotDeleteMessage': 'Negalite ištrinti šios žinutės',
     'errors.driverNotActive': 'Vairuotojo paskyra neaktyvi.',
-    'errors.notAssignedManager': 'Prisijungimo kodą gali išduoti tik priskirtas vairuotojo vadybininkas.',
+    'errors.featureDisabled': 'Ši funkcija išjungta.',
+    'errors.emailUsedUser': 'Šį el. paštą jau naudoja kitas naudotojas.',
+    'errors.emailOnlyDrivers': 'El. paštą čia galima keisti tik vairuotojui.',
+    'errors.emailVerifyInvalid': 'Nuoroda negalioja arba pasibaigė.',
+    'errors.noEmailToVerify': 'Vairuotojas neturi el. pašto patvirtinimui.',
+    'sms.otp': 'Jūsų IS Fleet kodas: {{code}}',
+    'push.loginCode.title': 'Prisijungimas vadybininko kodu',
+    'push.loginCode.issued':
+      'Jūsų vadybininkas {{manager}} gavo prisijungimo prie jūsų paskyros kodą ({{time}}).',
+    'push.loginCode.used':
+      'Prisijungta vadybininko {{manager}} kodu ({{time}}).',
+    'sms.loginCode.issued':
+      'IS Fleet: vadybininkas {{manager}} gavo prisijungimo prie jūsų paskyros kodą ({{time}}). Jei neprašėte — praneškite įmonei.',
+    'sms.loginCode.used':
+      'IS Fleet: prisijungta vadybininko {{manager}} kodu ({{time}}). Jei tai ne jūs — praneškite įmonei.',
+    'mail.otp.subject': 'IS Fleet prisijungimo kodas',
+    'mail.otp.body': 'Jūsų IS Fleet prisijungimo kodas:',
+    'mail.otp.ttl':
+      'Kodas vienkartinis ir galioja {{minutes}} min. Jei nesijungėte — ignoruokite šį laišką.',
+    'mail.verify.subject': 'Patvirtinkite el. paštą IS Fleet',
+    'mail.verify.body':
+      'Jūsų vadybininkas pridėjo šį adresą prie jūsų IS Fleet vairuotojo paskyros. Patvirtinkite jį, kad čia gautumėte prisijungimo kodus, kai SMS neateina.',
+    'mail.verify.button': 'Patvirtinti el. paštą',
+    'mail.verify.ttl':
+      'Nuoroda galioja {{hours}} val. Jei tai ne jūs — ignoruokite šį laišką.',
+    'errors.notAssignedManager':
+      'Prisijungimo kodą gali išduoti tik priskirtas vairuotojo vadybininkas.',
     'errors.phoneFormat':
       'Telefonas turi būti tarptautiniu formatu, pvz. +380501234567',
     'errors.userExists':
@@ -523,7 +633,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'push.tripStatusBody': '{{plate}} · {{title}}: {{status}}',
     'push.departTitle': 'Выезжаем на погрузку?',
     'push.notDepartedTitle': 'Водитель ещё не выехал',
-    'push.notDepartedBody': '{{plate}} · {{title}}: выезд не подтверждён после 3 напоминаний',
+    'push.notDepartedBody':
+      '{{plate}} · {{title}}: выезд не подтверждён после 3 напоминаний',
     'tripStatus.ASSIGNED': 'Назначен',
     'tripStatus.ACCEPTED': 'Принят',
     'tripStatus.ON_WAY': 'В пути',
@@ -586,7 +697,32 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Время на редактирование истекло (15 мин)',
     'errors.cannotDeleteMessage': 'Вы не можете удалить это сообщение',
     'errors.driverNotActive': 'Аккаунт водителя неактивен.',
-    'errors.notAssignedManager': 'Код входа может выдать только закреплённый менеджер водителя.',
+    'errors.featureDisabled': 'Эта функция отключена.',
+    'errors.emailUsedUser': 'Этот email уже использует другой пользователь.',
+    'errors.emailOnlyDrivers': 'Email здесь можно изменить только водителю.',
+    'errors.emailVerifyInvalid': 'Ссылка недействительна или устарела.',
+    'errors.noEmailToVerify': 'У водителя нет email для подтверждения.',
+    'sms.otp': 'Ваш код IS Fleet: {{code}}',
+    'push.loginCode.title': 'Вход по коду менеджера',
+    'push.loginCode.issued':
+      'Ваш менеджер {{manager}} получил код входа в ваш аккаунт ({{time}}).',
+    'push.loginCode.used': 'Вход по коду от менеджера {{manager}} ({{time}}).',
+    'sms.loginCode.issued':
+      'IS Fleet: менеджер {{manager}} получил код входа в ваш аккаунт ({{time}}). Если вы не просили — сообщите компании.',
+    'sms.loginCode.used':
+      'IS Fleet: вход по коду от менеджера {{manager}} ({{time}}). Если это не вы — сообщите компании.',
+    'mail.otp.subject': 'Код входа IS Fleet',
+    'mail.otp.body': 'Ваш код для входа в IS Fleet:',
+    'mail.otp.ttl':
+      'Код одноразовый и действует {{minutes}} мин. Если вы не входили — проигнорируйте это письмо.',
+    'mail.verify.subject': 'Подтвердите email для IS Fleet',
+    'mail.verify.body':
+      'Ваш менеджер добавил этот адрес в ваш аккаунт водителя IS Fleet. Подтвердите его, чтобы получать сюда коды входа, когда не приходит SMS.',
+    'mail.verify.button': 'Подтвердить email',
+    'mail.verify.ttl':
+      'Ссылка действует {{hours}} ч. Если это не вы — просто проигнорируйте письмо.',
+    'errors.notAssignedManager':
+      'Код входа может выдать только закреплённый менеджер водителя.',
     'errors.phoneFormat':
       'Номер должен быть в международном формате, напр. +380501234567',
     'errors.userExists':

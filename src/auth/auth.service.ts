@@ -14,11 +14,20 @@ import { RegisterDto } from './dto/register.dto';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
-import { SmsService } from 'src/sms/sms.service';
 import { maskPhone, normalizePhone } from 'src/common/utils/phone';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { MailService } from 'src/mail/mail.service';
 import { SELF_PROFILE_SELECT } from 'src/users/self-profile';
+import { OtpChannel } from '@prisma/client';
+import { OtpDeliveryService } from 'src/driver-login/otp-delivery.service';
+import { AuthAuditService } from 'src/driver-login/auth-audit.service';
+import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
+import {
+  CHANNEL_TO_DB,
+  DriverOtpChannel,
+  OtpRecipient,
+  maskEmail,
+} from 'src/driver-login/otp-channels';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
@@ -32,6 +41,9 @@ const MANAGER_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const OTP_MAX_PENDING = 5;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Drivers sign in by code, which may not reach them abroad — so their
+// session lives longer. Sliding: every rotation starts a fresh 90 days.
+const DRIVER_REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 // A token rotated this recently is still accepted once more — see refresh().
 const REFRESH_REUSE_GRACE_MS = 60_000;
 
@@ -49,10 +61,12 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
-    private sms: SmsService,
     private gateway: MessagesGateway,
     private mail: MailService,
     private config: ConfigService,
+    private delivery: OtpDeliveryService,
+    private audit: AuthAuditService,
+    private notices: DriverLoginNoticeService,
   ) {}
 
   /**
@@ -230,7 +244,7 @@ export class AuthService {
   }
   // Issues a short-ish access JWT (TTL from JwtModule — kept at 7d during the
   // access+refresh rollout, to be flipped to 15m once every client refreshes)
-  // plus a 30-day refresh token persisted (hashed) in the DB. Shape stays
+  // plus a refresh token (30 days, drivers 90) persisted (hashed) in the DB. Shape stays
   // backward-compatible: `access_token` + `user` as before, plus `refresh_token`.
   private async signToken(
     userId: string,
@@ -241,7 +255,7 @@ export class AuthService {
     uiLocale: 'UK' | 'EN' | 'PL' | 'LT' | 'DE' | 'RU',
   ) {
     const payload = { sub: userId, role, companyId };
-    const refresh_token = await this.issueRefreshToken(userId);
+    const refresh_token = await this.issueRefreshToken(userId, role);
     // The full own profile, same as /auth/me — clients keep this as their
     // user, and a bare id/role/name here wiped the mobile avatar on every
     // token refresh. The bare shape is only a fallback if the row is gone.
@@ -277,13 +291,21 @@ export class AuthService {
       .digest('hex');
   }
 
-  private async issueRefreshToken(userId: string): Promise<string> {
+  /** Refresh TTL by role — see DRIVER_REFRESH_TTL_MS. */
+  static refreshTtlMs(role: string) {
+    return role === 'DRIVER' ? DRIVER_REFRESH_TTL_MS : REFRESH_TTL_MS;
+  }
+
+  private async issueRefreshToken(
+    userId: string,
+    role: string,
+  ): Promise<string> {
     const raw = crypto.randomBytes(48).toString('base64url');
     await this.prisma.refreshToken.create({
       data: {
         tokenHash: this.hashToken(raw),
         userId,
-        expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+        expiresAt: new Date(Date.now() + AuthService.refreshTtlMs(role)),
       },
     });
     return raw;
@@ -324,6 +346,11 @@ export class AuthService {
       });
     }
     const u = record.user;
+    // Deactivated / deleted accounts get their tokens revoked, but refuse
+    // here too so no leftover token outlives the account.
+    if (!u.isActive || u.deletedAt) {
+      throw new UnauthorizedException('errors.noAccess');
+    }
     return this.signToken(
       u.id,
       u.role,
@@ -390,16 +417,81 @@ export class AuthService {
   }
 
   // ─── Driver OTP login ───────────────────────────────────────────────────────
+  // One code per request, delivered through ONE channel (sms / email /
+  // whatsapp / telegram / manager). Same rules for all: crypto.randomInt
+  // 6 digits, keyed hash at rest, TTL, 5 attempts, single use, per-phone
+  // cooldown + throttling, and never a hint whether the phone is registered.
+
+  /** The driver row (if any) behind a phone, with what the channels need. */
+  private findDriverForOtp(phone: string) {
+    return this.prisma.user.findUnique({
+      where: { phone },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+        companyId: true,
+        phone: true,
+        email: true,
+        emailVerifiedAt: true,
+        uiLocale: true,
+        firstName: true,
+        lastName: true,
+        currentTruck: {
+          select: {
+            manager: {
+              select: {
+                id: true,
+                email: true,
+                isActive: true,
+                companyId: true,
+                uiLocale: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
 
   /**
-   * Step 1 of driver login. We never reveal whether the phone is registered:
-   * the response is always 200 OK to prevent phone-number enumeration.
-   * If the phone matches an active DRIVER, an SMS is sent with a 6-digit code.
+   * Which channels the login screen may offer for this phone. Unknown phones,
+   * inactive accounts and drivers without a verified email all get the SAME
+   * answer, so this is no "is this number registered?" oracle. What it does
+   * tell is "this number has a verified email" — only the masked hint, behind
+   * the same per-phone / per-IP throttle as request-otp.
    */
-  async requestDriverOtp(phoneInput: string) {
+  async driverOtpChannels(phoneInput: string) {
+    const phone = normalizePhone(phoneInput);
+    const base: DriverOtpChannel[] = ['sms', ...this.delivery.enabledForAll()];
+    const answer = (email: string | null) => ({
+      channels: [...base, ...(email ? (['email'] as const) : []), 'manager'],
+      emailHint: email ? maskEmail(email) : null,
+    });
+    if (!phone) return answer(null);
+    const driver = await this.findDriverForOtp(phone);
+    if (!driver || driver.role !== 'DRIVER' || !driver.isActive) {
+      return answer(null);
+    }
+    const email = this.delivery.usable('email', this.recipient(driver, phone))
+      ? driver.email
+      : null;
+    return answer(email);
+  }
+
+  /**
+   * Step 1 of driver login. Always `{ ok: true }` — whether or not the phone
+   * is registered, and whether or not the asked channel can reach this
+   * driver (an unknown / unavailable channel simply sends nothing).
+   */
+  async requestDriverOtp(
+    phoneInput: string,
+    channel: string = 'sms',
+    ip?: string | null,
+  ) {
     const phone = normalizePhone(phoneInput);
     this.logger.log(
-      `requestDriverOtp: ${phone ? maskPhone(phone) : 'INVALID'}`,
+      `requestDriverOtp[${channel}]: ${phone ? maskPhone(phone) : 'INVALID'}`,
     );
 
     if (!phone) {
@@ -407,57 +499,108 @@ export class AuthService {
       return { ok: true };
     }
 
-    const user = await this.prisma.user.findUnique({ where: { phone } });
-
-    if (!user || user.role !== 'DRIVER' || !user.isActive) {
+    const driver = await this.findDriverForOtp(phone);
+    if (!driver || driver.role !== 'DRIVER' || !driver.isActive) {
       this.logger.warn(
         `OTP request for ${maskPhone(phone)}: no active DRIVER row found — returning ok:true silently`,
       );
       return { ok: true };
     }
 
-    // Cooldown — one SMS per phone per minute.
-    await this.assertOtpCooldown(phone);
+    if (channel === 'manager') {
+      return this.requestViaManager(driver, phone, ip);
+    }
 
-    const reviewCode = this.reviewOtpFor(phone);
-    const code = reviewCode ?? String(crypto.randomInt(100000, 1000000));
-    const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+    const recipient = this.recipient(driver, phone);
+    const target = this.delivery.usable(channel, recipient);
+    if (!target) {
+      this.logger.warn(
+        `OTP request for driver ${driver.id}: channel "${channel}" unavailable — nothing sent`,
+      );
+      return { ok: true };
+    }
 
-    // Only a keyed hash is stored — see hashOtp.
-    await this.prisma.otpCode.create({
-      data: {
-        phone,
-        code: this.hashOtp(phone, code),
-        userId: user.id,
-        expiresAt,
-      },
-    });
+    // Cooldown — one code per phone per channel per minute (the driver may
+    // switch from SMS to email right away when the SMS doesn't come).
+    await this.assertOtpCooldown(phone, CHANNEL_TO_DB[target.name]);
 
     // Store reviewers (Google Play / App Store) can't receive our SMS, so the
-    // demo driver's code is fixed and nothing is sent. verifyDriverOtp is
+    // demo driver's SMS code is fixed and nothing is sent. verifyDriverOtp is
     // untouched — same TTL, attempt limit and single use as a real code.
+    const reviewCode = target.name === 'sms' ? this.reviewOtpFor(phone) : null;
+    const code = reviewCode ?? this.newOtpCode();
+    await this.storeOtp(driver.id, phone, code, target.name, OTP_TTL_MS);
+    await this.audit.record({
+      action: 'CODE_ISSUED',
+      companyId: driver.companyId,
+      driverId: driver.id,
+      actorId: driver.id,
+      channel: CHANNEL_TO_DB[target.name],
+      ip,
+    });
+
     if (reviewCode) {
       this.logger.log(`OTP for review phone: fixed code, no SMS`);
       return { ok: true };
     }
 
-    // Delivery: with Twilio creds set, this sends a real SMS; without them
-    // (dev/test) SmsService falls back to logging the body, so the OTP flow
-    // is still testable locally without leaking codes in production logs.
     // A delivery failure (e.g. a Twilio trial account can only reach verified
     // numbers → error 21608) must NOT 500 the request — the OTP row already
     // exists. Log the real reason for ops; the client still sees a neutral ok.
+    // Without Twilio creds (dev/test) SmsService logs the body instead.
     try {
-      await this.sms.send(phone, `Your IS Fleet code: ${code}`);
+      await target.deliver(recipient, code, OTP_TTL_MS / 60_000);
     } catch (err) {
       this.logger.error(
-        `SMS delivery failed for ${maskPhone(phone)}: ${
+        `OTP delivery [${target.name}] failed for ${maskPhone(phone)}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
     }
-
     return { ok: true };
+  }
+
+  private recipient(
+    driver: {
+      id: string;
+      email: string | null;
+      emailVerifiedAt: Date | null;
+      uiLocale: string;
+    },
+    phone: string,
+  ): OtpRecipient {
+    return {
+      id: driver.id,
+      phone,
+      email: driver.email,
+      emailVerifiedAt: driver.emailVerifiedAt,
+      uiLocale: driver.uiLocale,
+    };
+  }
+
+  private newOtpCode() {
+    return String(crypto.randomInt(100000, 1000000));
+  }
+
+  // Only a keyed hash is stored — see hashOtp.
+  private storeOtp(
+    userId: string,
+    phone: string,
+    code: string,
+    channel: DriverOtpChannel,
+    ttlMs: number,
+    issuedById: string | null = null,
+  ) {
+    return this.prisma.otpCode.create({
+      data: {
+        phone,
+        code: this.hashOtp(phone, code),
+        userId,
+        expiresAt: new Date(Date.now() + ttlMs),
+        channel: CHANNEL_TO_DB[channel],
+        issuedById,
+      },
+    });
   }
 
   /**
@@ -474,11 +617,12 @@ export class AuthService {
     return phone === reviewPhone ? reviewOtp : null;
   }
 
-  /** One code per phone per minute, whichever way it is delivered. */
-  private async assertOtpCooldown(phone: string) {
+  /** One code per phone per channel per minute. */
+  private async assertOtpCooldown(phone: string, channel: OtpChannel) {
     const lastSent = await this.prisma.otpCode.findFirst({
       where: {
         phone,
+        channel,
         createdAt: { gt: new Date(Date.now() - OTP_RESEND_COOLDOWN_MS) },
       },
       orderBy: { createdAt: 'desc' },
@@ -491,80 +635,66 @@ export class AuthService {
     }
   }
 
-  // ─── Driver login without SMS (via the assigned manager) ────────────────────
-  // SMS doesn't reach some drivers (UA numbers roaming in DE/AT). Both ways
-  // below mint an ordinary OtpCode row — hashed, single use, attempt-limited —
-  // that the driver types on the usual code screen. Only the driver's OWN
-  // assigned manager (User.managerId) ever sees the code.
+  // ─── Driver login through the manager ───────────────────────────────────────
+  // Last resort when no channel reaches the driver. Only the driver's actual
+  // manager — the manager of their current truck (Truck.managerId), same
+  // company — ever sees the code. User.managerId is NOT used: it is just
+  // whoever created the driver and never follows truck reassignments. The
+  // driver is told (push + SMS) whenever such a code is issued and used, and
+  // every step lands in AuthAuditLog.
 
   /**
-   * Driver side: "SMS didn't come — send the code to my manager". Emails the
-   * code to the assigned manager, who passes it on. Same anti-enumeration
-   * contract as requestDriverOtp: always `{ ok: true }`.
+   * Driver side: "ask my manager" — the code is emailed to the truck's
+   * manager, who passes it on. Always `{ ok: true }` (see requestDriverOtp).
    */
-  async requestDriverOtpViaManager(phoneInput: string) {
-    const phone = normalizePhone(phoneInput);
-    this.logger.log(
-      `requestDriverOtpViaManager: ${phone ? maskPhone(phone) : 'INVALID'}`,
-    );
-    if (!phone) return { ok: true };
-
-    const user = await this.prisma.user.findUnique({
-      where: { phone },
-      include: {
-        manager: {
-          select: {
-            id: true,
-            email: true,
-            isActive: true,
-            companyId: true,
-            uiLocale: true,
-          },
-        },
-      },
-    });
-    if (!user || user.role !== 'DRIVER' || !user.isActive) {
-      this.logger.warn(
-        `Manager-code request for ${maskPhone(phone)}: no active DRIVER row found — returning ok:true silently`,
-      );
-      return { ok: true };
-    }
-
-    const manager = user.manager;
+  private async requestViaManager(
+    driver: NonNullable<Awaited<ReturnType<AuthService['findDriverForOtp']>>>,
+    phone: string,
+    ip?: string | null,
+  ) {
+    const manager = driver.currentTruck?.manager;
     if (
       !manager ||
       !manager.isActive ||
       !manager.email ||
-      manager.companyId !== user.companyId
+      manager.companyId !== driver.companyId
     ) {
       this.logger.warn(
-        `Manager-code request for driver ${user.id}: no reachable assigned manager — nothing sent`,
+        `Manager-code request for driver ${driver.id}: no reachable truck manager — nothing sent`,
       );
       return { ok: true };
     }
 
-    await this.assertOtpCooldown(phone);
+    await this.assertOtpCooldown(phone, 'MANAGER');
 
-    const code = String(crypto.randomInt(100000, 1000000));
-    await this.prisma.otpCode.create({
-      data: {
-        phone,
-        code: this.hashOtp(phone, code),
-        userId: user.id,
-        expiresAt: new Date(Date.now() + MANAGER_CODE_TTL_MS),
-      },
+    const code = this.newOtpCode();
+    await this.storeOtp(
+      driver.id,
+      phone,
+      code,
+      'manager',
+      MANAGER_CODE_TTL_MS,
+      manager.id,
+    );
+    await this.audit.record({
+      action: 'CODE_ISSUED',
+      companyId: driver.companyId,
+      driverId: driver.id,
+      actorId: driver.id,
+      channel: 'MANAGER',
+      ip,
     });
 
     try {
       await this.mail.sendDriverLoginCode(manager.email, {
-        driverName: `${user.firstName} ${user.lastName}`.trim(),
+        driverName: `${driver.firstName} ${driver.lastName ?? ''}`.trim(),
         driverPhone: maskPhone(phone),
         code,
         ttlMinutes: MANAGER_CODE_TTL_MS / 60_000,
         locale: manager.uiLocale,
       });
       this.logger.log(
-        `Login code for driver ${user.id} (${maskPhone(phone)}) emailed to manager ${manager.id}`,
+        `Login code for driver ${driver.id} (${maskPhone(phone)}) emailed to manager ${manager.id}`,
       );
     } catch (err) {
       this.logger.error(
@@ -573,14 +703,29 @@ export class AuthService {
         }`,
       );
     }
+    await this.notices.managerCode('issued', driver.id, manager.id);
     return { ok: true };
   }
 
+  /** Whether managers may mint codes on the driver page (dev only by default). */
+  managerLoginCodeEnabled() {
+    return this.config.get<string>('MANAGER_LOGIN_CODE_ENABLED') === 'true';
+  }
+
   /**
-   * Manager side: the assigned manager mints a code on the driver's page and
-   * dictates it. Returned once in plain text; only the hash is stored.
+   * Manager side: the truck's manager mints a code on the driver's page and
+   * dictates it. Off unless MANAGER_LOGIN_CODE_ENABLED=true — the route
+   * refuses, not just the button. Returned once in plain text; only the hash
+   * is stored.
    */
-  async issueDriverLoginCode(requesterId: string, driverId: string) {
+  async issueDriverLoginCode(
+    requesterId: string,
+    driverId: string,
+    ip?: string | null,
+  ) {
+    if (!this.managerLoginCodeEnabled()) {
+      throw new ForbiddenException('errors.featureDisabled');
+    }
     const [requester, driver] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: requesterId },
@@ -594,22 +739,23 @@ export class AuthService {
           phone: true,
           isActive: true,
           companyId: true,
-          managerId: true,
           deletedAt: true,
+          currentTruck: { select: { managerId: true } },
         },
       }),
     ]);
 
-    // Tenant + ownership: only the driver's own assigned manager, same company.
+    // Tenant + ownership: only the manager of the driver's current truck,
+    // same company. A driver without a truck has no manager to vouch for them.
     if (
       !requester?.isActive ||
       !driver ||
       driver.role !== 'DRIVER' ||
-      driver.managerId !== requester.id ||
+      driver.currentTruck?.managerId !== requester.id ||
       driver.companyId !== requester.companyId
     ) {
       this.logger.warn(
-        `Login code refused: user ${requesterId} is not the assigned manager of ${driverId}`,
+        `Login code refused: user ${requesterId} is not the truck manager of driver ${driverId}`,
       );
       throw new ForbiddenException('errors.notAssignedManager');
     }
@@ -618,34 +764,40 @@ export class AuthService {
       throw new BadRequestException('errors.driverNotActive');
     }
 
-    const code = String(crypto.randomInt(100000, 1000000));
-    const expiresAt = new Date(Date.now() + MANAGER_CODE_TTL_MS);
-    await this.prisma.otpCode.create({
-      data: {
-        phone,
-        code: this.hashOtp(phone, code),
-        userId: driver.id,
-        expiresAt,
-      },
+    const code = this.newOtpCode();
+    const row = await this.storeOtp(
+      driver.id,
+      phone,
+      code,
+      'manager',
+      MANAGER_CODE_TTL_MS,
+      requester.id,
+    );
+    await this.audit.record({
+      action: 'CODE_ISSUED',
+      companyId: driver.companyId,
+      driverId: driver.id,
+      actorId: requester.id,
+      channel: 'MANAGER',
+      ip,
     });
     this.logger.log(
       `Login code issued by manager ${requester.id} for driver ${driver.id} (${maskPhone(phone)})`,
     );
-    return { code, expiresAt };
+    await this.notices.managerCode('issued', driver.id, requester.id);
+    return { code, expiresAt: row.expiresAt };
   }
 
   /**
    * Step 2 of driver login. Checks the code against the phone's live codes
-   * (newest first — an SMS code and a manager code may both be pending). On
+   * (newest first — codes from several channels may be pending at once). On
    * success every pending code is burnt and we issue a JWT — companyId is
    * read straight from the User row, so the driver never has to pick a company.
    */
-  async verifyDriverOtp(phoneInput: string, code: string) {
+  async verifyDriverOtp(phoneInput: string, code: string, ip?: string | null) {
     const phone = normalizePhone(phoneInput);
     // Never log the entered code — it's a live credential for 5 minutes.
-    this.logger.log(
-      `verifyDriverOtp: ${phone ? maskPhone(phone) : 'INVALID'}`,
-    );
+    this.logger.log(`verifyDriverOtp: ${phone ? maskPhone(phone) : 'INVALID'}`);
 
     if (!phone) {
       throw new UnauthorizedException('errors.codeInvalidOrExpired');
@@ -700,6 +852,18 @@ export class AuthService {
       where: { phone, usedAt: null },
       data: { usedAt: new Date() },
     });
+
+    await this.audit.record({
+      action: 'CODE_USED',
+      companyId: otp.user.companyId,
+      driverId: otp.user.id,
+      actorId: otp.user.id,
+      channel: otp.channel,
+      ip,
+    });
+    if (otp.channel === 'MANAGER') {
+      await this.notices.managerCode('used', otp.user.id, otp.issuedById);
+    }
 
     await this.markSessionStart(otp.user.id);
     return this.signToken(

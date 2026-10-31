@@ -5,6 +5,7 @@ import { SupabaseStorageModule } from 'src/supabase-storage/supabase-storage.mod
 import { MailModule } from 'src/mail/mail.module';
 import { MessagesModule } from '../messages/messages.module';
 import { PushModule } from '../push/push.module';
+import { DriverLoginModule } from '../driver-login/driver-login.module';
 import { DriverTransfersModule } from '../driver-transfers/driver-transfers.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { DriverTransfersModule } from '../driver-transfers/driver-transfers.modu
     MessagesModule,
     PushModule,
     DriverTransfersModule,
+    DriverLoginModule,
   ],
   providers: [UsersService],
   controllers: [UsersController],

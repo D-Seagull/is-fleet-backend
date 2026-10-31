@@ -24,6 +24,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
 @ApiTags('users')
@@ -76,10 +77,7 @@ export class UsersController {
   // Declared before the `:id` patch so Nest doesn't treat "me" as a UUID.
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Patch('me')
-  updateMe(
-    @GetUser('id') userId: string,
-    @Body() dto: UpdateMeDto,
-  ) {
+  updateMe(@GetUser('id') userId: string, @Body() dto: UpdateMeDto) {
     return this.usersService.updateMe(userId, dto);
   }
 
@@ -88,9 +86,26 @@ export class UsersController {
   updateDriver(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') requesterId: string,
     @Body() dto: UpdateDriverDto,
   ) {
-    return this.usersService.updateDriver(id, companyId, dto);
+    return this.usersService.updateDriver(id, companyId, dto, requesterId);
+  }
+
+  // Re-send the confirmation link for a driver's (unconfirmed) email.
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post(':id/email-verification')
+  resendEmailVerification(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string | null,
+    @GetUser('id') requesterId: string,
+  ) {
+    return this.usersService.resendEmailVerification(
+      id,
+      companyId,
+      requesterId,
+    );
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
@@ -221,10 +236,7 @@ export class UsersController {
    *  alarms scheduled by others fire on the user's wall-clock time. */
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Patch('me/timezone')
-  setTimezone(
-    @GetUser('id') userId: string,
-    @Body() dto: SetTimezoneDto,
-  ) {
+  setTimezone(@GetUser('id') userId: string, @Body() dto: SetTimezoneDto) {
     return this.usersService.setTimezone(userId, dto.timezone);
   }
 }

@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 import { Language } from '@prisma/client';
 
 /**
@@ -35,4 +41,11 @@ export class UpdateDriverDto {
   @IsString()
   @IsOptional()
   truckId?: string | null;
+
+  // Drivers only: a sign-in fallback, confirmed by the driver via email link.
+  // null or '' removes it.
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== '')
+  @IsEmail()
+  email?: string | null;
 }
