@@ -7,52 +7,27 @@ import {
   Body,
   UseGuards,
   Query,
-  Patch,
 } from '@nestjs/common';
 import { AnnouncementsService } from './announcements.service';
-import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { CreateDraftDto } from './dto/create-draft.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
-import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
+/**
+ * Only the message TEMPLATES of the "broadcast to my trucks" dialog are left
+ * here (web My Trucks + is-manager). Announcements themselves are scoped out;
+ * their publish / read / edit routes were removed (audit H7, N3 — they acted
+ * on ids across companies). A template is private to its author.
+ */
 @ApiTags('announcements')
 @ApiBearerAuth()
 @UseGuards(JwtGuard, RolesGuard)
 @Controller('announcements')
 export class AnnouncementsController {
   constructor(private announcementsService: AnnouncementsService) {}
-
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
-  @Post()
-  create(
-    @GetUser('companyId') companyId: string,
-    @GetUser('id') userId: string,
-    @Body() dto: CreateAnnouncementDto,
-  ) {
-    return this.announcementsService.create(companyId, userId, dto);
-  }
-
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
-  @Get()
-  findAll(
-    @GetUser('companyId') companyId: string,
-    @GetUser('id') userId: string,
-  ) {
-    return this.announcementsService.findAll(companyId, userId);
-  }
-
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
-  @Post(':id/read')
-  markAsRead(
-    @Param('id') announcementId: string,
-    @GetUser('id') userId: string,
-  ) {
-    return this.announcementsService.markAsRead(announcementId, userId);
-  }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post('drafts')
@@ -79,28 +54,8 @@ export class AnnouncementsController {
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
-  @Post('drafts/:id/publish')
-  publishDraft(
-    @Param('id') draftId: string,
-    @GetUser('companyId') companyId: string,
-    @GetUser('id') userId: string,
-  ) {
-    return this.announcementsService.publishDraft(draftId, companyId, userId);
-  }
-
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @Body() dto: UpdateAnnouncementDto,
-  ) {
-    return this.announcementsService.update(id, userId, dto);
-  }
-
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Delete('drafts/:id')
-  removeDraft(@Param('id') id: string) {
-    return this.announcementsService.removeDraft(id);
+  removeDraft(@Param('id') id: string, @GetUser('id') userId: string) {
+    return this.announcementsService.removeDraft(id, userId);
   }
 }
