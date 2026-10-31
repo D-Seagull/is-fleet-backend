@@ -152,7 +152,9 @@ export class DirectMessagesService {
   // unread counts per peer, and json_build_object hydrates user + last
   // message in place — Postgres returns the final shape directly so JS
   // does no extra work.
-  async getConversations(userId: string) {
+  // `viewerRole` DRIVER → another driver's phone is left out of the peer
+  // card (audit P1-5); the chat list then searches by name / truck plate.
+  async getConversations(userId: string, viewerRole?: string) {
     const t0 = Date.now();
 
     type Row = {
@@ -322,7 +324,10 @@ export class DirectMessagesService {
     );
 
     return rows.map((r) => ({
-      user: r.user,
+      user:
+        viewerRole === 'DRIVER' && r.user.role === 'DRIVER'
+          ? { ...r.user, phone: null }
+          : r.user,
       lastMessage: r.last_message,
       unreadCount: r.unread_count,
     }));
@@ -409,8 +414,8 @@ export class DirectMessagesService {
     });
   }
 
-  async getUnreadSummary(userId: string) {
-    const conversations = await this.getConversations(userId);
+  async getUnreadSummary(userId: string, viewerRole?: string) {
+    const conversations = await this.getConversations(userId, viewerRole);
     const items = conversations.filter((c) => c.unreadCount > 0);
     const total = items.reduce((sum, c) => sum + c.unreadCount, 0);
     return { total, items };

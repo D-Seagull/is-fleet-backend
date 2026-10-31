@@ -64,8 +64,13 @@ export class TripsController {
   findByTruck(
     @Param('truckId') truckId: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
   ) {
-    return this.tripsService.findByTruck(truckId, companyId);
+    return this.tripsService.findByTruck(truckId, companyId, {
+      id: userId,
+      role,
+    });
   }
 
   // ─── Driver-scoped (mobile app) ──────────────────────────────────────────
@@ -83,8 +88,13 @@ export class TripsController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Get(':id')
-  findOne(@Param('id') id: string, @GetUser('companyId') companyId: string) {
-    return this.tripsService.findOne(id, companyId);
+  findOne(
+    @Param('id') id: string,
+    @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.tripsService.findOne(id, companyId, { id: userId, role });
   }
 
   // load message history for a trip.

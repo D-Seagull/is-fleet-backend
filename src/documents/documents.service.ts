@@ -12,6 +12,7 @@ import { MessagesGateway } from '../messages/messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
 import {
   assertCompanyTruck,
+  isDriversCurrentTruck,
   assertTripAccess,
   type Requester,
 } from '../common/utils/access';
@@ -38,7 +39,9 @@ export class DocumentsService {
 
     // A trip of the uploader's company (a driver: their own) — never a
     // foreign trip id from the request body.
-    await assertTripAccess(this.prisma, tripId, uploader);
+    await assertTripAccess(this.prisma, tripId, uploader, {
+      currentDriverOnly: true,
+    });
     await assertReplyTargets(
       this.prisma,
       { trip: tripId },
@@ -220,11 +223,28 @@ export class DocumentsService {
    * document's not-found key so a foreign id looks like a missing one.
    */
   private async assertDocTrip(tripId: string, requester: Requester) {
-    await assertTripAccess(this.prisma, tripId, requester, {
+    const ownTrip = await assertTripAccess(this.prisma, tripId, requester, {
       includeDeleted: true,
-    }).catch(() => {
-      throw new NotFoundException('errors.documentNotFound');
-    });
+    }).then(
+      () => true,
+      () => false,
+    );
+    if (ownTrip) return;
+    // A driver also opens every file of their CURRENT truck — incl. the ones
+    // uploaded on the previous driver's trips, which the Documents tab lists.
+    if (requester.role === 'DRIVER' && requester.companyId) {
+      const trip = await this.prisma.trip.findFirst({
+        where: { id: tripId, companyId: requester.companyId },
+        select: { truckId: true },
+      });
+      if (
+        trip &&
+        (await isDriversCurrentTruck(this.prisma, trip.truckId, requester.id))
+      ) {
+        return;
+      }
+    }
+    throw new NotFoundException('errors.documentNotFound');
   }
 
   async view(id: string, requester: Requester): Promise<{ url: string }> {
@@ -365,6 +385,14 @@ export class DocumentsService {
     // Truck of the requester's company; the trips filter repeats the company
     // so an ADMIN-less miss can't slip through a shared truck id.
     await assertCompanyTruck(this.prisma, truckId, requester);
+    // A driver lists only the truck they drive now (all of its documents,
+    // the previous drivers' trips included) — never another truck's.
+    if (
+      requester.role === 'DRIVER' &&
+      !(await isDriversCurrentTruck(this.prisma, truckId, requester.id))
+    ) {
+      throw new NotFoundException('errors.truckNotFound');
+    }
     const docs = await this.prisma.tripDocument.findMany({
       where: {
         trip: {

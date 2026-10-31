@@ -115,9 +115,9 @@ describe('UsersService', () => {
 
     it('a MANAGER can no longer reactivate a TEAMLEAD', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'TEAMLEAD' }));
-      await expect(
-        service.activate('u1', 'c1', as('MANAGER')),
-      ).rejects.toThrow(new ForbiddenException('errors.cannotManageUser'));
+      await expect(service.activate('u1', 'c1', as('MANAGER'))).rejects.toThrow(
+        new ForbiddenException('errors.cannotManageUser'),
+      );
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
@@ -236,7 +236,12 @@ describe('UsersService', () => {
     it('editing yourself through /users/:id is refused (use /users/me)', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'MANAGER' }));
       await expect(
-        service.updateDriver('u1', 'c1', { firstName: 'X' }, as('MANAGER', 'u1')),
+        service.updateDriver(
+          'u1',
+          'c1',
+          { firstName: 'X' },
+          as('MANAGER', 'u1'),
+        ),
       ).rejects.toThrow(/cannotManageUser/);
     });
   });
@@ -248,7 +253,7 @@ describe('UsersService', () => {
       prisma.user.findUnique = jest.fn().mockResolvedValue(null);
     });
 
-    it("tells the driver when a manager changes their phone", async () => {
+    it('tells the driver when a manager changes their phone', async () => {
       prisma.user.findFirst.mockResolvedValue(
         userRow({ phone: '+380971234567' }),
       );
@@ -312,11 +317,18 @@ describe('UsersService', () => {
       );
     });
 
-    it("refuses a number that already signs someone else in", async () => {
+    it('refuses a number that already signs someone else in', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow());
-      prisma.user.findUnique = jest.fn().mockResolvedValue({ id: 'someoneElse' });
+      prisma.user.findUnique = jest
+        .fn()
+        .mockResolvedValue({ id: 'someoneElse' });
       await expect(
-        service.updateDriver('u1', 'c1', { phone: '+48500111222' }, as('MANAGER')),
+        service.updateDriver(
+          'u1',
+          'c1',
+          { phone: '+48500111222' },
+          as('MANAGER'),
+        ),
       ).rejects.toThrow(/phoneUsedUser/);
     });
   });
@@ -358,6 +370,146 @@ describe('UsersService', () => {
       expect(res).toEqual({ pending: true, code: 'DRIVER_TRANSFER_PENDING' });
       expect(transfers.request).toHaveBeenCalledWith(other, 'cA', 'mgrA');
       expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── what a DRIVER sees of colleagues (P1-5) ────────────────────────────────
+  describe('directory as a driver', () => {
+    const driver = { id: 'drvA', role: 'DRIVER' };
+    const base = {
+      isSystem: false,
+      lastName: null,
+      avatar: null,
+      status: 'ONLINE',
+      statusUntil: null,
+      lastSeenAt: null,
+      isActive: true,
+    };
+
+    beforeEach(() => {
+      prisma.user.findMany = jest.fn().mockResolvedValue([
+        {
+          ...base,
+          id: 'drvB',
+          firstName: 'Bob',
+          role: 'DRIVER',
+          email: 'bob@x.eu',
+          phone: '+48500111222',
+          currentTruck: { id: 'tr2', plate: 'WX 123' },
+        },
+        {
+          ...base,
+          id: 'm1',
+          firstName: 'Mia',
+          role: 'MANAGER',
+          email: 'mia@x.eu',
+          phone: '+48500333444',
+          currentTruck: null,
+        },
+      ]);
+    });
+
+    it('other drivers: name, avatar, presence, truck plate — no phone, no email', async () => {
+      const list = await service.getCompanyUsers('c1', driver);
+      const bob = list.find((u) => u.id === 'drvB')!;
+      expect(bob).toEqual(
+        expect.objectContaining({
+          firstName: 'Bob',
+          role: 'DRIVER',
+          status: 'ONLINE',
+          phone: null,
+          email: null,
+          currentTruck: { id: 'tr2', plate: 'WX 123' },
+        }),
+      );
+      // Nothing beyond the minimal set (no ratings, manager, language, …).
+      expect(Object.keys(bob).sort()).toEqual(
+        [
+          'avatar',
+          'currentTruck',
+          'email',
+          'firstName',
+          'id',
+          'isActive',
+          'isSystem',
+          'lastName',
+          'lastSeenAt',
+          'phone',
+          'role',
+          'status',
+          'statusUntil',
+        ].sort(),
+      );
+      // The query itself never asks for team / rating data.
+      const select = prisma.user.findMany.mock.calls[0][0].select;
+      expect(select.ratingsReceived).toBeUndefined();
+      expect(select.manager).toBeUndefined();
+    });
+
+    it('staff keep their contacts (drivers call dispatch from the app)', async () => {
+      const list = await service.getCompanyUsers('c1', driver);
+      expect(list.find((u) => u.id === 'm1')).toEqual(
+        expect.objectContaining({ phone: '+48500333444', email: 'mia@x.eu' }),
+      );
+    });
+
+    it('GET /users/:id of another driver: minimal fields only', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        ...base,
+        id: 'drvB',
+        firstName: 'Bob',
+        role: 'DRIVER',
+        email: 'bob@x.eu',
+        phone: '+48500111222',
+        language: 'PL',
+        teamlead: null,
+        managerRatingsReceived: [],
+      });
+      const bob = (await service.getUserById('drvB', 'c1', driver)) as Record<
+        string,
+        unknown
+      >;
+      expect(bob.phone).toBeUndefined();
+      expect(bob.email).toBeUndefined();
+      expect(bob.language).toBeUndefined();
+      expect(bob.firstName).toBe('Bob');
+    });
+
+    it('GET /users/:id of their manager: the contact card "My manager" shows', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        ...base,
+        id: 'm1',
+        firstName: 'Mia',
+        role: 'MANAGER',
+        email: 'mia@x.eu',
+        phone: '+48500333444',
+        language: 'UK',
+        teamlead: { id: 't1', firstName: 'Tom', lastName: null },
+        managerRatingsReceived: [{ score: 4 }, { score: 5 }],
+      });
+      const mia = (await service.getUserById('m1', 'c1', driver)) as Record<
+        string,
+        unknown
+      >;
+      expect(mia).toEqual(
+        expect.objectContaining({
+          phone: '+48500333444',
+          email: 'mia@x.eu',
+          managerAverageRating: 4.5,
+          managerRatingCount: 2,
+        }),
+      );
+      expect(mia.drivers).toBeUndefined();
+      expect(mia.assignedTrucks).toBeUndefined();
+    });
+
+    it('managers are unaffected: the full directory query', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+      await service.getCompanyUsers('c1', { id: 'm1', role: 'MANAGER' });
+      const select = prisma.user.findMany.mock.calls[0][0].select;
+      expect(select.email).toBe(true);
+      expect(select.phone).toBe(true);
+      expect(select.ratingsReceived).toBeDefined();
     });
   });
 

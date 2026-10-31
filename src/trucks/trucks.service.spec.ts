@@ -37,6 +37,7 @@ describe('TrucksService', () => {
       truckNote: {
         create: jest.fn().mockResolvedValue({ id: 'n1' }),
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         delete: jest.fn().mockResolvedValue({}),
       },
     };
@@ -222,6 +223,62 @@ describe('TrucksService', () => {
       expect(prisma.truckNote.delete).toHaveBeenCalledWith({
         where: { id: 'n1' },
       });
+    });
+  });
+
+  // ─── truck notes for a DRIVER: current truck only (P1-5) ───────────────────
+  describe('truck notes — driver scope', () => {
+    const driver = { id: 'drvA', role: 'DRIVER' };
+
+    it('a driver reads notes of their current truck', async () => {
+      prisma.truck.findFirst.mockResolvedValue({ id: 'tr1' }); // currentDriverId match
+      prisma.truckNote.findMany.mockResolvedValue([]);
+      await service.getNotes('tr1', 'c1', driver);
+      expect(prisma.truck.findFirst).toHaveBeenCalledWith({
+        where: { id: 'tr1', currentDriverId: 'drvA' },
+        select: { id: true },
+      });
+      expect(prisma.truckNote.findMany).toHaveBeenCalled();
+    });
+
+    it("another truck's notes are 404 for a driver", async () => {
+      prisma.truck.findFirst.mockResolvedValue(null);
+      await expect(service.getNotes('trOther', 'c1', driver)).rejects.toThrow(
+        'errors.truckNotFound',
+      );
+      expect(prisma.truckNote.findMany).not.toHaveBeenCalled();
+    });
+
+    it('a driver cannot write on another truck', async () => {
+      prisma.truck.findFirst.mockResolvedValue(null);
+      await expect(
+        service.createNote(
+          'trOther',
+          'c1',
+          'drvA',
+          { content: 'hi' } as never,
+          'DRIVER',
+        ),
+      ).rejects.toThrow('errors.truckNotFound');
+      expect(prisma.truckNote.create).not.toHaveBeenCalled();
+    });
+
+    it("a driver cannot delete a note of a truck they don't drive", async () => {
+      prisma.truckNote.findUnique.mockResolvedValue({
+        id: 'n1',
+        truck: { companyId: 'c1', currentDriverId: 'drvB' },
+      });
+      await expect(
+        service.removeNote('n1', 'c1', driver),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.truckNote.delete).not.toHaveBeenCalled();
+    });
+
+    it('managers are unaffected', async () => {
+      prisma.truckNote.findMany.mockResolvedValue([]);
+      await service.getNotes('tr1', 'c1', { id: 'm1', role: 'MANAGER' });
+      expect(prisma.truck.findFirst).not.toHaveBeenCalled();
+      expect(prisma.truckNote.findMany).toHaveBeenCalled();
     });
   });
 });

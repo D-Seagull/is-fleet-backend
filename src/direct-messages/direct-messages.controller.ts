@@ -34,13 +34,19 @@ export class DirectMessagesController {
   ) {}
 
   @Get('conversations')
-  getConversations(@GetUser('id') userId: string) {
-    return this.service.getConversations(userId);
+  getConversations(
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.service.getConversations(userId, role);
   }
 
   @Get('unread')
-  getUnreadSummary(@GetUser('id') userId: string) {
-    return this.service.getUnreadSummary(userId);
+  getUnreadSummary(
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
+  ) {
+    return this.service.getUnreadSummary(userId, role);
   }
 
   // Defaults to the latest 50 messages. Pass `before` (ISO date) to page

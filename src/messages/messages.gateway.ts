@@ -251,11 +251,14 @@ export class MessagesGateway implements OnGatewayInit {
     const me = await socketUser(client);
     if (!me) return { error: 'unauthenticated' };
     try {
-      const trip = await assertTripAccess(this.prisma, body?.tripId, {
-        id: me.userId,
-        role: me.role,
-        companyId: me.companyId,
-      });
+      // Live room → a driver only while they ARE the trip's driver; a
+      // replaced one reads their old chat through the archive endpoints.
+      const trip = await assertTripAccess(
+        this.prisma,
+        body?.tripId,
+        { id: me.userId, role: me.role, companyId: me.companyId },
+        { currentDriverOnly: true },
+      );
       await client.join(trip.id);
       this.logger.log(`${client.id} joined room:${trip.id}`);
       return { ok: true };

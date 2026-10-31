@@ -116,4 +116,51 @@ describe('MessagesGateway — socket auth & trip rooms', () => {
     });
     expect(s.join).toHaveBeenCalledWith('tA');
   });
+
+  // ─── N1: only the CURRENT driver is in the live trip room (P1-5) ───────────
+  describe('drivers and the trip room', () => {
+    const tripA = {
+      id: 'tA',
+      companyId: 'cA',
+      driverId: 'drvNew',
+      managerId: 'mgrA',
+      truckId: 't',
+    };
+    async function driverSocket(id: string) {
+      prisma.user.findUnique.mockResolvedValue({
+        id,
+        role: 'DRIVER',
+        companyId: 'cA',
+        isActive: true,
+        deletedAt: null,
+      });
+      jwt.verify.mockReturnValueOnce({ sub: id });
+      const s = fakeSocket('good');
+      await authenticateSocket(s, jwt as never, prisma as never);
+      return s;
+    }
+
+    it('a replaced driver (only a past session) can no longer join', async () => {
+      const s = await driverSocket('drvOld');
+      prisma.trip.findFirst.mockResolvedValue(tripA);
+      prisma.tripChatSession.findFirst.mockResolvedValue({ id: 's0' });
+      await expect(
+        gateway.handleJoinTrip(s, { tripId: 'tA' }),
+      ).resolves.toEqual({
+        error: 'errors.tripNotFound',
+      });
+      expect(s.join).not.toHaveBeenCalled();
+    });
+
+    it('the current driver joins', async () => {
+      const s = await driverSocket('drvNew');
+      prisma.trip.findFirst.mockResolvedValue(tripA);
+      await expect(
+        gateway.handleJoinTrip(s, { tripId: 'tA' }),
+      ).resolves.toEqual({
+        ok: true,
+      });
+      expect(s.join).toHaveBeenCalledWith('tA');
+    });
+  });
 });

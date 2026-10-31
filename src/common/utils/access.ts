@@ -67,7 +67,16 @@ export async function assertTripAccess(
   prisma: PrismaService,
   tripId: unknown,
   requester: Requester,
-  opts: { includeDeleted?: boolean } = {},
+  opts: {
+    includeDeleted?: boolean;
+    /**
+     * For live actions (joining the trip's socket room, uploading into the
+     * trip): a DRIVER must be the trip's CURRENT driver. A replaced driver
+     * keeps read-only access to their own past chats via the archive
+     * endpoints and to their past trip's files, nothing live (audit N1).
+     */
+    currentDriverOnly?: boolean;
+  } = {},
 ): Promise<TripAccessRow> {
   const trip = isId(tripId)
     ? await prisma.trip.findFirst({
@@ -85,6 +94,13 @@ export async function assertTripAccess(
       })
     : null;
   if (!trip || !(await canAccessTrip(prisma, trip, requester))) {
+    throw new NotFoundException('errors.tripNotFound');
+  }
+  if (
+    opts.currentDriverOnly &&
+    requester.role === 'DRIVER' &&
+    trip.driverId !== requester.id
+  ) {
     throw new NotFoundException('errors.tripNotFound');
   }
   return trip;
@@ -281,3 +297,22 @@ export async function assertTruckInCompany(
 }
 
 export const MANAGER_ROLES = ['ADMIN', 'TEAMLEAD', 'MANAGER'];
+
+/**
+ * Is `truckId` the truck this driver is assigned to right now? A driver's
+ * truck-wide views (all documents of the truck, truck notes) follow the
+ * truck, not the trip: the current driver also sees what was uploaded on
+ * the previous driver's trips, and nothing of other trucks (P1-5).
+ */
+export async function isDriversCurrentTruck(
+  prisma: PrismaService,
+  truckId: unknown,
+  driverId: string,
+): Promise<boolean> {
+  if (!isId(truckId)) return false;
+  const truck = await prisma.truck.findFirst({
+    where: { id: truckId, currentDriverId: driverId },
+    select: { id: true },
+  });
+  return !!truck;
+}
