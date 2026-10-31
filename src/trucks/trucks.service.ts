@@ -13,7 +13,11 @@ import { PushService } from '../push/push.service';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
 import { withCurrentTripOnly } from '../trips/trip-order';
-import { assertUserInCompany, MANAGER_ROLES } from '../common/utils/access';
+import {
+  assertUserInCompany,
+  isDriversCurrentTruck,
+  MANAGER_ROLES,
+} from '../common/utils/access';
 
 const ACTIVE_TRIP_STATUSES = [
   'ASSIGNED',
@@ -26,6 +30,9 @@ const ACTIVE_TRIP_STATUSES = [
 // "AB 1234-CD" and "ab1234cd" are the same plate.
 const normalizePlate = (plate: string) =>
   plate.toUpperCase().replace(/[\s\-_.]/g, '');
+
+/** Who reads / writes truck notes — drivers get their current truck only. */
+type NoteViewer = { id: string; role?: string };
 
 @Injectable()
 export class TrucksService {
@@ -512,12 +519,24 @@ export class TrucksService {
   }
 
   /*Notes */
+  /** A driver reads and writes notes only of the truck they drive now. */
+  private async assertDriverTruck(truckId: string, viewer: NoteViewer) {
+    if (
+      viewer.role === 'DRIVER' &&
+      !(await isDriversCurrentTruck(this.prisma, truckId, viewer.id))
+    ) {
+      throw new NotFoundException('errors.truckNotFound');
+    }
+  }
+
   async createNote(
     truckId: string,
     companyId: string,
     userId: string,
     dto: CreateTruckNoteDto,
+    role?: string,
   ) {
+    await this.assertDriverTruck(truckId, { id: userId, role });
     const truck = await this.findOne(truckId, companyId);
     if (!truck) return;
     return this.prisma.truckNote.create({
@@ -534,7 +553,12 @@ export class TrucksService {
 
   // companyId null = ADMIN (AdminInterceptor); everyone else reads notes of
   // their own company's trucks only.
-  async getNotes(truckId: string, companyId: string | null) {
+  async getNotes(
+    truckId: string,
+    companyId: string | null,
+    viewer?: NoteViewer,
+  ) {
+    if (viewer) await this.assertDriverTruck(truckId, viewer);
     return this.prisma.truckNote.findMany({
       where: { truckId, ...(companyId ? { truck: { companyId } } : {}) },
       include: {
@@ -544,16 +568,24 @@ export class TrucksService {
     });
   }
 
-  async removeNote(id: string, companyId: string | null) {
+  async removeNote(
+    id: string,
+    companyId: string | null,
+    viewer?: NoteViewer,
+  ) {
     // Anyone in the company can delete a truck note — not only its author.
     // We still scope by company so notes can't be deleted across tenants.
     // ADMIN has companyId nulled by AdminInterceptor, so skip that check.
+    // A driver: only notes of the truck they drive now.
     const note = await this.prisma.truckNote.findUnique({
       where: { id },
-      include: { truck: { select: { companyId: true } } },
+      include: { truck: { select: { companyId: true, currentDriverId: true } } },
     });
     if (!note) throw new NotFoundException('errors.noteNotFound');
     if (companyId && note.truck.companyId !== companyId) {
+      throw new NotFoundException('errors.noteNotFound');
+    }
+    if (viewer?.role === 'DRIVER' && note.truck.currentDriverId !== viewer.id) {
       throw new NotFoundException('errors.noteNotFound');
     }
 

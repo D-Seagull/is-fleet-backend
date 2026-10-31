@@ -94,9 +94,10 @@ export class TrucksController {
     @Param('id') truckId: string,
     @GetUser('companyId') companyId: string,
     @GetUser('id') userId: string,
+    @GetUser('role') role: string,
     @Body() dto: CreateTruckNoteDto,
   ) {
-    return this.trucksService.createNote(truckId, companyId, userId, dto);
+    return this.trucksService.createNote(truckId, companyId, userId, dto, role);
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
@@ -104,8 +105,10 @@ export class TrucksController {
   getNotes(
     @Param('id') truckId: string,
     @GetUser('companyId') companyId: string | null,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
   ) {
-    return this.trucksService.getNotes(truckId, companyId);
+    return this.trucksService.getNotes(truckId, companyId, { id: userId, role });
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
@@ -113,7 +116,9 @@ export class TrucksController {
   removeNote(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
   ) {
-    return this.trucksService.removeNote(id, companyId);
+    return this.trucksService.removeNote(id, companyId, { id: userId, role });
   }
 }

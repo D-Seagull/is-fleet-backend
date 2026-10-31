@@ -281,3 +281,22 @@ export async function assertTruckInCompany(
 }
 
 export const MANAGER_ROLES = ['ADMIN', 'TEAMLEAD', 'MANAGER'];
+
+/**
+ * Is `truckId` the truck this driver is assigned to right now? A driver's
+ * truck-wide views (all documents of the truck, truck notes) follow the
+ * truck, not the trip: the current driver also sees what was uploaded on
+ * the previous driver's trips, and nothing of other trucks (P1-5).
+ */
+export async function isDriversCurrentTruck(
+  prisma: PrismaService,
+  truckId: unknown,
+  driverId: string,
+): Promise<boolean> {
+  if (!isId(truckId)) return false;
+  const truck = await prisma.truck.findFirst({
+    where: { id: truckId, currentDriverId: driverId },
+    select: { id: true },
+  });
+  return !!truck;
+}
