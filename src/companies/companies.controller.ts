@@ -9,7 +9,6 @@ import {
   UploadedFile,
   Delete,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { CompaniesService } from './companies.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -18,7 +17,7 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanyEmailsDto } from './dto/update-company-emails.dto';
-import { UPLOAD_OPTIONS } from 'src/common/upload-options';
+import { UploadInterceptor } from 'src/common/upload.interceptor';
 
 @ApiTags('companies')
 @ApiBearerAuth()
@@ -35,7 +34,7 @@ export class CompaniesController {
 
   @Roles('ADMIN', 'TEAMLEAD')
   @Post('logo')
-  @UseInterceptors(FileInterceptor('file', UPLOAD_OPTIONS))
+  @UseInterceptors(UploadInterceptor('file', 'image', { single: true }))
   uploadLogo(
     @GetUser('companyId') companyId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -45,7 +44,7 @@ export class CompaniesController {
 
   @Roles('ADMIN', 'TEAMLEAD')
   @Patch('logo')
-  @UseInterceptors(FileInterceptor('file', UPLOAD_OPTIONS))
+  @UseInterceptors(UploadInterceptor('file', 'image', { single: true }))
   updateLogo(
     @GetUser('companyId') companyId: string,
     @UploadedFile() file: Express.Multer.File,

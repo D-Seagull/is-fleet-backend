@@ -10,7 +10,6 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BugStatus, Role } from '@prisma/client';
 import { BugReportsService } from './bug-reports.service';
@@ -20,7 +19,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
-import { UPLOAD_OPTIONS } from 'src/common/upload-options';
+import { UploadInterceptor } from 'src/common/upload.interceptor';
 
 @ApiTags('bug-reports')
 @ApiBearerAuth()
@@ -33,7 +32,7 @@ export class BugReportsController {
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post()
   @UseInterceptors(
-    FilesInterceptor('screenshots', 5, UPLOAD_OPTIONS),
+    UploadInterceptor('screenshots', 'screenshot'),
   )
   create(
     @UploadedFiles() files: Express.Multer.File[],
