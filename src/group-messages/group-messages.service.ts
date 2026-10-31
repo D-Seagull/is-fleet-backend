@@ -4,6 +4,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { EDIT_WINDOW_MS } from 'src/common/constants';
 import { ReactionsService } from 'src/reactions/reactions.service';
 import { fullName } from 'src/common/utils/full-name';
+import { assertReplyTargets } from 'src/common/utils/reply-targets';
 
 @Injectable()
 export class GroupMessagesService {
@@ -100,6 +101,12 @@ export class GroupMessagesService {
     replyToId?: string | null,
     replyToDocumentId?: string | null,
   ) {
+    // A quote must come from this group (audit M1).
+    await assertReplyTargets(
+      this.prisma,
+      { group: groupId },
+      { messageId: replyToId, documentId: replyToDocumentId },
+    );
     return await this.prisma.groupMessage.create({
       data: {
         groupId,

@@ -11,6 +11,7 @@ import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.se
 import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
 import { assertGroupAccess, type Requester } from '../common/utils/access';
+import { assertReplyTargets } from '../common/utils/reply-targets';
 
 @Injectable()
 export class GroupMessageDocumentsService {
@@ -54,6 +55,11 @@ export class GroupMessageDocumentsService {
     if (!isMember) {
       throw new ForbiddenException('errors.notGroupMember');
     }
+    await assertReplyTargets(
+      this.prisma,
+      { group: groupId },
+      { messageId: replyToMessageId, documentId: replyToDocumentId },
+    );
 
     // Several files in one message form an album: they share a batchId so
     // clients draw them as one bubble. A single file stays a plain one.

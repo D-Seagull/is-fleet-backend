@@ -1,4 +1,5 @@
 import type { Socket } from 'socket.io';
+import { NotFoundException } from '@nestjs/common';
 import { DirectMessagesGateway } from './direct-messages.gateway';
 import { authenticateSocket } from 'src/common/utils/socket-auth';
 
@@ -120,6 +121,29 @@ describe('DirectMessagesGateway — group rooms & posting', () => {
     const s = await authed();
     await gateway.handleMarkGroupRead(s, { groupId: 'gB' });
     expect(groupService.markAsRead).not.toHaveBeenCalled();
+  });
+
+  it('send_direct_message answers a refused reply quote instead of throwing', async () => {
+    const s = await authed();
+    prisma.user.findFirst.mockResolvedValue({
+      id: 'u2',
+      role: 'MANAGER',
+      companyId: 'cA',
+    });
+    const svc = {
+      createMessage: jest
+        .fn()
+        .mockRejectedValue(new NotFoundException('errors.messageNotFound')),
+    };
+    (gateway as unknown as { service: unknown }).service = svc;
+    await expect(
+      gateway.handleMessage(s, {
+        receiverId: 'u2',
+        content: 'hi',
+        replyToId: 'foreign',
+      }),
+    ).resolves.toEqual({ error: 'errors.messageNotFound' });
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('send_direct_message refuses a user of another company', async () => {

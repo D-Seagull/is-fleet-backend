@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EDIT_WINDOW_MS } from '../common/constants';
 import { ReactionsService } from '../reactions/reactions.service';
+import { assertReplyTargets } from 'src/common/utils/reply-targets';
 
 @Injectable()
 export class DirectMessagesService {
@@ -102,13 +103,19 @@ export class DirectMessagesService {
     }));
   }
 
-  createMessage(
+  async createMessage(
     senderId: string,
     receiverId: string,
     content: string,
     replyToId?: string | null,
     replyToDocumentId?: string | null,
   ) {
+    // A quote must come from this conversation (audit M1).
+    await assertReplyTargets(
+      this.prisma,
+      { dm: [senderId, receiverId] },
+      { messageId: replyToId, documentId: replyToDocumentId },
+    );
     return this.prisma.directMessage.create({
       data: {
         senderId,

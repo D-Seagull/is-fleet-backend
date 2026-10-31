@@ -15,6 +15,7 @@ import {
   assertTripAccess,
   type Requester,
 } from '../common/utils/access';
+import { assertReplyTargets } from '../common/utils/reply-targets';
 
 @Injectable()
 export class DocumentsService {
@@ -38,6 +39,11 @@ export class DocumentsService {
     // A trip of the uploader's company (a driver: their own) — never a
     // foreign trip id from the request body.
     await assertTripAccess(this.prisma, tripId, uploader);
+    await assertReplyTargets(
+      this.prisma,
+      { trip: tripId },
+      { messageId: replyToMessageId, documentId: replyToDocumentId },
+    );
     const uploadedBy = uploader.id;
 
     // Several files in one message form an album: they share a batchId so

@@ -8,7 +8,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { HttpException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DirectMessagesService } from './direct-messages.service';
 import { GroupMessagesService } from 'src/group-messages/group-messages.service';
@@ -128,13 +128,20 @@ export class DirectMessagesGateway
     if (await isCompanyWriteBlocked(this.prisma, senderId)) {
       return { error: 'errors.companyDeactivated' };
     }
-    const message = await this.service.createMessage(
-      senderId,
-      data.receiverId,
-      data.content,
-      data.replyToId ?? null,
-      data.replyToDocumentId ?? null,
-    );
+    let message: Awaited<ReturnType<DirectMessagesService['createMessage']>>;
+    try {
+      message = await this.service.createMessage(
+        senderId,
+        data.receiverId,
+        data.content,
+        data.replyToId ?? null,
+        data.replyToDocumentId ?? null,
+      );
+    } catch (e) {
+      // e.g. a reply quoting another conversation (404) — answer, don't crash.
+      if (e instanceof HttpException) return { error: e.message };
+      throw e;
+    }
 
     // Відправляємо обом учасникам
     this.server.to(`user:${senderId}`).emit('new_direct_message', message);
@@ -323,13 +330,19 @@ export class DirectMessagesGateway
     ) {
       return { error: 'errors.groupNotFound' };
     }
-    const message = await this.groupService.createMessage(
-      data.groupId,
-      senderId,
-      data.content,
-      data.replyToId ?? null,
-      data.replyToDocumentId ?? null,
-    );
+    let message: Awaited<ReturnType<GroupMessagesService['createMessage']>>;
+    try {
+      message = await this.groupService.createMessage(
+        data.groupId,
+        senderId,
+        data.content,
+        data.replyToId ?? null,
+        data.replyToDocumentId ?? null,
+      );
+    } catch (e) {
+      if (e instanceof HttpException) return { error: e.message };
+      throw e;
+    }
     this.server.to(`group:${data.groupId}`).emit('new_group_message', message);
     // Also broadcast a lightweight notification to every group member's
     // personal room so their unread counter updates even when they're not

@@ -7,7 +7,7 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Inject, Logger, forwardRef } from '@nestjs/common';
+import { HttpException, Inject, Logger, forwardRef } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -334,6 +334,9 @@ export class MessagesGateway implements OnGatewayInit {
       );
       return payload;
     } catch (e) {
+      // Refusals (not a participant, quote from another trip…) answer the
+      // sender with the i18n key instead of a generic socket exception.
+      if (e instanceof HttpException) return { error: e.message };
       this.logger.error('sendMessage FAILED', e as Error);
       throw e;
     }

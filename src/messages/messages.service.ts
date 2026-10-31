@@ -17,6 +17,7 @@ import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
 import { pushTitle } from '../push/push-titles';
 import { assertTripAccess, type Requester } from '../common/utils/access';
+import { assertReplyTargets } from '../common/utils/reply-targets';
 
 @Injectable()
 export class MessagesService {
@@ -53,6 +54,13 @@ export class MessagesService {
     // comes back, do it AFTER persist + emit (so the sender isn't blocked)
     // and broadcast a separate `messageTranslated` patch event.
     const translatedContent: string | null = null;
+
+    // A quote must come from this trip (audit M1).
+    await assertReplyTargets(
+      this.prisma,
+      { trip: dto.tripId },
+      { messageId: dto.replyToId, documentId: dto.replyToDocumentId },
+    );
 
     const session = await this.sessions.getActiveSessionOrThrow(dto.tripId);
 

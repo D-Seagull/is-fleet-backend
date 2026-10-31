@@ -11,6 +11,7 @@ import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.se
 import { DirectMessagesGateway } from '../direct-messages/direct-messages.gateway';
 import { ReactionsService } from '../reactions/reactions.service';
 import { assertCanMessageUser, type Requester } from '../common/utils/access';
+import { assertReplyTargets } from '../common/utils/reply-targets';
 
 @Injectable()
 export class DirectMessageDocumentsService {
@@ -33,6 +34,11 @@ export class DirectMessageDocumentsService {
 
     // Only to someone the uploader may DM — not to any user id on the platform.
     await assertCanMessageUser(this.prisma, otherUserId, uploader);
+    await assertReplyTargets(
+      this.prisma,
+      { dm: [uploader.id, otherUserId] },
+      { messageId: replyToMessageId, documentId: replyToDocumentId },
+    );
     const uploadedBy = uploader.id;
 
     // Several files in one message form an album: they share a batchId so
