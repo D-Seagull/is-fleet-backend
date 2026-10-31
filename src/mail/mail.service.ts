@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
-import { t } from 'src/i18n/i18n';
 
 @Injectable()
 export class MailService {
@@ -128,42 +127,6 @@ export class MailService {
         <p style="font-size:28px;font-weight:700;letter-spacing:6px">${esc(opts.code)}</p>
         <p>${copy.ttl.replace('{minutes}', String(opts.ttlMinutes))}</p>
         <p>${copy.warning}</p>
-      `,
-    });
-  }
-
-  /** Driver sign-in code by email (verified addresses only — see OtpDeliveryService). */
-  async sendDriverOtp(
-    to: string,
-    code: string,
-    ttlMinutes: number,
-    locale: string,
-  ) {
-    await this.send({
-      to,
-      subject: t(locale, 'mail.otp.subject'),
-      html: `
-        <p>${esc(t(locale, 'mail.otp.body'))}</p>
-        <p style="font-size:28px;font-weight:700;letter-spacing:6px">${esc(code)}</p>
-        <p>${esc(t(locale, 'mail.otp.ttl', { minutes: ttlMinutes }))}</p>
-      `,
-    });
-  }
-
-  /** Confirmation link for the email a manager put on a driver's profile. */
-  async sendDriverEmailVerification(
-    to: string,
-    link: string,
-    ttlHours: number,
-    locale: string,
-  ) {
-    await this.send({
-      to,
-      subject: t(locale, 'mail.verify.subject'),
-      html: `
-        <p>${esc(t(locale, 'mail.verify.body'))}</p>
-        <p><a href="${esc(link)}">${esc(t(locale, 'mail.verify.button'))}</a></p>
-        <p>${esc(t(locale, 'mail.verify.ttl', { hours: ttlHours }))}</p>
       `,
     });
   }

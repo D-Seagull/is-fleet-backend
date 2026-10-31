@@ -6,7 +6,7 @@ import { SupabaseStorageService } from 'src/supabase-storage/supabase-storage.se
 import { MailService } from 'src/mail/mail.service';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
-import { EmailVerificationService } from 'src/driver-login/email-verification.service';
+import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
 import { DriverTransfersService } from 'src/driver-transfers/driver-transfers.service';
 
 // expo-server-sdk is ESM-only, pulled in transitively via the gateway / push
@@ -43,7 +43,7 @@ describe('UsersService', () => {
   };
   let transfers: { request: jest.Mock };
   let gateway: { server: { to: jest.Mock }; disconnectSockets: jest.Mock };
-  let emailVerification: { send: jest.Mock };
+  let notices: { phoneChanged: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -67,7 +67,7 @@ describe('UsersService', () => {
       server: { to: jest.fn().mockReturnValue({ emit: jest.fn() }) },
       disconnectSockets: jest.fn(),
     };
-    emailVerification = { send: jest.fn().mockResolvedValue({ ok: true }) };
+    notices = { phoneChanged: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -78,7 +78,7 @@ describe('UsersService', () => {
         { provide: MessagesGateway, useValue: gateway },
         { provide: PushService, useValue: {} },
         { provide: DriverTransfersService, useValue: transfers },
-        { provide: EmailVerificationService, useValue: emailVerification },
+        { provide: DriverLoginNoticeService, useValue: notices },
       ],
     }).compile();
 
@@ -166,75 +166,38 @@ describe('UsersService', () => {
     });
   });
 
-  // ─── driver email (sign-in fallback) ─────────────────────────────────────────
-  describe('updateDriver email', () => {
+  // ─── phone change → driver is told in the IS Fleet contact chat ────────────
+  describe('updateDriver phone', () => {
     beforeEach(() => {
-      prisma.user.findUnique = jest.fn().mockResolvedValue(null);
       prisma.user.update.mockResolvedValue({ id: 'u1', companyId: 'c1' });
     });
 
-    it('a new driver email is stored unverified and a confirmation goes out', async () => {
-      prisma.user.findFirst.mockResolvedValue(userRow({ email: null }));
-      await service.updateDriver(
+    it("tells the driver when a manager changes their phone", async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        userRow({ phone: '+380971234567' }),
+      );
+      await service.updateDriver('u1', 'c1', { phone: '+48500111222' }, 'm1');
+      expect(notices.phoneChanged).toHaveBeenCalledWith(
         'u1',
-        'c1',
-        { email: ' Ann@Example.com ' },
         'm1',
+        '+48500111222',
       );
-      expect(prisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            email: 'ann@example.com',
-            emailVerifiedAt: null,
-          }),
-        }),
-      );
-      expect(emailVerification.send).toHaveBeenCalledWith('u1', 'm1');
     });
 
-    it('the same address again changes nothing', async () => {
+    it('stays quiet when the phone did not change', async () => {
       prisma.user.findFirst.mockResolvedValue(
-        userRow({ email: 'ann@example.com' }),
+        userRow({ phone: '+380971234567' }),
       );
-      await service.updateDriver(
-        'u1',
-        'c1',
-        { email: 'ann@example.com' },
-        'm1',
-      );
-      expect(prisma.user.update.mock.calls[0][0].data).not.toHaveProperty(
-        'emailVerifiedAt',
-      );
-      expect(emailVerification.send).not.toHaveBeenCalled();
+      await service.updateDriver('u1', 'c1', { phone: '+380971234567' }, 'm1');
+      expect(notices.phoneChanged).not.toHaveBeenCalled();
     });
 
-    it('removing the email sends nothing', async () => {
+    it("stays quiet for a manager's own phone", async () => {
       prisma.user.findFirst.mockResolvedValue(
-        userRow({ email: 'ann@example.com' }),
+        userRow({ role: 'MANAGER', phone: '+380971234567' }),
       );
-      await service.updateDriver('u1', 'c1', { email: null }, 'm1');
-      expect(prisma.user.update.mock.calls[0][0].data).toEqual(
-        expect.objectContaining({ email: null, emailVerifiedAt: null }),
-      );
-      expect(emailVerification.send).not.toHaveBeenCalled();
-    });
-
-    it("refuses another user's address", async () => {
-      prisma.user.findFirst.mockResolvedValue(userRow({ email: null }));
-      prisma.user.findUnique.mockResolvedValue({ id: 'other' });
-      await expect(
-        service.updateDriver('u1', 'c1', { email: 'boss@example.com' }, 'm1'),
-      ).rejects.toThrow(/emailUsedUser/);
-      expect(prisma.user.update).not.toHaveBeenCalled();
-    });
-
-    it("refuses to change a manager's (login) email here", async () => {
-      prisma.user.findFirst.mockResolvedValue(
-        userRow({ role: 'MANAGER', email: 'm@example.com' }),
-      );
-      await expect(
-        service.updateDriver('u1', 'c1', { email: 'x@example.com' }, 'm1'),
-      ).rejects.toThrow(/emailOnlyDrivers/);
+      await service.updateDriver('u1', 'c1', { phone: '+48500111222' }, 'm1');
+      expect(notices.phoneChanged).not.toHaveBeenCalled();
     });
   });
 

@@ -24,7 +24,6 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { UPLOAD_OPTIONS } from 'src/common/upload-options';
 
 @ApiTags('users')
@@ -90,22 +89,6 @@ export class UsersController {
     @Body() dto: UpdateDriverDto,
   ) {
     return this.usersService.updateDriver(id, companyId, dto, requesterId);
-  }
-
-  // Re-send the confirmation link for a driver's (unconfirmed) email.
-  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @Post(':id/email-verification')
-  resendEmailVerification(
-    @Param('id') id: string,
-    @GetUser('companyId') companyId: string | null,
-    @GetUser('id') requesterId: string,
-  ) {
-    return this.usersService.resendEmailVerification(
-      id,
-      companyId,
-      requesterId,
-    );
   }
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

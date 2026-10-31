@@ -1,7 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { PushService } from 'src/push/push.service';
-import { SmsService } from 'src/sms/sms.service';
+import { SupportContactService } from 'src/support-contact/support-contact.service';
 import { t } from 'src/i18n/i18n';
 import { fullName } from 'src/common/utils/full-name';
 
@@ -9,20 +8,36 @@ import { fullName } from 'src/common/utils/full-name';
 const FALLBACK_TZ = 'Europe/Warsaw';
 
 /**
- * Tells the driver whenever a sign-in code went through their manager —
- * when it is issued and when it is used — by push AND SMS, so a manager
- * signing in as the driver behind their back can't go unnoticed.
- * Best effort: a failed push / SMS is logged, never thrown.
+ * Tells a driver, through the "IS Fleet contact" chat, whenever their sign-in
+ * is touched by someone else: a manager code issued or used, their phone
+ * number changed by a manager. A manager signing in as the driver, or moving
+ * the account to another number, can't go unnoticed. Best effort.
  */
 @Injectable()
 export class DriverLoginNoticeService {
-  private readonly logger = new Logger(DriverLoginNoticeService.name);
-
   constructor(
     private prisma: PrismaService,
-    private push: PushService,
-    private sms: SmsService,
+    private contact: SupportContactService,
   ) {}
+
+  private async context(driverId: string, managerId: string | null) {
+    const [driver, manager] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: driverId },
+        select: { timezone: true },
+      }),
+      managerId
+        ? this.prisma.user.findUnique({
+            where: { id: managerId },
+            select: { firstName: true, lastName: true },
+          })
+        : null,
+    ]);
+    return {
+      tz: driver?.timezone ?? null,
+      name: manager ? fullName(manager) : '—',
+    };
+  }
 
   async managerCode(
     kind: 'issued' | 'used',
@@ -30,51 +45,29 @@ export class DriverLoginNoticeService {
     managerId: string | null,
     at: Date = new Date(),
   ): Promise<void> {
-    try {
-      const [driver, manager] = await Promise.all([
-        this.prisma.user.findUnique({
-          where: { id: driverId },
-          select: { phone: true, uiLocale: true, timezone: true },
-        }),
-        managerId
-          ? this.prisma.user.findUnique({
-              where: { id: managerId },
-              select: { firstName: true, lastName: true },
-            })
-          : null,
-      ]);
-      if (!driver) return;
-      const name = manager ? fullName(manager) : '—';
-      const time = (lang: string) => formatAt(at, lang, driver.timezone);
+    const { tz, name } = await this.context(driverId, managerId);
+    await this.contact.notify(driverId, (locale) =>
+      t(locale, `contact.loginCode.${kind}`, {
+        manager: name,
+        time: formatAt(at, locale, tz),
+      }),
+    );
+  }
 
-      await this.push.sendLocalizedToUsers(
-        [driverId],
-        (lang) => ({
-          title: t(lang, 'push.loginCode.title'),
-          body: t(lang, `push.loginCode.${kind}`, {
-            manager: name,
-            time: time(lang),
-          }),
-        }),
-        // A security notice — show it even with the app open.
-        { data: { type: 'LOGIN_CODE', kind }, whenActive: 'push' },
-      );
-      if (driver.phone) {
-        await this.sms.send(
-          driver.phone,
-          t(driver.uiLocale, `sms.loginCode.${kind}`, {
-            manager: name,
-            time: time(driver.uiLocale),
-          }),
-        );
-      }
-    } catch (err) {
-      this.logger.error(
-        `Login-code notice (${kind}) to driver ${driverId} failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
+  async phoneChanged(
+    driverId: string,
+    managerId: string | null,
+    phone: string,
+    at: Date = new Date(),
+  ): Promise<void> {
+    const { tz, name } = await this.context(driverId, managerId);
+    await this.contact.notify(driverId, (locale) =>
+      t(locale, 'contact.phoneChanged', {
+        manager: name,
+        phone,
+        time: formatAt(at, locale, tz),
+      }),
+    );
   }
 }
 
@@ -86,7 +79,7 @@ export function formatAt(at: Date, lang: string, tz: string | null): string {
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    // 24-hour everywhere — EU drivers, and "02:05 PM" reads oddly in an SMS.
+    // 24-hour everywhere — EU drivers, and "02:05 PM" reads oddly in a chat.
     hourCycle: 'h23',
     timeZone: tz || FALLBACK_TZ,
   };

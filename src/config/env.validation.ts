@@ -88,20 +88,30 @@ class EnvironmentVariables {
   @IsIn(['true', 'false'])
   SWAGGER_ENABLED?: string;
 
-  // ── Driver sign-in fallbacks (all off unless exactly "true") ──
-  // Managers mint a sign-in code on the driver page — dev only.
+  // ── Driver sign-in methods: each on/off on its own (exactly "true"/"false") ──
+  // Default on.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_SMS_ENABLED?: string;
+
+  // Default on: the code is emailed to the manager of the driver's truck.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_MANAGER_EMAIL_ENABLED?: string;
+
+  // Default off — stubs until Twilio Verify WhatsApp / Telegram Gateway.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_WHATSAPP_ENABLED?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  LOGIN_TELEGRAM_ENABLED?: string;
+
+  // Default off: managers mint a sign-in code on the driver page.
   @IsOptional()
   @IsIn(['true', 'false'])
   MANAGER_LOGIN_CODE_ENABLED?: string;
-
-  // Stubs until Twilio Verify WhatsApp / Telegram Gateway are integrated.
-  @IsOptional()
-  @IsIn(['true', 'false'])
-  OTP_WHATSAPP_ENABLED?: string;
-
-  @IsOptional()
-  @IsIn(['true', 'false'])
-  OTP_TELEGRAM_ENABLED?: string;
 
   @IsOptional()
   @Matches(/^\d{6}$/, { message: 'REVIEW_OTP must be exactly 6 digits' })

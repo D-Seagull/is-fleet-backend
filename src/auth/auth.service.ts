@@ -25,8 +25,6 @@ import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.s
 import {
   CHANNEL_TO_DB,
   DriverOtpChannel,
-  OtpRecipient,
-  maskEmail,
 } from 'src/driver-login/otp-channels';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -417,10 +415,11 @@ export class AuthService {
   }
 
   // ─── Driver OTP login ───────────────────────────────────────────────────────
-  // One code per request, delivered through ONE channel (sms / email /
-  // whatsapp / telegram / manager). Same rules for all: crypto.randomInt
-  // 6 digits, keyed hash at rest, TTL, 5 attempts, single use, per-phone
-  // cooldown + throttling, and never a hint whether the phone is registered.
+  // One code per request, delivered through ONE method (sms / whatsapp /
+  // telegram / email to the manager), each behind its own on/off flag. Same
+  // rules for all: crypto.randomInt 6 digits, keyed hash at rest, TTL,
+  // 5 attempts, single use, per-phone cooldown + throttling, and never a hint
+  // whether the phone is registered.
 
   /** The driver row (if any) behind a phone, with what the channels need. */
   private findDriverForOtp(phone: string) {
@@ -432,8 +431,6 @@ export class AuthService {
         isActive: true,
         companyId: true,
         phone: true,
-        email: true,
-        emailVerifiedAt: true,
         uiLocale: true,
         firstName: true,
         lastName: true,
@@ -455,28 +452,11 @@ export class AuthService {
   }
 
   /**
-   * Which channels the login screen may offer for this phone. Unknown phones,
-   * inactive accounts and drivers without a verified email all get the SAME
-   * answer, so this is no "is this number registered?" oracle. What it does
-   * tell is "this number has a verified email" — only the masked hint, behind
-   * the same per-phone / per-IP throttle as request-otp.
+   * Which sign-in methods are switched on. The same for every phone — it
+   * says nothing about whether a number is registered.
    */
-  async driverOtpChannels(phoneInput: string) {
-    const phone = normalizePhone(phoneInput);
-    const base: DriverOtpChannel[] = ['sms', ...this.delivery.enabledForAll()];
-    const answer = (email: string | null) => ({
-      channels: [...base, ...(email ? (['email'] as const) : []), 'manager'],
-      emailHint: email ? maskEmail(email) : null,
-    });
-    if (!phone) return answer(null);
-    const driver = await this.findDriverForOtp(phone);
-    if (!driver || driver.role !== 'DRIVER' || !driver.isActive) {
-      return answer(null);
-    }
-    const email = this.delivery.usable('email', this.recipient(driver, phone))
-      ? driver.email
-      : null;
-    return answer(email);
+  driverOtpChannels() {
+    return { channels: this.delivery.enabledMethods() };
   }
 
   /**
@@ -507,28 +487,39 @@ export class AuthService {
       return { ok: true };
     }
 
+    // Store reviewers (Google Play / App Store) can't receive our SMS, so the
+    // demo driver's code is fixed and nothing is sent — whatever the method
+    // flags say, or the reviewer couldn't sign in at all. verifyDriverOtp is
+    // untouched — same TTL, attempt limit and single use as a real code.
+    const reviewCode = this.reviewOtpFor(phone);
+    if (reviewCode) {
+      await this.assertOtpCooldown(phone, 'SMS');
+      await this.storeOtp(driver.id, phone, reviewCode, 'sms', OTP_TTL_MS);
+      this.logger.log(`OTP for review phone: fixed code, nothing sent`);
+      return { ok: true };
+    }
+
     if (channel === 'manager') {
+      if (!this.delivery.isEnabled('manager')) {
+        this.logger.warn(`OTP request: method "manager" is off — nothing sent`);
+        return { ok: true };
+      }
       return this.requestViaManager(driver, phone, ip);
     }
 
-    const recipient = this.recipient(driver, phone);
-    const target = this.delivery.usable(channel, recipient);
+    const target = this.delivery.direct(channel);
     if (!target) {
       this.logger.warn(
-        `OTP request for driver ${driver.id}: channel "${channel}" unavailable — nothing sent`,
+        `OTP request for driver ${driver.id}: method "${channel}" unknown or off — nothing sent`,
       );
       return { ok: true };
     }
 
-    // Cooldown — one code per phone per channel per minute (the driver may
-    // switch from SMS to email right away when the SMS doesn't come).
+    // Cooldown — one code per phone per method per minute (the driver may
+    // switch from SMS to another method right away when the SMS doesn't come).
     await this.assertOtpCooldown(phone, CHANNEL_TO_DB[target.name]);
 
-    // Store reviewers (Google Play / App Store) can't receive our SMS, so the
-    // demo driver's SMS code is fixed and nothing is sent. verifyDriverOtp is
-    // untouched — same TTL, attempt limit and single use as a real code.
-    const reviewCode = target.name === 'sms' ? this.reviewOtpFor(phone) : null;
-    const code = reviewCode ?? this.newOtpCode();
+    const code = this.newOtpCode();
     await this.storeOtp(driver.id, phone, code, target.name, OTP_TTL_MS);
     await this.audit.record({
       action: 'CODE_ISSUED',
@@ -539,17 +530,16 @@ export class AuthService {
       ip,
     });
 
-    if (reviewCode) {
-      this.logger.log(`OTP for review phone: fixed code, no SMS`);
-      return { ok: true };
-    }
-
     // A delivery failure (e.g. a Twilio trial account can only reach verified
     // numbers → error 21608) must NOT 500 the request — the OTP row already
     // exists. Log the real reason for ops; the client still sees a neutral ok.
     // Without Twilio creds (dev/test) SmsService logs the body instead.
     try {
-      await target.deliver(recipient, code, OTP_TTL_MS / 60_000);
+      await target.deliver(
+        { id: driver.id, phone, uiLocale: driver.uiLocale },
+        code,
+        OTP_TTL_MS / 60_000,
+      );
     } catch (err) {
       this.logger.error(
         `OTP delivery [${target.name}] failed for ${maskPhone(phone)}: ${
@@ -558,24 +548,6 @@ export class AuthService {
       );
     }
     return { ok: true };
-  }
-
-  private recipient(
-    driver: {
-      id: string;
-      email: string | null;
-      emailVerifiedAt: Date | null;
-      uiLocale: string;
-    },
-    phone: string,
-  ): OtpRecipient {
-    return {
-      id: driver.id,
-      phone,
-      email: driver.email,
-      emailVerifiedAt: driver.emailVerifiedAt,
-      uiLocale: driver.uiLocale,
-    };
   }
 
   private newOtpCode() {

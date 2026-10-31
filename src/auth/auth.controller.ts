@@ -29,8 +29,6 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { authThrottle, clientIp } from '../common/throttle';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { EmailVerificationService } from 'src/driver-login/email-verification.service';
 import { isAllowedOrigin } from '../common/cors-origin';
 import { JwtGuard } from './guards/jwt.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -54,7 +52,6 @@ function assertCookieOrigin(req: Request) {
 export class AuthController {
   constructor(
     private AuthService: AuthService,
-    private emailVerification: EmailVerificationService,
   ) {}
 
   // Auth limits: per phone / email / token tried, plus per IP — sized so a
@@ -139,7 +136,7 @@ export class AuthController {
   @Post('driver/otp-channels')
   @HttpCode(HttpStatus.OK)
   driverOtpChannels(@Body() dto: RequestOtpDto) {
-    return this.AuthService.driverOtpChannels(dto.phone);
+    return this.AuthService.driverOtpChannels();
   }
 
   // Lets the web / manager app hide buttons for features that are off here.
@@ -173,14 +170,6 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   verifyDriverOtp(@Body() dto: VerifyOtpDto, @Req() req: Request) {
     return this.AuthService.verifyDriverOtp(dto.phone, dto.code, clientIp(req));
-  }
-
-  // The driver opened the confirmation link from their email.
-  @Throttle(authThrottle('token', 10, 30))
-  @Post('verify-email')
-  @HttpCode(HttpStatus.OK)
-  verifyEmail(@Body() dto: VerifyEmailDto, @Req() req: Request) {
-    return this.emailVerification.confirm(dto.token, clientIp(req));
   }
 
   @Throttle(authThrottle('email', 5, 30))

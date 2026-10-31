@@ -54,14 +54,8 @@ const userRow = (over: Record<string, unknown> = {}) => ({
   status: 'ONLINE',
   statusUntil: null,
   phone: VALID_PHONE,
-  email: null,
-  emailVerifiedAt: null,
   currentTruck: null,
   ...over,
-});
-const verifiedEmailDriver = userRow({
-  email: 'ann@example.com',
-  emailVerifiedAt: new Date('2026-10-01'),
 });
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -81,7 +75,6 @@ describe('AuthService', () => {
   let mail: {
     sendPasswordReset: jest.Mock;
     sendDriverLoginCode: jest.Mock;
-    sendDriverOtp: jest.Mock;
   };
   let audit: { record: jest.Mock };
   let notices: { managerCode: jest.Mock };
@@ -133,7 +126,6 @@ describe('AuthService', () => {
     mail = {
       sendPasswordReset: jest.fn().mockResolvedValue(undefined),
       sendDriverLoginCode: jest.fn().mockResolvedValue(undefined),
-      sendDriverOtp: jest.fn().mockResolvedValue(undefined),
     };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
     notices = { managerCode: jest.fn().mockResolvedValue(undefined) };
@@ -584,13 +576,13 @@ describe('AuthService', () => {
       ['an inactive driver', userRow({ isActive: false })],
     ])('returns ok and sends nothing for %s', async (_, row) => {
       prisma.user.findUnique.mockResolvedValue(row);
-      for (const ch of ['sms', 'email', 'manager', 'whatsapp']) {
+      for (const ch of ['sms', 'manager', 'whatsapp']) {
         await expect(
           service.requestDriverOtp(VALID_PHONE, ch),
         ).resolves.toEqual({ ok: true });
       }
       expect(sms.send).not.toHaveBeenCalled();
-      expect(mail.sendDriverOtp).not.toHaveBeenCalled();
+      expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
       expect(prisma.otpCode.create).not.toHaveBeenCalled();
     });
 
@@ -644,27 +636,21 @@ describe('AuthService', () => {
       expect(sms.send.mock.calls[0][1]).toMatch(/^Twój kod IS Fleet: \d{6}$/);
     });
 
-    it('email: sends to a verified address only', async () => {
-      prisma.user.findUnique.mockResolvedValue(verifiedEmailDriver);
-      await service.requestDriverOtp(VALID_PHONE, 'email', '1.2.3.4');
-      expect(mail.sendDriverOtp).toHaveBeenCalledWith(
-        'ann@example.com',
-        expect.stringMatching(/^\d{6}$/),
-        5,
-        'UK',
+    it('sms switched off (LOGIN_SMS_ENABLED=false): ok, nothing stored or sent', async () => {
+      setEnv({ LOGIN_SMS_ENABLED: 'false' });
+      prisma.user.findUnique.mockResolvedValue(userRow());
+      await expect(service.requestDriverOtp(VALID_PHONE, 'sms')).resolves.toEqual(
+        { ok: true },
       );
-      expect(prisma.otpCode.create.mock.calls[0][0].data.channel).toBe('EMAIL');
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
       expect(sms.send).not.toHaveBeenCalled();
     });
 
-    it('email: an unverified address gets nothing (still ok)', async () => {
-      prisma.user.findUnique.mockResolvedValue(
-        userRow({ email: 'ann@example.com', emailVerifiedAt: null }),
-      );
+    it('a removed method (email) is just unknown: ok, nothing sent', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow());
       await expect(
         service.requestDriverOtp(VALID_PHONE, 'email'),
       ).resolves.toEqual({ ok: true });
-      expect(mail.sendDriverOtp).not.toHaveBeenCalled();
       expect(prisma.otpCode.create).not.toHaveBeenCalled();
     });
 
@@ -681,7 +667,7 @@ describe('AuthService', () => {
     );
 
     it('whatsapp with its flag on: code stored (stub delivery, no SMS)', async () => {
-      setEnv({ OTP_WHATSAPP_ENABLED: 'true' });
+      setEnv({ LOGIN_WHATSAPP_ENABLED: 'true' });
       prisma.user.findUnique.mockResolvedValue(userRow());
       await service.requestDriverOtp(VALID_PHONE, 'whatsapp');
       expect(prisma.otpCode.create.mock.calls[0][0].data.channel).toBe(
@@ -724,6 +710,18 @@ describe('AuthService', () => {
         );
       });
 
+      it('still works with SMS switched off — reviewers must get in', async () => {
+        setEnv({
+          REVIEW_PHONE: VALID_PHONE,
+          REVIEW_OTP: '424242',
+          LOGIN_SMS_ENABLED: 'false',
+        });
+        await service.requestDriverOtp(VALID_PHONE);
+        expect(prisma.otpCode.create.mock.calls[0][0].data.code).toBe(
+          otpHash('424242'),
+        );
+      });
+
       it('stays off when REVIEW_OTP is not 6 digits', async () => {
         setEnv({ REVIEW_PHONE: VALID_PHONE, REVIEW_OTP: '1234' });
         await service.requestDriverOtp(VALID_PHONE);
@@ -734,41 +732,28 @@ describe('AuthService', () => {
 
   // ─── driverOtpChannels: what the "didn't get the code?" panel offers ───────
   describe('driverOtpChannels', () => {
-    const plain = { channels: ['sms', 'manager'], emailHint: null };
-
-    it.each([
-      ['an unknown phone', null],
-      ['an inactive driver', userRow({ isActive: false })],
-      ['a driver without email', userRow()],
-      [
-        'a driver with an unverified email',
-        userRow({ email: 'ann@example.com', emailVerifiedAt: null }),
-      ],
-    ])('gives %s the same answer', async (_, row) => {
-      prisma.user.findUnique.mockResolvedValue(row);
-      await expect(service.driverOtpChannels(VALID_PHONE)).resolves.toEqual(
-        plain,
-      );
-    });
-
-    it('a malformed phone gets the same answer too', async () => {
-      await expect(service.driverOtpChannels('nope')).resolves.toEqual(plain);
-      expect(prisma.user.findUnique).not.toHaveBeenCalled();
-    });
-
-    it('offers email with a masked hint for a verified address', async () => {
-      prisma.user.findUnique.mockResolvedValue(verifiedEmailDriver);
-      await expect(service.driverOtpChannels(VALID_PHONE)).resolves.toEqual({
-        channels: ['sms', 'email', 'manager'],
-        emailHint: 'a***@example.com',
+    it('defaults: SMS + email to the manager (manager last)', () => {
+      expect(service.driverOtpChannels()).toEqual({
+        channels: ['sms', 'manager'],
       });
     });
 
-    it('lists flagged channels for everyone, manager last', async () => {
-      setEnv({ OTP_TELEGRAM_ENABLED: 'true' });
-      prisma.user.findUnique.mockResolvedValue(null);
-      const res = await service.driverOtpChannels(VALID_PHONE);
-      expect(res.channels).toEqual(['sms', 'telegram', 'manager']);
+    it('each method follows its own flag', () => {
+      setEnv({
+        LOGIN_SMS_ENABLED: 'false',
+        LOGIN_WHATSAPP_ENABLED: 'true',
+        LOGIN_TELEGRAM_ENABLED: 'true',
+        LOGIN_MANAGER_EMAIL_ENABLED: 'false',
+      });
+      expect(service.driverOtpChannels().channels).toEqual([
+        'whatsapp',
+        'telegram',
+      ]);
+    });
+
+    it('only the exact string "true"/"false" flips a flag', () => {
+      setEnv({ LOGIN_SMS_ENABLED: 'no', LOGIN_TELEGRAM_ENABLED: '1' });
+      expect(service.driverOtpChannels().channels).toEqual(['sms', 'manager']);
     });
   });
 
@@ -799,6 +784,16 @@ describe('AuthService', () => {
       expect(prisma.otpCode.create).not.toHaveBeenCalled();
       expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
       expect(notices.managerCode).not.toHaveBeenCalled();
+    });
+
+    it('switched off (LOGIN_MANAGER_EMAIL_ENABLED=false): ok, nothing sent', async () => {
+      setEnv({ LOGIN_MANAGER_EMAIL_ENABLED: 'false' });
+      prisma.user.findUnique.mockResolvedValue(withManager(manager()));
+      await expect(
+        service.requestDriverOtp(VALID_PHONE, 'manager'),
+      ).resolves.toEqual({ ok: true });
+      expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
     });
 
     it('has its own cooldown', async () => {
