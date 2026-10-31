@@ -81,6 +81,7 @@ describe('AuthService', () => {
   const setEnv = (vars: Record<string, string>) =>
     config.get.mockImplementation((k: string) => vars[k]);
   let emit: jest.Mock;
+  let disconnectSockets: jest.Mock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -130,7 +131,11 @@ describe('AuthService', () => {
     audit = { record: jest.fn().mockResolvedValue(undefined) };
     notices = { managerCode: jest.fn().mockResolvedValue(undefined) };
     emit = jest.fn();
-    const gateway = { server: { to: jest.fn().mockReturnValue({ emit }) } };
+    disconnectSockets = jest.fn();
+    const gateway = {
+      server: { to: jest.fn().mockReturnValue({ emit }) },
+      disconnectSockets,
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -170,6 +175,36 @@ describe('AuthService', () => {
         UnauthorizedException,
       );
       expect(jwt.sign).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['deactivated', { isActive: false }],
+      ['deleted', { deletedAt: new Date(), password: null }],
+    ])(
+      'rejects a %s account with the same error as a wrong password',
+      async (_label, over) => {
+        prisma.user.findUnique.mockResolvedValue(
+          userRow({ role: 'MANAGER', ...over }),
+        );
+        mockedBcrypt.compare.mockResolvedValue(true as never);
+        await expect(service.login(dto)).rejects.toThrow(
+          new UnauthorizedException('errors.loginOrPasswordWrong'),
+        );
+        expect(jwt.sign).not.toHaveBeenCalled();
+        expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('compares against a dummy hash when the account has none (same timing)', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      mockedBcrypt.compare.mockResolvedValue(false as never);
+      await expect(service.login(dto)).rejects.toThrow(
+        new UnauthorizedException('errors.loginOrPasswordWrong'),
+      );
+      expect(mockedBcrypt.compare).toHaveBeenCalledWith(
+        'pw',
+        expect.stringMatching(/^\$2b\$10\$/),
+      );
     });
 
     it('issues an access+refresh pair on valid credentials', async () => {
@@ -639,9 +674,9 @@ describe('AuthService', () => {
     it('sms switched off (LOGIN_SMS_ENABLED=false): ok, nothing stored or sent', async () => {
       setEnv({ LOGIN_SMS_ENABLED: 'false' });
       prisma.user.findUnique.mockResolvedValue(userRow());
-      await expect(service.requestDriverOtp(VALID_PHONE, 'sms')).resolves.toEqual(
-        { ok: true },
-      );
+      await expect(
+        service.requestDriverOtp(VALID_PHONE, 'sms'),
+      ).resolves.toEqual({ ok: true });
       expect(prisma.otpCode.create).not.toHaveBeenCalled();
       expect(sms.send).not.toHaveBeenCalled();
     });
@@ -1036,6 +1071,24 @@ describe('AuthService', () => {
       expect(mockedBcrypt.hash).toHaveBeenCalledWith('newpw', 10);
       // Both writes go through a single transaction.
       expect(prisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('ends every existing session of that user', async () => {
+      prisma.passwordResetToken.findUnique.mockResolvedValue({
+        id: 'p1',
+        userId: 'u1',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 1000),
+      });
+      mockedBcrypt.hash.mockResolvedValue('newhash' as never);
+
+      await service.resetPassword('tok', 'newpw');
+
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', revokedAt: null },
+        data: { revokedAt: expect.any(Date), expiresAt: expect.any(Date) },
+      });
+      expect(disconnectSockets).toHaveBeenCalledWith('u1');
     });
   });
 

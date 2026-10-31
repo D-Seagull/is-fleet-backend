@@ -44,6 +44,10 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const DRIVER_REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 // A token rotated this recently is still accepted once more — see refresh().
 const REFRESH_REUSE_GRACE_MS = 60_000;
+// bcrypt hash of a random string nobody knows — login() compares against it
+// when the account has no password, so every refusal costs the same time.
+const DUMMY_BCRYPT_HASH =
+  '$2b$10$2EaWQTRDqB1k/lMLLzZ3Z.PuaYzGtOE4s6Hf8o/XDkB/X089h4tqa';
 
 /** Constant-time string compare; unequal lengths are simply unequal. */
 function safeEqual(a: string, b: string) {
@@ -226,10 +230,18 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
-    if (!user) throw new UnauthorizedException('errors.loginOrPasswordWrong');
-
-    const valid = await bcrypt.compare(dto.password, user.password!);
-    if (!valid) throw new UnauthorizedException('errors.loginOrPasswordWrong');
+    // One answer for every refusal — unknown email, wrong password, and a
+    // deactivated or deleted account (deleted ones have no password) — so
+    // the response never tells that an account exists but is disabled. The
+    // hash is always compared, against a dummy when there is none, so the
+    // timing doesn't tell either.
+    const valid = await bcrypt.compare(
+      dto.password,
+      user?.password ?? DUMMY_BCRYPT_HASH,
+    );
+    if (!user?.password || !valid || !user.isActive || user.deletedAt) {
+      throw new UnauthorizedException('errors.loginOrPasswordWrong');
+    }
     await this.markSessionStart(user.id);
     return this.signToken(
       user.id,
@@ -910,7 +922,15 @@ export class AuthService {
         where: { id: record.id },
         data: { usedAt: new Date() },
       }),
+      // A reset usually means "someone else may have my password" — every
+      // existing session ends (same as deactivate). The reset itself is done
+      // signed out, so there is no current session to keep.
+      this.prisma.refreshToken.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: new Date(), expiresAt: new Date() },
+      }),
     ]);
+    this.gateway.disconnectSockets(record.userId);
 
     return { ok: true };
   }
