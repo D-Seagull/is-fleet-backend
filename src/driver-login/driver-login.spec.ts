@@ -1,4 +1,7 @@
-import { DriverLoginNoticeService, formatAt } from './driver-login-notice.service';
+import {
+  DriverLoginNoticeService,
+  formatAt,
+} from './driver-login-notice.service';
 import { AuthAuditService } from './auth-audit.service';
 import { OtpDeliveryService } from './otp-delivery.service';
 
@@ -67,7 +70,9 @@ describe('AuthAuditService', () => {
   it('never throws — auditing must not block a sign-in', async () => {
     const create = jest.fn().mockRejectedValue(new Error('db down'));
     const svc = new AuthAuditService({ authAuditLog: { create } } as never);
-    await expect(svc.record({ action: 'CODE_ISSUED' })).resolves.toBeUndefined();
+    await expect(
+      svc.record({ action: 'CODE_ISSUED' }),
+    ).resolves.toBeUndefined();
   });
 });
 

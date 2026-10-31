@@ -743,6 +743,8 @@ describe('AuthService', () => {
         LOGIN_SMS_ENABLED: 'false',
         LOGIN_WHATSAPP_ENABLED: 'true',
         LOGIN_TELEGRAM_ENABLED: 'true',
+        TELEGRAM_GATEWAY_URL: 'https://gateway.example',
+        TELEGRAM_GATEWAY_TOKEN: 'tok',
         LOGIN_MANAGER_EMAIL_ENABLED: 'false',
       });
       expect(service.driverOtpChannels().channels).toEqual([

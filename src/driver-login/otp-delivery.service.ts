@@ -9,6 +9,7 @@ import {
   OtpDeliveryChannel,
   OtpRecipient,
 } from './otp-channels';
+import { TelegramGatewayChannel } from './telegram-gateway.channel';
 
 class SmsChannel implements OtpDeliveryChannel {
   readonly name = 'sms' as const;
@@ -19,13 +20,12 @@ class SmsChannel implements OtpDeliveryChannel {
 }
 
 /**
- * WhatsApp / Telegram: interface only. Real delivery comes later (Twilio
- * Verify WhatsApp, Telegram Gateway). With the flag on but no integration
- * the request still answers ok, and the log says why.
+ * WhatsApp: interface only until Twilio Verify WhatsApp is integrated. With
+ * the flag on the request still answers ok, and the log says why.
  */
 class StubChannel implements OtpDeliveryChannel {
   private readonly logger: Logger;
-  constructor(readonly name: 'whatsapp' | 'telegram') {
+  constructor(readonly name: 'whatsapp') {
     this.logger = new Logger(`OtpChannel:${name}`);
   }
   deliver(driver: OtpRecipient): Promise<void> {
@@ -53,21 +53,28 @@ export class OtpDeliveryService {
     Exclude<DriverOtpChannel, 'manager'>,
     OtpDeliveryChannel
   >;
+  private readonly telegram: TelegramGatewayChannel;
 
   constructor(
     sms: SmsService,
     private config: ConfigService,
   ) {
+    this.telegram = new TelegramGatewayChannel((key) =>
+      config.get<string>(key),
+    );
     this.channels = {
       sms: new SmsChannel(sms),
       whatsapp: new StubChannel('whatsapp'),
-      telegram: new StubChannel('telegram'),
+      telegram: this.telegram,
     };
   }
 
   isEnabled(method: string): method is DriverOtpChannel {
     const flag = METHOD_FLAGS[method as DriverOtpChannel];
     if (!flag) return false;
+    // Telegram also needs its Gateway URL + token — never offer a method
+    // that can't send.
+    if (method === 'telegram' && !this.telegram.configured()) return false;
     const raw = this.config.get<string>(flag.env);
     return raw === 'true' ? true : raw === 'false' ? false : flag.on;
   }

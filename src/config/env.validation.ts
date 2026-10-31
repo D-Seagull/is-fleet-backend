@@ -99,7 +99,8 @@ class EnvironmentVariables {
   @IsIn(['true', 'false'])
   LOGIN_MANAGER_EMAIL_ENABLED?: string;
 
-  // Default off — stubs until Twilio Verify WhatsApp / Telegram Gateway.
+  // Default off. WhatsApp is a stub until Twilio Verify WhatsApp; Telegram
+  // also needs TELEGRAM_GATEWAY_URL + TELEGRAM_GATEWAY_TOKEN.
   @IsOptional()
   @IsIn(['true', 'false'])
   LOGIN_WHATSAPP_ENABLED?: string;
@@ -107,6 +108,16 @@ class EnvironmentVariables {
   @IsOptional()
   @IsIn(['true', 'false'])
   LOGIN_TELEGRAM_ENABLED?: string;
+
+  // Telegram Gateway (core.telegram.org/gateway): API base + token from
+  // gateway.telegram.org → API. Telegram sign-in stays hidden until both set.
+  @IsOptional()
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
+  TELEGRAM_GATEWAY_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  TELEGRAM_GATEWAY_TOKEN?: string;
 
   // Default off: managers mint a sign-in code on the driver page.
   @IsOptional()
