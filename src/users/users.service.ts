@@ -690,6 +690,14 @@ export class UsersService {
     ]);
 
     this.gateway.disconnectSockets(id);
+    // The photo goes too: nulling the field used to leave the file — and its
+    // signed link — in storage (audit §7). Best-effort: the account is
+    // already anonymised, a storage hiccup must not undo that.
+    if (user.avatarPublicId) {
+      await this.storage.deleteFile(user.avatarPublicId).catch((e: Error) =>
+        this.logger.warn(`avatar file of deleted user ${id} kept: ${e.message}`),
+      );
+    }
     return { message: 'Account deleted' };
   }
 
