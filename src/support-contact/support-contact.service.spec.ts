@@ -22,7 +22,11 @@ describe('SupportContactService', () => {
     prisma = {
       user: {
         findFirst: jest.fn(),
-        findUnique: jest.fn().mockResolvedValue({ uiLocale: 'PL' }),
+        findUnique: jest.fn().mockResolvedValue({
+          role: 'DRIVER',
+          language: 'PL',
+          uiLocale: 'UK',
+        }),
         create: jest.fn().mockResolvedValue({ id: 'sys' }),
       },
     };
@@ -88,6 +92,17 @@ describe('SupportContactService', () => {
     expect(extra.data).toEqual(
       expect.objectContaining({ type: 'DM_MESSAGE', userId: 'sys' }),
     );
+  });
+
+  it('notify: a manager gets their interface language (uiLocale)', async () => {
+    prisma.user.findFirst.mockResolvedValueOnce({ id: 'sys' });
+    prisma.user.findUnique.mockResolvedValueOnce({
+      role: 'MANAGER',
+      language: 'PL',
+      uiLocale: 'LT',
+    });
+    await svc.notify('m1', (locale) => `hello ${locale}`);
+    expect(dms.createMessage).toHaveBeenCalledWith('sys', 'm1', 'hello LT');
   });
 
   it('notify never throws', async () => {

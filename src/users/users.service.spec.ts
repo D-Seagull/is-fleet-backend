@@ -48,6 +48,7 @@ describe('UsersService', () => {
   let transfers: { request: jest.Mock };
   let gateway: { server: { to: jest.Mock }; disconnectSockets: jest.Mock };
   let notices: { phoneChanged: jest.Mock };
+  let storage: { deleteFile: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -72,12 +73,13 @@ describe('UsersService', () => {
       disconnectSockets: jest.fn(),
     };
     notices = { phoneChanged: jest.fn().mockResolvedValue(undefined) };
+    storage = { deleteFile: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: PrismaService, useValue: prisma },
-        { provide: SupabaseStorageService, useValue: {} },
+        { provide: SupabaseStorageService, useValue: storage },
         { provide: MailService, useValue: {} },
         { provide: MessagesGateway, useValue: gateway },
         { provide: PushService, useValue: {} },
@@ -559,6 +561,37 @@ describe('UsersService', () => {
           update: expect.objectContaining({ score: 5, anonymous: false }),
         }),
       );
+    });
+  });
+
+  // ─── account deletion removes the avatar file (audit §7 / P1-11) ───────────
+  describe('deleteOwnAccount — avatar file', () => {
+    beforeEach(() => {
+      prisma.user.findUnique = jest
+        .fn()
+        .mockResolvedValue(
+          userRow({ role: 'DRIVER', avatarPublicId: 'avatars/me.jpg' }),
+        );
+      const many = () => ({ deleteMany: jest.fn(), updateMany: jest.fn() });
+      Object.assign(prisma, {
+        truck: many(),
+        pushToken: many(),
+        otpCode: many(),
+        passwordResetToken: many(),
+      });
+      prisma.refreshToken.deleteMany = jest.fn();
+    });
+
+    it('deletes the avatar from storage', async () => {
+      await service.deleteOwnAccount('u1');
+      expect(storage.deleteFile).toHaveBeenCalledWith('avatars/me.jpg');
+    });
+
+    it('a storage failure does not undo the deletion', async () => {
+      storage.deleteFile.mockRejectedValue(new Error('storage down'));
+      await expect(service.deleteOwnAccount('u1')).resolves.toEqual({
+        message: 'Account deleted',
+      });
     });
   });
 });

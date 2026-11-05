@@ -61,10 +61,15 @@ export class BugReportsService {
 
     // Upload screenshots first; a failed upload should fail the whole report
     // rather than silently drop the attachment.
+    // Only storage paths are kept; links are signed when an admin reads the
+    // report (withSignedScreenshots) — no long-lived URL in the database.
     const screenshots: string[] = [];
     for (const file of files) {
-      const { url } = await this.storage.uploadWithUrl(file, 'bug-reports');
-      screenshots.push(url);
+      const { storagePath } = await this.storage.uploadFile(
+        file,
+        'bug-reports',
+      );
+      screenshots.push(storagePath);
     }
 
     const report = await this.prisma.bugReport.create({
@@ -84,10 +89,32 @@ export class BugReportsService {
       include: reportInclude,
     });
 
+    const signed = await this.withSignedScreenshots(report);
     // Best-effort fan-out: never let a notification failure fail the report.
-    void this.notifyAdmins(report);
+    void this.notifyAdmins(signed);
 
-    return report;
+    return signed;
+  }
+
+  /**
+   * Screenshots are stored as storage paths and signed per read (24 h,
+   * shared sign cache). A full URL is a row from before paths were stored and
+   * not yet migrated — passed through as is.
+   */
+  private async withSignedScreenshots<T extends { screenshots: string[] }>(
+    report: T,
+  ): Promise<T> {
+    const screenshots = await Promise.all(
+      report.screenshots.map((s) =>
+        /^https?:\/\//i.test(s)
+          ? Promise.resolve(s)
+          : this.storage.getSignedUrlOrNull(s),
+      ),
+    );
+    return {
+      ...report,
+      screenshots: screenshots.filter((s): s is string => !!s),
+    };
   }
 
   private async notifyAdmins(
@@ -114,23 +141,27 @@ export class BugReportsService {
         data: { type: 'bug_report', id: report.id },
       });
     } catch (e) {
-      this.logger.error('Failed to notify admins of new bug report', e as Error);
+      this.logger.error(
+        'Failed to notify admins of new bug report',
+        e as Error,
+      );
     }
   }
 
-  findAll(status?: BugStatus) {
-    return this.prisma.bugReport.findMany({
+  async findAll(status?: BugStatus) {
+    const reports = await this.prisma.bugReport.findMany({
       where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
       include: reportInclude,
     });
+    return Promise.all(reports.map((r) => this.withSignedScreenshots(r)));
   }
 
   async updateStatus(id: string, status: BugStatus) {
     const existing = await this.prisma.bugReport.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Bug report not found');
 
-    return this.prisma.bugReport.update({
+    const updated = await this.prisma.bugReport.update({
       where: { id },
       data: {
         status,
@@ -138,5 +169,6 @@ export class BugReportsService {
       },
       include: reportInclude,
     });
+    return this.withSignedScreenshots(updated);
   }
 }

@@ -10,7 +10,6 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
@@ -20,7 +19,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { UPLOAD_OPTIONS } from 'src/common/upload-options';
+import { UploadInterceptor } from 'src/common/upload.interceptor';
 
 @ApiTags('groups')
 @ApiBearerAuth()
@@ -141,7 +140,7 @@ export class GroupsController {
   // Group avatar — service enforces membership (creator + members + ADMIN).
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
   @Post(':id/avatar')
-  @UseInterceptors(FileInterceptor('file', UPLOAD_OPTIONS))
+  @UseInterceptors(UploadInterceptor('file', 'image', { single: true }))
   uploadAvatar(
     @Param('id') groupId: string,
     @GetUser('id') userId: string,

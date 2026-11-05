@@ -888,7 +888,7 @@ model BugReport {
   companyId   String?
   role        Role
   description String
-  /// Signed Supabase URLs of attached screenshots (0..n).
+  /// Storage paths of attached screenshots (0..n), signed when read.
   screenshots String[]
   /// Which client filed it: "web" | "driver" | "manager" | "desktop".
   appName     String?

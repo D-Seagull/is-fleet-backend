@@ -9,7 +9,6 @@ import {
   Body,
   UploadedFiles,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
 import { GroupMessageDocumentsService } from './group-message-documents.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { ReactionsGateway } from '../reactions/reactions.gateway';
@@ -20,7 +19,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { UPLOAD_OPTIONS } from 'src/common/upload-options';
+import { UploadInterceptor } from 'src/common/upload.interceptor';
 
 @ApiTags('group-message-documents')
 @ApiBearerAuth()
@@ -36,7 +35,7 @@ export class GroupMessageDocumentsController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('upload-many')
-  @UseInterceptors(FilesInterceptor('files', 10, UPLOAD_OPTIONS))
+  @UseInterceptors(UploadInterceptor('files', 'document'))
   uploadMany(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('groupId') groupId: string,

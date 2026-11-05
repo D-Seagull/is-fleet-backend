@@ -10,7 +10,6 @@ import {
   UploadedFile,
   Delete,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { CreateManagerDto } from './dto/create-manager.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
@@ -25,7 +24,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { UPLOAD_OPTIONS } from 'src/common/upload-options';
+import { UploadInterceptor } from 'src/common/upload.interceptor';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -175,7 +174,7 @@ export class UsersController {
 
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER', 'DRIVER')
   @Post('avatar')
-  @UseInterceptors(FileInterceptor('file', UPLOAD_OPTIONS))
+  @UseInterceptors(UploadInterceptor('file', 'image', { single: true }))
   uploadAvatar(
     @GetUser('id') userId: string,
     @UploadedFile() file: Express.Multer.File,

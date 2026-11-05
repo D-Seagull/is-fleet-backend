@@ -65,7 +65,10 @@ export class SupportContactService {
   }
 
   /**
-   * A service notice into the user's chat, in their interface language.
+   * A service notice into the user's chat, in the language their app shows.
+   * The driver app follows `language` (its Settings picker) and never touches
+   * `uiLocale`, which stays at its UK default — so drivers get `language`;
+   * web / is-manager users get their `uiLocale`.
    * Best effort — a failure is logged, never thrown.
    */
   async notify(
@@ -75,10 +78,11 @@ export class SupportContactService {
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { uiLocale: true },
+        select: { role: true, language: true, uiLocale: true },
       });
       if (!user) return;
-      await this.send(userId, build(user.uiLocale));
+      const locale = user.role === 'DRIVER' ? user.language : user.uiLocale;
+      await this.send(userId, build(locale));
     } catch (err) {
       this.logger.error(
         `Notice to ${userId} failed: ${

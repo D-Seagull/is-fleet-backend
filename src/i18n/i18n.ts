@@ -150,6 +150,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компанію деактивовано — зміни тимчасово недоступні',
     'errors.driverExistsElsewhere':
       'Цей водій вже зареєстрований в іншій компанії',
+    'errors.fileTooLarge': 'Файл завеликий (до 20 МБ для документів, 10 МБ для зображень)',
+    'errors.uploadTooLarge': 'Завеликий запит: забагато даних за один раз',
+    'errors.tooManyFiles': 'Забагато файлів за один раз',
+    'errors.fileTypeNotSupported': 'Цей тип файлу не підтримується',
     'errors.cannotManageUser': 'Ви можете змінювати лише користувачів нижчої ролі',
     'errors.transferInvalid': 'Посилання недійсне або застаріло',
     'sms.driverTransfer':
@@ -276,6 +280,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Company is deactivated — changes are temporarily unavailable',
     'errors.driverExistsElsewhere':
       'This driver is already registered with another company',
+    'errors.fileTooLarge': 'File too large (up to 20 MB for documents, 10 MB for images)',
+    'errors.uploadTooLarge': 'Upload too large: too much data at once',
+    'errors.tooManyFiles': 'Too many files at once',
+    'errors.fileTypeNotSupported': 'This file type is not supported',
     'errors.cannotManageUser': 'You can only manage users with a lower role',
     'errors.transferInvalid': 'This link is invalid or has expired',
     'sms.driverTransfer':
@@ -411,6 +419,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
       'Ten kierowca jest już zarejestrowany w innej firmie',
+    'errors.fileTooLarge': 'Plik jest za duży (do 20 MB dla dokumentów, 10 MB dla zdjęć)',
+    'errors.uploadTooLarge': 'Za dużo danych naraz',
+    'errors.tooManyFiles': 'Za dużo plików naraz',
+    'errors.fileTypeNotSupported': 'Ten typ pliku nie jest obsługiwany',
     'errors.cannotManageUser': 'Możesz zarządzać tylko użytkownikami o niższej roli',
     'errors.transferInvalid': 'Link jest nieprawidłowy lub wygasł',
     'sms.driverTransfer':
@@ -540,6 +552,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
     'errors.driverExistsElsewhere':
       'Šis vairuotojas jau užregistruotas kitoje įmonėje',
+    'errors.fileTooLarge': 'Failas per didelis (iki 20 MB dokumentams, 10 MB nuotraukoms)',
+    'errors.uploadTooLarge': 'Per daug duomenų vienu metu',
+    'errors.tooManyFiles': 'Per daug failų vienu metu',
+    'errors.fileTypeNotSupported': 'Šis failo tipas nepalaikomas',
     'errors.cannotManageUser': 'Galite valdyti tik žemesnio vaidmens naudotojus',
     'errors.transferInvalid': 'Nuoroda neteisinga arba nebegalioja',
     'sms.driverTransfer':
@@ -674,6 +690,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Компания деактивирована — изменения временно недоступны',
     'errors.driverExistsElsewhere':
       'Этот водитель уже зарегистрирован в другой компании',
+    'errors.fileTooLarge': 'Файл слишком большой (до 20 МБ для документов, 10 МБ для изображений)',
+    'errors.uploadTooLarge': 'Слишком большой запрос: слишком много данных за раз',
+    'errors.tooManyFiles': 'Слишком много файлов за раз',
+    'errors.fileTypeNotSupported': 'Этот тип файла не поддерживается',
     'errors.cannotManageUser': 'Вы можете изменять только пользователей с более низкой ролью',
     'errors.transferInvalid': 'Ссылка недействительна или устарела',
     'sms.driverTransfer':
