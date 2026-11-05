@@ -55,6 +55,10 @@ const IMMUTABLE_CACHE = '31536000';
 // re-downloading photos the user has already seen. Signed for a day, reused
 // while at least half of that is left, so a client always holds ≥ 12 h.
 const SIGN_TTL = 24 * 3600;
+
+// Avatars, logos and group pictures keep their signed URL in the database;
+// it lives a week and is re-signed nightly (ImageUrlRefreshService).
+export const STORED_IMAGE_TTL = 7 * 24 * 3600;
 const SIGN_REUSE_MIN_LEFT = 12 * 3600;
 const SIGN_CACHE_MAX = 20_000;
 
@@ -325,8 +329,10 @@ export class SupabaseStorageService {
     return { storagePath, thumbPath: null };
   }
 
-  // Upload and return a long-lived signed URL (10 years) for display in UI.
-  // Used for avatars and logos where the URL is stored directly in the DB.
+  // Upload and return a signed URL for display, stored in the DB (avatars,
+  // logos, group pictures). Valid STORED_IMAGE_TTL (7 days) — it used to be
+  // ~10 years, effectively a permanent public link (audit P1-11). The nightly
+  // ImageUrlRefreshService re-signs before it runs out.
   // `preset` downscales display images first (HEIC is converted before, since
   // sharp can't decode it).
   async uploadWithUrl(
@@ -339,7 +345,7 @@ export class SupabaseStorageService {
       await this.shrinkImage(file, preset);
     }
     const { storagePath } = await this.uploadFile(file, folder);
-    const url = await this.getSignedUrl(storagePath, 315_360_000); // ~10 years
+    const url = await this.getSignedUrl(storagePath, STORED_IMAGE_TTL);
     return { url, storagePath };
   }
 
@@ -466,5 +472,25 @@ export class SupabaseStorageService {
     } catch {
       return null;
     }
+  }
+}
+
+/**
+ * When a Supabase signed URL stops working (its token's `exp`), or null when
+ * the URL carries no readable token. The token is a JWT; only its payload is
+ * decoded — nothing is trusted from it beyond scheduling a re-sign.
+ */
+export function signedUrlExpiry(url: string | null | undefined): Date | null {
+  if (!url) return null;
+  try {
+    const token = new URL(url).searchParams.get('token');
+    const payload = token?.split('.')[1];
+    if (!payload) return null;
+    const { exp } = JSON.parse(
+      Buffer.from(payload, 'base64url').toString('utf8'),
+    ) as { exp?: unknown };
+    return typeof exp === 'number' ? new Date(exp * 1000) : null;
+  } catch {
+    return null;
   }
 }
