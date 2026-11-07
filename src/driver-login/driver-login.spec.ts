@@ -30,17 +30,20 @@ describe('OtpDeliveryService flags', () => {
     expect(make({}).enabledMethods()).toEqual(['sms', 'manager']);
   });
 
-  it('"ask my manager" stays on with email off when the manager button is on', () => {
+  it('email-to-manager and generate-code are two separate methods', () => {
+    expect(
+      make({ MANAGER_LOGIN_CODE_ENABLED: 'true' }).enabledMethods(),
+    ).toEqual(['sms', 'manager', 'manager_code']);
     const svc = make({
       LOGIN_MANAGER_EMAIL_ENABLED: 'false',
       MANAGER_LOGIN_CODE_ENABLED: 'true',
     });
-    expect(svc.enabledMethods()).toEqual(['sms', 'manager']);
+    expect(svc.enabledMethods()).toEqual(['sms', 'manager_code']);
     expect(svc.managerEmailEnabled()).toBe(false);
     expect(svc.managerCodeEnabled()).toBe(true);
   });
 
-  it('"ask my manager" disappears when both email and button are off', () => {
+  it('both manager methods off → neither is offered', () => {
     expect(
       make({ LOGIN_MANAGER_EMAIL_ENABLED: 'false' }).enabledMethods(),
     ).toEqual(['sms']);

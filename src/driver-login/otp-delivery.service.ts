@@ -6,7 +6,9 @@ import { maskPhone } from 'src/common/utils/phone';
 import {
   DRIVER_OTP_CHANNELS,
   DriverOtpChannel,
+  ManagerMethod,
   OtpDeliveryChannel,
+  isManagerMethod,
   OtpRecipient,
 } from './otp-channels';
 import { TelegramGatewayChannel } from './telegram-gateway.channel';
@@ -45,12 +47,13 @@ const METHOD_FLAGS: Record<DriverOtpChannel, { env: string; on: boolean }> = {
   whatsapp: { env: 'LOGIN_WHATSAPP_ENABLED', on: false },
   telegram: { env: 'LOGIN_TELEGRAM_ENABLED', on: false },
   manager: { env: 'LOGIN_MANAGER_EMAIL_ENABLED', on: true },
+  manager_code: { env: 'MANAGER_LOGIN_CODE_ENABLED', on: false },
 };
 
 @Injectable()
 export class OtpDeliveryService {
   private readonly channels: Record<
-    Exclude<DriverOtpChannel, 'manager'>,
+    Exclude<DriverOtpChannel, ManagerMethod>,
     OtpDeliveryChannel
   >;
   private readonly telegram: TelegramGatewayChannel;
@@ -75,26 +78,20 @@ export class OtpDeliveryService {
     // Telegram also needs its Gateway URL + token — never offer a method
     // that can't send.
     if (method === 'telegram' && !this.telegram.configured()) return false;
-    // "Ask my manager" works through the email OR the manager's button.
-    if (method === 'manager') {
-      return this.flag(flag.env, flag.on) || this.managerCodeEnabled();
-    }
     return this.flag(flag.env, flag.on);
   }
 
-  /** The code is emailed to the truck's manager (LOGIN_MANAGER_EMAIL_ENABLED). */
+  /** "Email the code to my manager" (LOGIN_MANAGER_EMAIL_ENABLED, default on). */
   managerEmailEnabled() {
-    const { env, on } = METHOD_FLAGS.manager;
-    return this.flag(env, on);
+    return this.isEnabled('manager');
   }
 
   /**
-   * The truck's manager may mint a code on the driver card — only while the
-   * driver has an open "ask my manager" request (MANAGER_LOGIN_CODE_ENABLED,
-   * default off).
+   * "Ask my manager to generate a code": the truck's manager gets a one-time
+   * button on the driver card (MANAGER_LOGIN_CODE_ENABLED, default off).
    */
   managerCodeEnabled() {
-    return this.flag('MANAGER_LOGIN_CODE_ENABLED', false);
+    return this.isEnabled('manager_code');
   }
 
   private flag(env: string, fallback: boolean) {
@@ -107,9 +104,9 @@ export class OtpDeliveryService {
     return DRIVER_OTP_CHANNELS.filter((m) => this.isEnabled(m));
   }
 
-  /** A direct channel (not `manager`), or null if unknown or switched off. */
+  /** A direct channel (not a manager one), or null if unknown or switched off. */
   direct(name: string): OtpDeliveryChannel | null {
-    if (name === 'manager' || !this.isEnabled(name)) return null;
+    if (isManagerMethod(name) || !this.isEnabled(name)) return null;
     return this.channels[name];
   }
 }

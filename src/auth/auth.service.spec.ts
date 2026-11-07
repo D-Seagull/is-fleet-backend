@@ -867,7 +867,7 @@ describe('AuthService', () => {
           code: otpHash(opts.code),
           channel: 'MANAGER',
           issuedById: 'm1',
-          driverRequest: true,
+          driverRequest: false,
         }),
       );
       expect(row.expiresAt.getTime() - Date.now()).toBeGreaterThan(14 * 60_000);
@@ -890,7 +890,7 @@ describe('AuthService', () => {
       expect(sms.send).not.toHaveBeenCalled();
     });
 
-    it('button only (email off): stores the request, emails nothing, tells the manager to open the card', async () => {
+    it('manager_code: stores a request, emails nothing, tells the manager to open the card', async () => {
       setEnv({
         LOGIN_MANAGER_EMAIL_ENABLED: 'false',
         MANAGER_LOGIN_CODE_ENABLED: 'true',
@@ -898,7 +898,7 @@ describe('AuthService', () => {
       prisma.user.findUnique.mockResolvedValue(
         withManager(manager({ email: null })),
       );
-      await service.requestDriverOtp(VALID_PHONE, 'manager');
+      await service.requestDriverOtp(VALID_PHONE, 'manager_code');
 
       expect(prisma.otpCode.create.mock.calls[0][0].data).toEqual(
         expect.objectContaining({
@@ -915,6 +915,39 @@ describe('AuthService', () => {
         'u1',
         true,
       );
+    });
+
+    it('the two manager methods have separate cooldowns', async () => {
+      setEnv({ MANAGER_LOGIN_CODE_ENABLED: 'true' });
+      prisma.user.findUnique.mockResolvedValue(withManager(manager()));
+      await service.requestDriverOtp(VALID_PHONE, 'manager');
+      await service.requestDriverOtp(VALID_PHONE, 'manager_code');
+      const wheres = prisma.otpCode.findFirst.mock.calls.map((c) => c[0].where);
+      expect(wheres[0]).toEqual(
+        expect.objectContaining({ channel: 'MANAGER', driverRequest: false }),
+      );
+      expect(wheres[1]).toEqual(
+        expect.objectContaining({ channel: 'MANAGER', driverRequest: true }),
+      );
+    });
+
+    it('manager_code works for a manager without email', async () => {
+      setEnv({ MANAGER_LOGIN_CODE_ENABLED: 'true' });
+      prisma.user.findUnique.mockResolvedValue(
+        withManager(manager({ email: null })),
+      );
+      await service.requestDriverOtp(VALID_PHONE, 'manager_code');
+      expect(prisma.otpCode.create).toHaveBeenCalled();
+      expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
+    });
+
+    it('manager_code switched off (default): ok, nothing stored', async () => {
+      prisma.user.findUnique.mockResolvedValue(withManager(manager()));
+      await expect(
+        service.requestDriverOtp(VALID_PHONE, 'manager_code'),
+      ).resolves.toEqual({ ok: true });
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
+      expect(notices.managerCodeRequested).not.toHaveBeenCalled();
     });
 
     it('still answers ok when the email fails', async () => {
