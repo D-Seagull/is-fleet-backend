@@ -926,7 +926,9 @@ export class AuthService {
       // existing session ends (same as deactivate). The reset itself is done
       // signed out, so there is no current session to keep.
       this.prisma.refreshToken.updateMany({
-        where: { userId: record.userId, revokedAt: null },
+        // Not `revokedAt: null`: a token rotated seconds ago is "revoked" yet
+        // still honoured by refresh()'s grace window — expire it too.
+        where: { userId: record.userId, expiresAt: { gt: new Date() } },
         data: { revokedAt: new Date(), expiresAt: new Date() },
       }),
     ]);

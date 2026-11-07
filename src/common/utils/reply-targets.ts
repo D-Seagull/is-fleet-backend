@@ -8,7 +8,9 @@ import { PrismaService } from 'src/prisma/prisma.service';
  * chat's (or company's) message (audit M1).
  */
 export type ReplyScope =
-  | { trip: string }
+  // `sessionId`: a quoted message must also sit in this chat session (a trip's
+  // earlier sessions belong to other participants).
+  | { trip: string; sessionId?: string }
   | { dm: [string, string] }
   | { group: string };
 
@@ -49,7 +51,11 @@ async function messageInScope(
 ): Promise<boolean> {
   if ('trip' in scope) {
     return !!(await prisma.message.findFirst({
-      where: { id, tripId: scope.trip },
+      where: {
+        id,
+        tripId: scope.trip,
+        ...(scope.sessionId ? { sessionId: scope.sessionId } : {}),
+      },
       select: { id: true },
     }));
   }

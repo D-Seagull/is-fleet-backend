@@ -296,7 +296,16 @@ export async function assertTruckInCompany(
   if (!truck) throw new NotFoundException('errors.truckNotFound');
 }
 
-export const MANAGER_ROLES = ['ADMIN', 'TEAMLEAD', 'MANAGER'];
+/**
+ * Prisma `where` fragment for a Trip: the driver still belongs to the trip's
+ * company. A driver moved to another company (DriverTransfer) keeps their old
+ * trips' driverId, but must not act on them any more.
+ */
+export function driverStillInCompany(driverId: string) {
+  return { company: { users: { some: { id: driverId } } } };
+}
+
+export const MANAGER_ROLES =['ADMIN', 'TEAMLEAD', 'MANAGER'];
 
 /**
  * Is `truckId` the truck this driver is assigned to right now? A driver's

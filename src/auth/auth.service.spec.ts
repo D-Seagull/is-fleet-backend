@@ -1085,7 +1085,7 @@ describe('AuthService', () => {
       await service.resetPassword('tok', 'newpw');
 
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
-        where: { userId: 'u1', revokedAt: null },
+        where: { userId: 'u1', expiresAt: { gt: expect.any(Date) } },
         data: { revokedAt: expect.any(Date), expiresAt: expect.any(Date) },
       });
       expect(disconnectSockets).toHaveBeenCalledWith('u1');
