@@ -574,6 +574,7 @@ export class AuthService {
     channel: DriverOtpChannel,
     ttlMs: number,
     issuedById: string | null = null,
+    driverRequest = false,
   ) {
     return this.prisma.otpCode.create({
       data: {
@@ -583,6 +584,7 @@ export class AuthService {
         expiresAt: new Date(Date.now() + ttlMs),
         channel: CHANNEL_TO_DB[channel],
         issuedById,
+        driverRequest,
       },
     });
   }
@@ -622,14 +624,21 @@ export class AuthService {
   // ─── Driver login through the manager ───────────────────────────────────────
   // Last resort when no channel reaches the driver. Only the driver's actual
   // manager — the manager of their current truck (Truck.managerId), same
-  // company — ever sees the code. User.managerId is NOT used: it is just
-  // whoever created the driver and never follows truck reassignments. The
-  // driver is told (push + SMS) whenever such a code is issued and used, and
-  // every step lands in AuthAuditLog.
+  // company — ever gets the code. User.managerId is NOT used: it is just
+  // whoever created the driver and never follows truck reassignments.
+  //
+  // It always starts with the DRIVER: "ask my manager" stores a request row
+  // (OtpCode.driverRequest). Then, depending on the flags:
+  //  - LOGIN_MANAGER_EMAIL_ENABLED: that row's code is emailed to the manager;
+  //  - MANAGER_LOGIN_CODE_ENABLED: the manager's "login code" button shows on
+  //    the driver card — only while the request is live (15 min, until the
+  //    driver signs in). With no request there is no button and the route
+  //    refuses, so a manager can't mint codes for a driver on their own.
+  // The driver is told in the IS Fleet contact chat when a code reaches the
+  // manager and when one is used; every step lands in AuthAuditLog.
 
   /**
-   * Driver side: "ask my manager" — the code is emailed to the truck's
-   * manager, who passes it on. Always `{ ok: true }` (see requestDriverOtp).
+   * Driver side: "ask my manager". Always `{ ok: true }` (see requestDriverOtp).
    */
   private async requestViaManager(
     driver: NonNullable<Awaited<ReturnType<AuthService['findDriverForOtp']>>>,
@@ -637,11 +646,13 @@ export class AuthService {
     ip?: string | null,
   ) {
     const manager = driver.currentTruck?.manager;
+    const byEmail = this.delivery.managerEmailEnabled() && !!manager?.email;
+    const byButton = this.delivery.managerCodeEnabled();
     if (
       !manager ||
       !manager.isActive ||
-      !manager.email ||
-      manager.companyId !== driver.companyId
+      manager.companyId !== driver.companyId ||
+      (!byEmail && !byButton)
     ) {
       this.logger.warn(
         `Manager-code request for driver ${driver.id}: no reachable truck manager — nothing sent`,
@@ -651,6 +662,8 @@ export class AuthService {
 
     await this.assertOtpCooldown(phone, 'MANAGER');
 
+    // The request row. Its code is the one emailed (if email is on); with
+    // the button only, nobody ever sees it — it just marks the request.
     const code = this.newOtpCode();
     await this.storeOtp(
       driver.id,
@@ -659,6 +672,7 @@ export class AuthService {
       'manager',
       MANAGER_CODE_TTL_MS,
       manager.id,
+      true,
     );
     await this.audit.record({
       action: 'CODE_ISSUED',
@@ -669,47 +683,56 @@ export class AuthService {
       ip,
     });
 
-    try {
-      await this.mail.sendDriverLoginCode(manager.email, {
-        driverName: `${driver.firstName} ${driver.lastName ?? ''}`.trim(),
-        driverPhone: maskPhone(phone),
-        code,
-        ttlMinutes: MANAGER_CODE_TTL_MS / 60_000,
-        locale: manager.uiLocale,
-      });
-      this.logger.log(
-        `Login code for driver ${driver.id} (${maskPhone(phone)}) emailed to manager ${manager.id}`,
-      );
-    } catch (err) {
-      this.logger.error(
-        `Login-code email to manager ${manager.id} failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+    if (byEmail) {
+      try {
+        await this.mail.sendDriverLoginCode(manager.email!, {
+          driverName: `${driver.firstName} ${driver.lastName ?? ''}`.trim(),
+          driverPhone: maskPhone(phone),
+          code,
+          ttlMinutes: MANAGER_CODE_TTL_MS / 60_000,
+          locale: manager.uiLocale,
+        });
+        this.logger.log(
+          `Login code for driver ${driver.id} (${maskPhone(phone)}) emailed to manager ${manager.id}`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Login-code email to manager ${manager.id} failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+      // A code is now in the manager's hands — the driver should know.
+      await this.notices.managerCode('issued', driver.id, manager.id);
     }
-    await this.notices.managerCode('issued', driver.id, manager.id);
+    // Tell the manager in their chat — with the button, that's where they
+    // learn to open the driver card.
+    await this.notices.managerCodeRequested(manager.id, driver.id, byButton);
     return { ok: true };
   }
 
-  /** Whether managers may mint codes on the driver page (dev only by default). */
+  /** Whether managers may mint codes on the driver card (dev only by default). */
   managerLoginCodeEnabled() {
-    return this.config.get<string>('MANAGER_LOGIN_CODE_ENABLED') === 'true';
+    return this.delivery.managerCodeEnabled();
   }
 
-  /**
-   * Manager side: the truck's manager mints a code on the driver's page and
-   * dictates it. Off unless MANAGER_LOGIN_CODE_ENABLED=true — the route
-   * refuses, not just the button. Returned once in plain text; only the hash
-   * is stored.
-   */
-  async issueDriverLoginCode(
-    requesterId: string,
-    driverId: string,
-    ip?: string | null,
-  ) {
-    if (!this.managerLoginCodeEnabled()) {
-      throw new ForbiddenException('errors.featureDisabled');
-    }
+  /** The driver's live "ask my manager" request addressed to this manager. */
+  private openManagerRequest(driverId: string, managerId: string) {
+    return this.prisma.otpCode.findFirst({
+      where: {
+        userId: driverId,
+        issuedById: managerId,
+        driverRequest: true,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { expiresAt: true },
+    });
+  }
+
+  /** Tenant + ownership: the requester manages the driver's current truck. */
+  private async truckManagerAndDriver(requesterId: string, driverId: string) {
     const [requester, driver] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: requesterId },
@@ -728,24 +751,62 @@ export class AuthService {
         },
       }),
     ]);
+    const ok =
+      !!requester?.isActive &&
+      !!driver &&
+      driver.role === 'DRIVER' &&
+      driver.currentTruck?.managerId === requester.id &&
+      driver.companyId === requester.companyId;
+    return ok ? { requester: requester!, driver: driver! } : null;
+  }
 
-    // Tenant + ownership: only the manager of the driver's current truck,
-    // same company. A driver without a truck has no manager to vouch for them.
-    if (
-      !requester?.isActive ||
-      !driver ||
-      driver.role !== 'DRIVER' ||
-      driver.currentTruck?.managerId !== requester.id ||
-      driver.companyId !== requester.companyId
-    ) {
+  /**
+   * For the driver card: is there a live "ask my manager" request for this
+   * manager? Drives whether the "login code" button shows. Anyone else — or
+   * the feature off — simply gets `pending: false`.
+   */
+  async driverLoginCodeRequest(requesterId: string, driverId: string) {
+    if (!this.managerLoginCodeEnabled()) return { pending: false };
+    const pair = await this.truckManagerAndDriver(requesterId, driverId);
+    if (!pair) return { pending: false };
+    const open = await this.openManagerRequest(driverId, requesterId);
+    return open
+      ? { pending: true, expiresAt: open.expiresAt }
+      : { pending: false };
+  }
+
+  /**
+   * Manager side: the truck's manager mints a code on the driver card and
+   * dictates it — only while the driver's "ask my manager" request is live.
+   * Off unless MANAGER_LOGIN_CODE_ENABLED=true — the route refuses, not just
+   * the button. Returned once in plain text; only the hash is stored.
+   */
+  async issueDriverLoginCode(
+    requesterId: string,
+    driverId: string,
+    ip?: string | null,
+  ) {
+    if (!this.managerLoginCodeEnabled()) {
+      throw new ForbiddenException('errors.featureDisabled');
+    }
+    const pair = await this.truckManagerAndDriver(requesterId, driverId);
+    if (!pair) {
       this.logger.warn(
         `Login code refused: user ${requesterId} is not the truck manager of driver ${driverId}`,
       );
       throw new ForbiddenException('errors.notAssignedManager');
     }
+    const { requester, driver } = pair;
     const phone = driver.phone ? normalizePhone(driver.phone) : null;
     if (!driver.isActive || driver.deletedAt || !phone) {
       throw new BadRequestException('errors.driverNotActive');
+    }
+    // Only on the driver's own request — never on the manager's initiative.
+    if (!(await this.openManagerRequest(driver.id, requester.id))) {
+      this.logger.warn(
+        `Login code refused: no open request from driver ${driver.id} to manager ${requester.id}`,
+      );
+      throw new ForbiddenException('errors.noLoginCodeRequest');
     }
 
     const code = this.newOtpCode();

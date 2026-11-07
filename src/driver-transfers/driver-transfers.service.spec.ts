@@ -120,6 +120,16 @@ describe('DriverTransfersService', () => {
       expect(prisma.driverTransfer.create).not.toHaveBeenCalled();
     });
 
+    it('caps what one company can text in a day', async () => {
+      // 0 for the driver, 20 for the company.
+      prisma.driverTransfer.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(20);
+      await service.request(driver, 'cA', 'mgrA');
+      expect(sms.send).not.toHaveBeenCalled();
+      expect(prisma.driverTransfer.create).not.toHaveBeenCalled();
+    });
+
     it('caps SMS per driver per day', async () => {
       prisma.driverTransfer.count.mockResolvedValue(5);
       await service.request(driver, 'cA', 'mgrA');

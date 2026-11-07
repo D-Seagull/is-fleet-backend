@@ -335,43 +335,87 @@ describe('UsersService', () => {
     });
   });
 
-  // ─── createDriver: a driver of another company moves only with consent ─────
-  describe('createDriver — driver registered elsewhere', () => {
-    const other = {
-      id: 'drvB',
+  // ─── createDriver: one answer for every phone (P1-6) ──────────────────────
+  describe('createDriver — the answer never depends on who owns the number', () => {
+    const dto = { firstName: 'Ivan', phone: '+380971234567' };
+    const person = (over: Record<string, unknown>) => ({
+      id: 'x',
       role: 'DRIVER',
       companyId: 'cB',
-      firstName: 'ivan',
+      firstName: 'Ivan',
       lastName: 'Kovalenko',
       phone: '+380971234567',
       language: 'UK',
-    };
-    const dto = { firstName: 'Ivan', phone: '+380971234567' };
+      ...over,
+    });
+    const OK = { ok: true };
 
     beforeEach(() => {
+      prisma.user.create = jest.fn().mockResolvedValue({ id: 'new' });
+    });
+
+    it('an unknown number: the driver is created, answer { ok: true }', async () => {
+      prisma.user.findUnique = jest.fn().mockResolvedValue(null);
+      await expect(
+        service.createDriver('cA', 'mgrA', dto as never),
+      ).resolves.toEqual(OK);
+      expect(prisma.user.create).toHaveBeenCalled();
+      expect(transfers.request).not.toHaveBeenCalled();
+    });
+
+    it('a driver of another company: consent SMS, the SAME answer, nobody moved', async () => {
+      const other = person({});
       prisma.user.findUnique = jest.fn().mockResolvedValue(other);
-    });
-
-    it('409 shows initials only — no id, no full name', async () => {
-      const err = await service
-        .createDriver('cA', 'mgrA', dto as never)
-        .catch((e: { getResponse(): unknown }) => e.getResponse());
-      expect(err).toEqual(
-        expect.objectContaining({
-          code: 'DRIVER_EXISTS_ELSEWHERE',
-          driver: { id: '', firstName: 'I.', lastName: 'K.' },
-        }),
-      );
-    });
-
-    it('confirmTransfer opens a consent request and moves nothing', async () => {
-      const res = await service.createDriver('cA', 'mgrA', {
-        ...dto,
-        confirmTransfer: true,
-      } as never);
-      expect(res).toEqual({ pending: true, code: 'DRIVER_TRANSFER_PENDING' });
+      await expect(
+        service.createDriver('cA', 'mgrA', dto as never),
+      ).resolves.toEqual(OK);
       expect(transfers.request).toHaveBeenCalledWith(other, 'cA', 'mgrA');
+      expect(prisma.user.create).not.toHaveBeenCalled();
       expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('confirmTransfer (sent by older apps) changes nothing', async () => {
+      prisma.user.findUnique = jest.fn().mockResolvedValue(person({}));
+      await expect(
+        service.createDriver('cA', 'mgrA', {
+          ...dto,
+          confirmTransfer: true,
+        } as never),
+      ).resolves.toEqual(OK);
+    });
+
+    it('a manager / admin of another company: the same answer, nothing happens', async () => {
+      prisma.user.findUnique = jest
+        .fn()
+        .mockResolvedValue(person({ role: 'MANAGER' }));
+      await expect(
+        service.createDriver('cA', 'mgrA', dto as never),
+      ).resolves.toEqual(OK);
+      expect(transfers.request).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('never says whose number it is: no 409, no name, no initials', async () => {
+      for (const existing of [person({}), person({ role: 'TEAMLEAD' }), null]) {
+        prisma.user.findUnique = jest.fn().mockResolvedValue(existing);
+        const res = await service.createDriver('cA', 'mgrA', dto as never);
+        expect(JSON.stringify(res)).toBe(JSON.stringify(OK));
+      }
+    });
+
+    it("the caller's own company still gets a plain 'already exists'", async () => {
+      prisma.user.findUnique = jest
+        .fn()
+        .mockResolvedValue(person({ companyId: 'cA' }));
+      await expect(
+        service.createDriver('cA', 'mgrA', dto as never),
+      ).rejects.toThrow(/phoneUsedDriver/);
+      prisma.user.findUnique = jest
+        .fn()
+        .mockResolvedValue(person({ companyId: 'cA', role: 'MANAGER' }));
+      await expect(
+        service.createDriver('cA', 'mgrA', dto as never),
+      ).rejects.toThrow(/phoneUsedUser/);
     });
   });
 

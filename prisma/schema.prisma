@@ -658,18 +658,21 @@ model AnnouncementDraft {
 }
 
 model OtpCode {
-  id         String     @id @default(uuid())
-  phone      String
-  code       String
-  userId     String
-  expiresAt  DateTime
-  attempts   Int        @default(0)
-  usedAt     DateTime?
-  createdAt  DateTime   @default(now())
+  id            String     @id @default(uuid())
+  phone         String
+  code          String
+  userId        String
+  expiresAt     DateTime
+  attempts      Int        @default(0)
+  usedAt        DateTime?
+  createdAt     DateTime   @default(now())
   /// How the code reached the driver (MANAGER = through their manager).
-  channel    OtpChannel @default(SMS)
+  channel       OtpChannel @default(SMS)
   /// MANAGER codes: the manager who received / minted it (audit + notice).
-  issuedById String?
+  issuedById    String?
+  /// The driver pressed "ask my manager": this row is their request. The
+  /// manager's "login code" button is offered only while such a row is live.
+  driverRequest Boolean    @default(false)
 
   user User @relation(fields: [userId], references: [id])
 

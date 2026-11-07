@@ -54,6 +54,29 @@ export class DriverLoginNoticeService {
     );
   }
 
+  /**
+   * To the truck's manager: the driver pressed "ask my manager". `button`:
+   * the code is minted on the driver card (else it went by email).
+   */
+  async managerCodeRequested(
+    managerId: string,
+    driverId: string,
+    button: boolean,
+  ): Promise<void> {
+    const driver = await this.prisma.user.findUnique({
+      where: { id: driverId },
+      select: { firstName: true, lastName: true },
+    });
+    const name = driver ? fullName(driver) : '—';
+    await this.contact.notify(managerId, (locale) =>
+      t(
+        locale,
+        button ? 'contact.codeRequest.button' : 'contact.codeRequest.email',
+        { driver: name },
+      ),
+    );
+  }
+
   async phoneChanged(
     driverId: string,
     managerId: string | null,

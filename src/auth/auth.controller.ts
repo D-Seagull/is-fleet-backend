@@ -145,9 +145,22 @@ export class AuthController {
     return { managerLoginCode: this.AuthService.managerLoginCodeEnabled() };
   }
 
+  // Driver card: is the driver asking this manager for a code right now?
+  // The "login code" button shows only then. Polled by the card.
+  @UseGuards(JwtGuard, RolesGuard)
+  @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')
+  @Get('driver/:id/login-code-request')
+  driverLoginCodeRequest(
+    @Param('id') driverId: string,
+    @GetUser('id') requesterId: string,
+  ) {
+    return this.AuthService.driverLoginCodeRequest(requesterId, driverId);
+  }
+
   // The truck's manager mints a one-time login code to dictate to the
-  // driver. Off unless MANAGER_LOGIN_CODE_ENABLED=true (dev). Per-manager
-  // budget: each code is another 5 guesses at the phone.
+  // driver — only while the driver's "ask my manager" request is live. Off
+  // unless MANAGER_LOGIN_CODE_ENABLED=true (dev). Per-manager budget: each
+  // code is another 5 guesses at the phone.
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @UseGuards(JwtGuard, RolesGuard)
   @Roles('ADMIN', 'TEAMLEAD', 'MANAGER')

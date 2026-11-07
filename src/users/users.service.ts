@@ -34,11 +34,8 @@ import {
 } from './self-profile';
 
 /** Same as shared util but throws 400 — used by create flows. */
-/** "Ivan" → "I." — enough to recognise, not to identify. */
-function initial(name: string | null | undefined): string {
-  const c = (name ?? '').trim().charAt(0);
-  return c ? `${c.toUpperCase()}.` : '';
-}
+/** What POST /users/driver answers for every outcome — see createDriver. */
+const CREATE_DRIVER_OK = { ok: true } as const;
 
 /** Fields every user row carries when a DRIVER is the reader (P1-5). */
 const DRIVER_VIEW_BASE_SELECT = {
@@ -57,9 +54,7 @@ const DRIVER_VIEW_BASE_SELECT = {
 function requireValidPhone(input: string): string {
   const canonical = toCanonicalPhone(input);
   if (!canonical) {
-    throw new BadRequestException(
-      'errors.phoneFormat',
-    );
+    throw new BadRequestException('errors.phoneFormat');
   }
   return canonical;
 }
@@ -133,60 +128,48 @@ export class UsersService {
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2002'
       ) {
-        throw new ConflictException(
-          'errors.userExists',
-        );
+        throw new ConflictException('errors.userExists');
       }
       throw e;
     }
   }
 
+  /**
+   * Add a driver by phone. The answer is `{ ok: true }` whatever the number
+   * is, so this form can't be used to find out who is registered elsewhere
+   * (audit P1-6 — it used to answer 409 with the owner's initials):
+   *  - unknown number → the driver is created in this company;
+   *  - a DRIVER of another company → a consent request is texted to them
+   *    (DriverTransfersService); they join only once they accept;
+   *  - a manager / admin of another company → nothing happens.
+   * Only the caller's OWN company gets a plain "already exists" 409 — that
+   * is their own data.
+   */
   async createDriver(
     companyId: string,
     creatorId: string,
     dto: CreateDriverDto,
   ) {
     const phone = requireValidPhone(dto.phone);
-
-    // Phone is unique across the whole table (drivers move between
-    // companies, e.g. a new job) — look the number up first so we can
-    // tell "already a driver here" apart from "driver somewhere else"
-    // apart from "this number is a manager/admin account".
     const existing = await this.prisma.user.findUnique({ where: { phone } });
 
     if (existing) {
-      if (existing.role !== 'DRIVER') {
-        throw new ConflictException('errors.phoneUsedUser');
-      }
       if (existing.companyId === companyId) {
-        throw new ConflictException('errors.phoneUsedDriver');
+        throw new ConflictException(
+          existing.role === 'DRIVER'
+            ? 'errors.phoneUsedDriver'
+            : 'errors.phoneUsedUser',
+        );
       }
-      if (!dto.confirmTransfer) {
-        // Let the caller confirm the identity before we move anything —
-        // surfaces the existing driver's name in a "this driver already
-        // exists, move them here?" prompt.
-        // Initials only: a phone number must not reveal who owns it in
-        // another company. The `driver` shape stays — installed web /
-        // is-manager builds read it — but carries no id or full name.
-        throw new ConflictException({
-          message: 'errors.driverExistsElsewhere',
-          code: 'DRIVER_EXISTS_ELSEWHERE',
-          driver: {
-            id: '',
-            firstName: initial(existing.firstName),
-            lastName: existing.lastName ? initial(existing.lastName) : null,
-          },
-        });
+      if (existing.role === 'DRIVER') {
+        await this.transfers.request(existing, companyId, creatorId);
       }
-      // Confirmed by the manager — but the driver decides. Nothing moves
-      // until they accept the SMS link (DriverTransfersService.accept); the
-      // caller gets `{ pending: true, code: 'DRIVER_TRANSFER_PENDING' }`.
-      return this.transfers.request(existing, companyId, creatorId);
+      return CREATE_DRIVER_OK;
     }
 
     const hash = dto.password ? await bcrypt.hash(dto.password, 10) : null;
     try {
-      const newDriver = await this.prisma.user.create({
+      await this.prisma.user.create({
         data: {
           firstName: dto.firstName.trim(),
           lastName: dto.lastName?.trim() || null,
@@ -198,16 +181,13 @@ export class UsersService {
           managerId: creatorId,
         },
       });
-      const { password, ...result } = newDriver;
-      return result;
+      return CREATE_DRIVER_OK;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2002'
       ) {
-        throw new ConflictException(
-          'errors.phoneUsedDriver',
-        );
+        throw new ConflictException('errors.phoneUsedDriver');
       }
       throw e;
     }
@@ -228,15 +208,22 @@ export class UsersService {
         lastName: true,
         email: true,
         phone: true,
-        avatar: true, status: true, statusUntil: true, lastSeenAt: true,
+        avatar: true,
+        status: true,
+        statusUntil: true,
+        lastSeenAt: true,
         role: true,
         language: true,
         isActive: true,
         createdAt: true,
         managerId: true,
         teamleadId: true,
-        manager: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-        teamlead: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        manager: {
+          select: { id: true, firstName: true, lastName: true, avatar: true },
+        },
+        teamlead: {
+          select: { id: true, firstName: true, lastName: true, avatar: true },
+        },
         currentTruck: { select: { id: true, plate: true, status: true } },
         company: { select: { name: true } },
         _count: {
@@ -325,12 +312,9 @@ export class UsersService {
       );
     }
     if (dto.teamleadId) {
-      await assertUserInCompany(
-        this.prisma,
-        dto.teamleadId,
-        user.companyId,
-        ['TEAMLEAD'],
-      );
+      await assertUserInCompany(this.prisma, dto.teamleadId, user.companyId, [
+        'TEAMLEAD',
+      ]);
     }
 
     // Track truck change so we can emit the same socket + push notifications
@@ -385,9 +369,14 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
-        ...(dto.firstName !== undefined ? { firstName: dto.firstName.trim() } : {}),
+        ...(dto.firstName !== undefined
+          ? { firstName: dto.firstName.trim() }
+          : {}),
         ...(dto.lastName !== undefined
-          ? { lastName: dto.lastName === null ? null : dto.lastName.trim() || null }
+          ? {
+              lastName:
+                dto.lastName === null ? null : dto.lastName.trim() || null,
+            }
           : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
         ...(dto.language !== undefined ? { language: dto.language } : {}),
@@ -402,8 +391,12 @@ export class UsersService {
         language: true,
         managerId: true,
         teamleadId: true,
-        manager: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-        teamlead: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        manager: {
+          select: { id: true, firstName: true, lastName: true, avatar: true },
+        },
+        teamlead: {
+          select: { id: true, firstName: true, lastName: true, avatar: true },
+        },
         currentTruck: { select: { id: true, plate: true, status: true } },
       },
     });
@@ -446,7 +439,9 @@ export class UsersService {
           [id],
           (lang) => ({
             title: t(lang, 'push.truckAssignment'),
-            body: t(lang, 'push.assignedToTruck', { plate: assignedTruckPlate }),
+            body: t(lang, 'push.assignedToTruck', {
+              plate: assignedTruckPlate,
+            }),
           }),
           {
             data: {
@@ -500,7 +495,8 @@ export class UsersService {
       statusUntil?: string | null;
     },
   ) {
-    const phone = dto.phone !== undefined ? requireValidPhone(dto.phone) : undefined;
+    const phone =
+      dto.phone !== undefined ? requireValidPhone(dto.phone) : undefined;
 
     const statusPatch: {
       status?: 'ONLINE' | 'BUSY' | 'AWAY' | 'SLEEP' | 'VACATION';
@@ -528,9 +524,14 @@ export class UsersService {
       const updated = await this.prisma.user.update({
         where: { id: userId },
         data: {
-          ...(dto.firstName !== undefined ? { firstName: dto.firstName.trim() } : {}),
+          ...(dto.firstName !== undefined
+            ? { firstName: dto.firstName.trim() }
+            : {}),
           ...(dto.lastName !== undefined
-            ? { lastName: dto.lastName === null ? null : dto.lastName.trim() || null }
+            ? {
+                lastName:
+                  dto.lastName === null ? null : dto.lastName.trim() || null,
+              }
             : {}),
           ...(phone !== undefined ? { phone } : {}),
           ...(dto.language !== undefined ? { language: dto.language } : {}),
@@ -574,9 +575,7 @@ export class UsersService {
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2002'
       ) {
-        throw new ConflictException(
-          'errors.phoneUsedUser',
-        );
+        throw new ConflictException('errors.phoneUsedUser');
       }
       throw e;
     }
@@ -694,9 +693,13 @@ export class UsersService {
     // signed link — in storage (audit §7). Best-effort: the account is
     // already anonymised, a storage hiccup must not undo that.
     if (user.avatarPublicId) {
-      await this.storage.deleteFile(user.avatarPublicId).catch((e: Error) =>
-        this.logger.warn(`avatar file of deleted user ${id} kept: ${e.message}`),
-      );
+      await this.storage
+        .deleteFile(user.avatarPublicId)
+        .catch((e: Error) =>
+          this.logger.warn(
+            `avatar file of deleted user ${id} kept: ${e.message}`,
+          ),
+        );
     }
     return { message: 'Account deleted' };
   }
@@ -774,8 +777,14 @@ export class UsersService {
       },
     });
     if (!user) return null;
-    const { email, phone, language, teamlead, managerRatingsReceived, ...base } =
-      user;
+    const {
+      email,
+      phone,
+      language,
+      teamlead,
+      managerRatingsReceived,
+      ...base
+    } = user;
     if (user.role === 'DRIVER') return base;
     return {
       ...base,
@@ -836,7 +845,10 @@ export class UsersService {
         lastName: true,
         email: true,
         phone: true,
-        avatar: true, status: true, statusUntil: true, lastSeenAt: true,
+        avatar: true,
+        status: true,
+        statusUntil: true,
+        lastSeenAt: true,
         role: true,
         language: true,
         isActive: true,
@@ -844,10 +856,30 @@ export class UsersService {
         companyId: true,
         createdAt: true,
         manager: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, email: true, phone: true,  },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            lastSeenAt: true,
+            email: true,
+            phone: true,
+          },
         },
         teamlead: {
-          select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, email: true, phone: true,  },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            lastSeenAt: true,
+            email: true,
+            phone: true,
+          },
         },
         // managerId = the driver's actual manager (the truck's).
         currentTruck: {
@@ -861,7 +893,14 @@ export class UsersService {
             id: true,
             plate: true,
             status: true,
-            currentDriver: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+            currentDriver: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
           },
           orderBy: { plate: 'asc' },
         },
@@ -873,7 +912,10 @@ export class UsersService {
             firstName: true,
             lastName: true,
             phone: true,
-            avatar: true, status: true, statusUntil: true, lastSeenAt: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            lastSeenAt: true,
             currentTruck: { select: { id: true, plate: true } },
           },
           orderBy: { firstName: 'asc' },
@@ -885,7 +927,18 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
+            ratedBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+                status: true,
+                statusUntil: true,
+                lastSeenAt: true,
+                role: true,
+              },
+            },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -896,7 +949,18 @@ export class UsersService {
             comment: true,
             anonymous: true,
             createdAt: true,
-            ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
+            ratedBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+                status: true,
+                statusUntil: true,
+                lastSeenAt: true,
+                role: true,
+              },
+            },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -964,10 +1028,21 @@ export class UsersService {
     if (score < 1 || score > 5) {
       throw new BadRequestException('errors.scoreRange');
     }
-    await this.assertRatee(driverId, companyId, ['DRIVER'], 'errors.driverNotFound');
+    await this.assertRatee(
+      driverId,
+      companyId,
+      ['DRIVER'],
+      'errors.driverNotFound',
+    );
     return this.prisma.driverRating.upsert({
       where: { driverId_ratedById: { driverId, ratedById } },
-      create: { driverId, ratedById, score, comment, anonymous: anonymous ?? false },
+      create: {
+        driverId,
+        ratedById,
+        score,
+        comment,
+        anonymous: anonymous ?? false,
+      },
       update: { score, comment, anonymous: anonymous ?? false },
     });
   }
@@ -992,7 +1067,12 @@ export class UsersService {
 
   async getDriverRatings(driverId: string, companyId: string | null) {
     if (companyId) {
-      await this.assertRatee(driverId, companyId, ['DRIVER'], 'errors.driverNotFound');
+      await this.assertRatee(
+        driverId,
+        companyId,
+        ['DRIVER'],
+        'errors.driverNotFound',
+      );
     }
     const ratings = await this.prisma.driverRating.findMany({
       where: { driverId },
@@ -1002,7 +1082,18 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
+        ratedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            lastSeenAt: true,
+            role: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -1039,7 +1130,11 @@ export class UsersService {
     // their truck — that can be a MANAGER or a TEAMLEAD acting as dispatcher.
     // Accept both so the truck's manager is always rateable.
     const manager = await this.prisma.user.findFirst({
-      where: { id: managerId, role: { in: ['MANAGER', 'TEAMLEAD'] }, companyId },
+      where: {
+        id: managerId,
+        role: { in: ['MANAGER', 'TEAMLEAD'] },
+        companyId,
+      },
       select: { id: true },
     });
     if (!manager) throw new NotFoundException('errors.managerNotFound');
@@ -1075,7 +1170,18 @@ export class UsersService {
         comment: true,
         anonymous: true,
         createdAt: true,
-        ratedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
+        ratedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            statusUntil: true,
+            lastSeenAt: true,
+            role: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -1103,7 +1209,11 @@ export class UsersService {
       await this.storage.deleteFile(user.avatarPublicId as string);
     }
 
-    const { url, storagePath } = await this.storage.uploadWithUrl(file, 'avatars', 'avatar');
+    const { url, storagePath } = await this.storage.uploadWithUrl(
+      file,
+      'avatars',
+      'avatar',
+    );
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
@@ -1147,7 +1257,9 @@ export class UsersService {
         .filter((k) => k in user)
         .map((k) => [k, user[k]]),
     );
-    this.gateway.server.to(user.id).emit('profileUpdated', { user: profile, changed });
+    this.gateway.server
+      .to(user.id)
+      .emit('profileUpdated', { user: profile, changed });
   }
 
   // ── Push tokens ───────────────────────────────────────────────────────

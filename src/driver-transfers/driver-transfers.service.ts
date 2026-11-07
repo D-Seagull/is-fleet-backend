@@ -12,6 +12,9 @@ const TRANSFER_TTL_MS = 24 * 60 * 60 * 1000;
 // companies — the phone number is all a requester needs to trigger a send.
 const RESEND_COOLDOWN_MS = 10 * 60 * 1000;
 const MAX_REQUESTS_PER_DAY = 5;
+// And how many requests ONE company may send in a day — the number is all a
+// requester needs, so this keeps the form from being used to text strangers.
+const MAX_REQUESTS_PER_COMPANY_PER_DAY = 20;
 
 /** What `POST /users/driver` answers while the driver hasn't consented yet. */
 export const TRANSFER_PENDING = {
@@ -76,6 +79,16 @@ export class DriverTransfersService {
     });
     if (today >= MAX_REQUESTS_PER_DAY) {
       this.logger.warn(`transfer SMS cap reached for driver ${driver.id}`);
+      return TRANSFER_PENDING;
+    }
+    const byCompany = await this.prisma.driverTransfer.count({
+      where: {
+        toCompanyId,
+        createdAt: { gt: new Date(now - 24 * 60 * 60 * 1000) },
+      },
+    });
+    if (byCompany >= MAX_REQUESTS_PER_COMPANY_PER_DAY) {
+      this.logger.warn(`transfer SMS cap reached for company ${toCompanyId}`);
       return TRANSFER_PENDING;
     }
 
