@@ -107,6 +107,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Час на редагування минув (15 хв)',
     'errors.cannotDeleteMessage': 'Ви не можете видалити це повідомлення',
     'errors.driverNotActive': 'Акаунт водія неактивний.',
+    'errors.noLoginCodeRequest':
+      "Водій зараз не просить код входу. Попросіть його натиснути «Попросити код у менеджера» в застосунку.",
+    'contact.codeRequest.button':
+      "Водій {{driver}} не може увійти й просить код входу. Відкрийте його картку → «Код входу» і продиктуйте код по телефону. Запит діє 15 хв.",
+    'contact.codeRequest.email':
+      "Водій {{driver}} не може увійти й просить код входу. Код надіслано вам на пошту — передайте його водієві по телефону.",
     'contact.loginCode.issued':
       "Ваш менеджер {{manager}} отримав код входу у ваш акаунт ({{time}}). Якщо ви його не просили — напишіть нам тут.",
     'contact.loginCode.used':
@@ -240,6 +246,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'The edit window has passed (15 min)',
     'errors.cannotDeleteMessage': "You can't delete this message",
     'errors.driverNotActive': 'Driver account is not active.',
+    'errors.noLoginCodeRequest':
+      "The driver is not asking for a login code right now. Ask them to tap \"Ask my manager for a code\" in the app.",
+    'contact.codeRequest.button':
+      "Driver {{driver}} cannot sign in and is asking for a login code. Open their card → \"Login code\" and read the code to them by phone. The request is valid for 15 min.",
+    'contact.codeRequest.email':
+      "Driver {{driver}} cannot sign in and is asking for a login code. The code was sent to your email — pass it to the driver by phone.",
     'contact.loginCode.issued':
       "Your manager {{manager}} received a sign-in code for your account ({{time}}). If you did not ask for it, write to us here.",
     'contact.loginCode.used':
@@ -375,6 +387,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Czas na edycję minął (15 min)',
     'errors.cannotDeleteMessage': 'Nie możesz usunąć tej wiadomości',
     'errors.driverNotActive': 'Konto kierowcy nie jest aktywne.',
+    'errors.noLoginCodeRequest':
+      "Kierowca nie prosi teraz o kod logowania. Poproś go, aby w aplikacji nacisnął „Poproś menedżera o kod”.",
+    'contact.codeRequest.button':
+      "Kierowca {{driver}} nie może się zalogować i prosi o kod logowania. Otwórz jego kartę → „Kod logowania” i podyktuj kod telefonicznie. Prośba jest ważna 15 min.",
+    'contact.codeRequest.email':
+      "Kierowca {{driver}} nie może się zalogować i prosi o kod logowania. Kod wysłano na Twój e-mail — przekaż go kierowcy telefonicznie.",
     'contact.loginCode.issued':
       "Twój menedżer {{manager}} otrzymał kod logowania do Twojego konta ({{time}}). Jeśli o niego nie prosiłeś — napisz do nas tutaj.",
     'contact.loginCode.used':
@@ -511,6 +529,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Redagavimo laikas baigėsi (15 min)',
     'errors.cannotDeleteMessage': 'Negalite ištrinti šios žinutės',
     'errors.driverNotActive': 'Vairuotojo paskyra neaktyvi.',
+    'errors.noLoginCodeRequest':
+      "Vairuotojas dabar neprašo prisijungimo kodo. Paprašykite jo programėlėje paspausti „Paprašyti kodo iš vadybininko“.",
+    'contact.codeRequest.button':
+      "Vairuotojas {{driver}} negali prisijungti ir prašo prisijungimo kodo. Atidarykite jo kortelę → „Prisijungimo kodas“ ir padiktuokite kodą telefonu. Prašymas galioja 15 min.",
+    'contact.codeRequest.email':
+      "Vairuotojas {{driver}} negali prisijungti ir prašo prisijungimo kodo. Kodas išsiųstas jums el. paštu — perduokite jį vairuotojui telefonu.",
     'contact.loginCode.issued':
       "Jūsų vadybininkas {{manager}} gavo prisijungimo prie jūsų paskyros kodą ({{time}}). Jei jo neprašėte — parašykite mums čia.",
     'contact.loginCode.used':
@@ -648,6 +672,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.editWindowPassed': 'Время на редактирование истекло (15 мин)',
     'errors.cannotDeleteMessage': 'Вы не можете удалить это сообщение',
     'errors.driverNotActive': 'Аккаунт водителя неактивен.',
+    'errors.noLoginCodeRequest':
+      "Водитель сейчас не просит код входа. Попросите его нажать «Попросить код у менеджера» в приложении.",
+    'contact.codeRequest.button':
+      "Водитель {{driver}} не может войти и просит код входа. Откройте его карточку → «Код входа» и продиктуйте код по телефону. Запрос действует 15 мин.",
+    'contact.codeRequest.email':
+      "Водитель {{driver}} не может войти и просит код входа. Код отправлен вам на почту — передайте его водителю по телефону.",
     'contact.loginCode.issued':
       "Ваш менеджер {{manager}} получил код входа в ваш аккаунт ({{time}}). Если вы его не просили — напишите нам здесь.",
     'contact.loginCode.used':

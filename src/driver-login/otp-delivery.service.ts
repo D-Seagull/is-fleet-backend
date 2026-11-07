@@ -75,8 +75,31 @@ export class OtpDeliveryService {
     // Telegram also needs its Gateway URL + token — never offer a method
     // that can't send.
     if (method === 'telegram' && !this.telegram.configured()) return false;
-    const raw = this.config.get<string>(flag.env);
-    return raw === 'true' ? true : raw === 'false' ? false : flag.on;
+    // "Ask my manager" works through the email OR the manager's button.
+    if (method === 'manager') {
+      return this.flag(flag.env, flag.on) || this.managerCodeEnabled();
+    }
+    return this.flag(flag.env, flag.on);
+  }
+
+  /** The code is emailed to the truck's manager (LOGIN_MANAGER_EMAIL_ENABLED). */
+  managerEmailEnabled() {
+    const { env, on } = METHOD_FLAGS.manager;
+    return this.flag(env, on);
+  }
+
+  /**
+   * The truck's manager may mint a code on the driver card — only while the
+   * driver has an open "ask my manager" request (MANAGER_LOGIN_CODE_ENABLED,
+   * default off).
+   */
+  managerCodeEnabled() {
+    return this.flag('MANAGER_LOGIN_CODE_ENABLED', false);
+  }
+
+  private flag(env: string, fallback: boolean) {
+    const raw = this.config.get<string>(env);
+    return raw === 'true' ? true : raw === 'false' ? false : fallback;
   }
 
   /** The switched-on methods, in login-screen order (manager last). */

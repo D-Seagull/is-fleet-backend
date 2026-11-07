@@ -30,6 +30,22 @@ describe('OtpDeliveryService flags', () => {
     expect(make({}).enabledMethods()).toEqual(['sms', 'manager']);
   });
 
+  it('"ask my manager" stays on with email off when the manager button is on', () => {
+    const svc = make({
+      LOGIN_MANAGER_EMAIL_ENABLED: 'false',
+      MANAGER_LOGIN_CODE_ENABLED: 'true',
+    });
+    expect(svc.enabledMethods()).toEqual(['sms', 'manager']);
+    expect(svc.managerEmailEnabled()).toBe(false);
+    expect(svc.managerCodeEnabled()).toBe(true);
+  });
+
+  it('"ask my manager" disappears when both email and button are off', () => {
+    expect(
+      make({ LOGIN_MANAGER_EMAIL_ENABLED: 'false' }).enabledMethods(),
+    ).toEqual(['sms']);
+  });
+
   it('a switched-off method has no channel', () => {
     const svc = make({ LOGIN_SMS_ENABLED: 'false' });
     expect(svc.direct('sms')).toBeNull();
@@ -117,4 +133,20 @@ describe('DriverLoginNoticeService', () => {
     expect(text).toContain('+48500111222');
     expect(text).toContain('Olek Sandr');
   });
+
+  it.each([
+    [true, 'card'],
+    [false, 'email'],
+  ])(
+    'driver asked → the manager is told in chat (button=%s → mentions %s)',
+    async (button, word) => {
+      findUnique.mockResolvedValue({ firstName: 'Ann', lastName: 'Driver' });
+      await svc.managerCodeRequested('m1', 'd1', button);
+      const [to, build] = contact.notify.mock.calls[0];
+      expect(to).toBe('m1');
+      const text = build('EN') as string;
+      expect(text).toContain('Ann Driver');
+      expect(text).toContain(word);
+    },
+  );
 });

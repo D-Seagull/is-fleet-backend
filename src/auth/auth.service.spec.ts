@@ -77,7 +77,7 @@ describe('AuthService', () => {
     sendDriverLoginCode: jest.Mock;
   };
   let audit: { record: jest.Mock };
-  let notices: { managerCode: jest.Mock };
+  let notices: { managerCode: jest.Mock; managerCodeRequested: jest.Mock };
   const setEnv = (vars: Record<string, string>) =>
     config.get.mockImplementation((k: string) => vars[k]);
   let emit: jest.Mock;
@@ -129,7 +129,10 @@ describe('AuthService', () => {
       sendDriverLoginCode: jest.fn().mockResolvedValue(undefined),
     };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
-    notices = { managerCode: jest.fn().mockResolvedValue(undefined) };
+    notices = {
+      managerCode: jest.fn().mockResolvedValue(undefined),
+      managerCodeRequested: jest.fn().mockResolvedValue(undefined),
+    };
     emit = jest.fn();
     disconnectSockets = jest.fn();
     const gateway = {
@@ -864,6 +867,7 @@ describe('AuthService', () => {
           code: otpHash(opts.code),
           channel: 'MANAGER',
           issuedById: 'm1',
+          driverRequest: true,
         }),
       );
       expect(row.expiresAt.getTime() - Date.now()).toBeGreaterThan(14 * 60_000);
@@ -877,7 +881,40 @@ describe('AuthService', () => {
         }),
       );
       expect(notices.managerCode).toHaveBeenCalledWith('issued', 'u1', 'm1');
+      // The manager hears about it in chat too (email variant).
+      expect(notices.managerCodeRequested).toHaveBeenCalledWith(
+        'm1',
+        'u1',
+        false,
+      );
       expect(sms.send).not.toHaveBeenCalled();
+    });
+
+    it('button only (email off): stores the request, emails nothing, tells the manager to open the card', async () => {
+      setEnv({
+        LOGIN_MANAGER_EMAIL_ENABLED: 'false',
+        MANAGER_LOGIN_CODE_ENABLED: 'true',
+      });
+      prisma.user.findUnique.mockResolvedValue(
+        withManager(manager({ email: null })),
+      );
+      await service.requestDriverOtp(VALID_PHONE, 'manager');
+
+      expect(prisma.otpCode.create.mock.calls[0][0].data).toEqual(
+        expect.objectContaining({
+          channel: 'MANAGER',
+          issuedById: 'm1',
+          driverRequest: true,
+        }),
+      );
+      expect(mail.sendDriverLoginCode).not.toHaveBeenCalled();
+      // No code has reached anyone yet — the driver is told when one is minted.
+      expect(notices.managerCode).not.toHaveBeenCalled();
+      expect(notices.managerCodeRequested).toHaveBeenCalledWith(
+        'm1',
+        'u1',
+        true,
+      );
     });
 
     it('still answers ok when the email fails', async () => {
@@ -907,6 +944,10 @@ describe('AuthService', () => {
           Promise.resolve(where.id === 'm1' ? req : drv),
       );
     const enable = () => setEnv({ MANAGER_LOGIN_CODE_ENABLED: 'true' });
+    const openRequest = () =>
+      prisma.otpCode.findFirst.mockResolvedValue({
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      });
 
     it('is refused while MANAGER_LOGIN_CODE_ENABLED is off (default)', async () => {
       rows(requester, driver());
@@ -920,6 +961,7 @@ describe('AuthService', () => {
     it('issues a 15-minute MANAGER code, audits it and tells the driver', async () => {
       enable();
       rows(requester, driver());
+      openRequest();
       prisma.otpCode.create.mockImplementation(({ data }) =>
         Promise.resolve({ id: 'o1', ...data }),
       );
@@ -934,8 +976,18 @@ describe('AuthService', () => {
           code: otpHash(res.code),
           channel: 'MANAGER',
           issuedById: 'm1',
+          driverRequest: false,
         }),
       });
+      // Looked up the driver's own open request to THIS manager.
+      expect(prisma.otpCode.findFirst.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({
+          userId: 'd1',
+          issuedById: 'm1',
+          driverRequest: true,
+          usedAt: null,
+        }),
+      );
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'CODE_ISSUED',
@@ -966,6 +1018,17 @@ describe('AuthService', () => {
       expect(notices.managerCode).not.toHaveBeenCalled();
     });
 
+    it('refuses without a live request from the driver — never on the manager alone', async () => {
+      enable();
+      rows(requester, driver());
+      prisma.otpCode.findFirst.mockResolvedValue(null);
+      await expect(service.issueDriverLoginCode('m1', 'd1')).rejects.toThrow(
+        /noLoginCodeRequest/,
+      );
+      expect(prisma.otpCode.create).not.toHaveBeenCalled();
+      expect(notices.managerCode).not.toHaveBeenCalled();
+    });
+
     it('refuses a deactivated requester', async () => {
       enable();
       rows({ ...requester, isActive: false }, driver());
@@ -981,6 +1044,70 @@ describe('AuthService', () => {
         service.issueDriverLoginCode('m1', 'd1'),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.otpCode.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('driverLoginCodeRequest (drives the button)', () => {
+    const rows = (drv: unknown) =>
+      prisma.user.findUnique.mockImplementation(
+        ({ where }: { where: { id: string } }) =>
+          Promise.resolve(
+            where.id === 'm1'
+              ? { id: 'm1', companyId: 'c1', isActive: true }
+              : drv,
+          ),
+      );
+    const drv = {
+      id: 'd1',
+      role: 'DRIVER',
+      companyId: 'c1',
+      currentTruck: { managerId: 'm1' },
+    };
+
+    it('feature off → never pending', async () => {
+      rows(drv);
+      prisma.otpCode.findFirst.mockResolvedValue({ expiresAt: new Date() });
+      await expect(service.driverLoginCodeRequest('m1', 'd1')).resolves.toEqual(
+        {
+          pending: false,
+        },
+      );
+    });
+
+    it('pending while the driver has a live request to this manager', async () => {
+      setEnv({ MANAGER_LOGIN_CODE_ENABLED: 'true' });
+      rows(drv);
+      const expiresAt = new Date(Date.now() + 60_000);
+      prisma.otpCode.findFirst.mockResolvedValue({ expiresAt });
+      await expect(service.driverLoginCodeRequest('m1', 'd1')).resolves.toEqual(
+        {
+          pending: true,
+          expiresAt,
+        },
+      );
+    });
+
+    it('no request → not pending', async () => {
+      setEnv({ MANAGER_LOGIN_CODE_ENABLED: 'true' });
+      rows(drv);
+      prisma.otpCode.findFirst.mockResolvedValue(null);
+      await expect(service.driverLoginCodeRequest('m1', 'd1')).resolves.toEqual(
+        {
+          pending: false,
+        },
+      );
+    });
+
+    it("another manager never sees someone else's request", async () => {
+      setEnv({ MANAGER_LOGIN_CODE_ENABLED: 'true' });
+      rows({ ...drv, currentTruck: { managerId: 'm2' } });
+      prisma.otpCode.findFirst.mockResolvedValue({ expiresAt: new Date() });
+      await expect(service.driverLoginCodeRequest('m1', 'd1')).resolves.toEqual(
+        {
+          pending: false,
+        },
+      );
+      expect(prisma.otpCode.findFirst).not.toHaveBeenCalled();
     });
   });
 
