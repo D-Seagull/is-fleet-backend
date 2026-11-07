@@ -12,7 +12,9 @@ export const DRIVER_OTP_CHANNELS = [
   'sms',
   'whatsapp',
   'telegram',
-  'manager',
+  // Through the manager of the driver's truck — two separate methods:
+  'manager', // the code is emailed to the manager
+  'manager_code', // the manager gets a one-time "generate code" button
 ] as const;
 export type DriverOtpChannel = (typeof DRIVER_OTP_CHANNELS)[number];
 
@@ -21,7 +23,14 @@ export const CHANNEL_TO_DB: Record<DriverOtpChannel, OtpChannel> = {
   whatsapp: 'WHATSAPP',
   telegram: 'TELEGRAM',
   manager: 'MANAGER',
+  manager_code: 'MANAGER',
 };
+
+/** The methods that go through the manager (not delivered to the driver). */
+export const MANAGER_METHODS = ['manager', 'manager_code'] as const;
+export type ManagerMethod = (typeof MANAGER_METHODS)[number];
+export const isManagerMethod = (m: string): m is ManagerMethod =>
+  (MANAGER_METHODS as readonly string[]).includes(m);
 
 /** The driver fields a channel needs to deliver. */
 export interface OtpRecipient {
@@ -30,9 +39,9 @@ export interface OtpRecipient {
   uiLocale: string;
 }
 
-/** Delivers a code to the driver directly (every channel but `manager`). */
+/** Delivers a code to the driver directly (every method but the manager ones). */
 export interface OtpDeliveryChannel {
-  readonly name: Exclude<DriverOtpChannel, 'manager'>;
+  readonly name: Exclude<DriverOtpChannel, ManagerMethod>;
   deliver(
     driver: OtpRecipient,
     code: string,

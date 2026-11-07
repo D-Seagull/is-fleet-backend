@@ -22,7 +22,12 @@ import { OtpChannel } from '@prisma/client';
 import { OtpDeliveryService } from 'src/driver-login/otp-delivery.service';
 import { AuthAuditService } from 'src/driver-login/auth-audit.service';
 import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
-import { CHANNEL_TO_DB, DriverOtpChannel } from 'src/driver-login/otp-channels';
+import {
+  CHANNEL_TO_DB,
+  DriverOtpChannel,
+  ManagerMethod,
+  isManagerMethod,
+} from 'src/driver-login/otp-channels';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
@@ -508,12 +513,15 @@ export class AuthService {
       return { ok: true };
     }
 
-    if (channel === 'manager') {
-      if (!this.delivery.isEnabled('manager')) {
-        this.logger.warn(`OTP request: method "manager" is off — nothing sent`);
+    if (isManagerMethod(channel)) {
+      const method = channel;
+      if (!this.delivery.isEnabled(method)) {
+        this.logger.warn(
+          `OTP request: method "${channel}" is off — nothing sent`,
+        );
         return { ok: true };
       }
-      return this.requestViaManager(driver, phone, ip);
+      return this.requestViaManager(driver, phone, method, ip);
     }
 
     const target = this.delivery.direct(channel);
@@ -600,12 +608,20 @@ export class AuthService {
     return phone === reviewPhone ? reviewOtp : null;
   }
 
-  /** One code per phone per channel per minute. */
-  private async assertOtpCooldown(phone: string, channel: OtpChannel) {
+  /**
+   * One code per phone per channel per minute. The two manager methods share
+   * the MANAGER channel; `driverRequest` tells them apart.
+   */
+  private async assertOtpCooldown(
+    phone: string,
+    channel: OtpChannel,
+    driverRequest?: boolean,
+  ) {
     const lastSent = await this.prisma.otpCode.findFirst({
       where: {
         phone,
         channel,
+        ...(driverRequest === undefined ? {} : { driverRequest }),
         createdAt: { gt: new Date(Date.now() - OTP_RESEND_COOLDOWN_MS) },
       },
       orderBy: { createdAt: 'desc' },
@@ -624,53 +640,57 @@ export class AuthService {
   // company — ever gets the code. User.managerId is NOT used: it is just
   // whoever created the driver and never follows truck reassignments.
   //
-  // It always starts with the DRIVER: "ask my manager" stores a request row
-  // (OtpCode.driverRequest). Then, depending on the flags:
-  //  - LOGIN_MANAGER_EMAIL_ENABLED: that row's code is emailed to the manager;
-  //  - MANAGER_LOGIN_CODE_ENABLED: the manager's "login code" button shows on
-  //    the driver card — only while the request is live (15 min, until the
-  //    driver signs in) and for ONE code: generating closes the request.
+  // Two separate methods, each behind its own flag, both started by the
+  // DRIVER on the sign-in screen:
+  //  - `manager` (LOGIN_MANAGER_EMAIL_ENABLED): the code is emailed to the
+  //    manager, who passes it on by phone;
+  //  - `manager_code` (MANAGER_LOGIN_CODE_ENABLED): a request row
+  //    (OtpCode.driverRequest) makes the manager's "generate code" button
+  //    show on the driver card — only while the request is live (15 min,
+  //    until the driver signs in) and for ONE code: generating closes it.
   //    With no request there is no button and the route refuses, so a
   //    manager can't mint codes for a driver on their own.
-  // The driver is told in the IS Fleet contact chat when a code reaches the
-  // manager and when one is used; every step lands in AuthAuditLog.
+  // The manager is told in the IS Fleet contact chat; the driver is told
+  // there when a code reaches the manager and when one is used; every step
+  // lands in AuthAuditLog.
 
   /**
-   * Driver side: "ask my manager". Always `{ ok: true }` (see requestDriverOtp).
+   * Driver side: one of the two manager methods. Always `{ ok: true }` (see
+   * requestDriverOtp).
    */
   private async requestViaManager(
     driver: NonNullable<Awaited<ReturnType<AuthService['findDriverForOtp']>>>,
     phone: string,
+    method: ManagerMethod,
     ip?: string | null,
   ) {
     const manager = driver.currentTruck?.manager;
-    const byEmail = this.delivery.managerEmailEnabled() && !!manager?.email;
-    const byButton = this.delivery.managerCodeEnabled();
+    const byEmail = method === 'manager';
     if (
       !manager ||
       !manager.isActive ||
       manager.companyId !== driver.companyId ||
-      (!byEmail && !byButton)
+      (byEmail && !manager.email)
     ) {
       this.logger.warn(
-        `Manager-code request for driver ${driver.id}: no reachable truck manager — nothing sent`,
+        `Manager ${method} request for driver ${driver.id}: no reachable truck manager — nothing sent`,
       );
       return { ok: true };
     }
 
-    await this.assertOtpCooldown(phone, 'MANAGER');
+    await this.assertOtpCooldown(phone, 'MANAGER', !byEmail);
 
-    // The request row. Its code is the one emailed (if email is on); with
-    // the button only, nobody ever sees it — it just marks the request.
+    // Email: the code that goes in the letter. Button: a request marker —
+    // nobody ever sees its code; the manager mints a fresh one.
     const code = this.newOtpCode();
     await this.storeOtp(
       driver.id,
       phone,
       code,
-      'manager',
+      method,
       MANAGER_CODE_TTL_MS,
       manager.id,
-      true,
+      !byEmail,
     );
     await this.audit.record({
       action: 'CODE_ISSUED',
@@ -703,9 +723,8 @@ export class AuthService {
       // A code is now in the manager's hands — the driver should know.
       await this.notices.managerCode('issued', driver.id, manager.id);
     }
-    // Tell the manager in their chat — with the button, that's where they
-    // learn to open the driver card.
-    await this.notices.managerCodeRequested(manager.id, driver.id, byButton);
+    // Tell the manager in their chat: "check your email" / "open the card".
+    await this.notices.managerCodeRequested(manager.id, driver.id, !byEmail);
     return { ok: true };
   }
 
