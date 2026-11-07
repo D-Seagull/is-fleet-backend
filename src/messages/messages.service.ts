@@ -16,7 +16,11 @@ import { MessagesGateway } from './messages.gateway';
 import { fullName } from '../common/utils/full-name';
 import { t } from '../i18n/i18n';
 import { pushTitle } from '../push/push-titles';
-import { assertTripAccess, type Requester } from '../common/utils/access';
+import {
+  assertTripAccess,
+  driverStillInCompany,
+  type Requester,
+} from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
 
 @Injectable()
@@ -47,6 +51,16 @@ export class MessagesService {
         'errors.onlyDriverOrManagerChat',
       );
     }
+    // A driver transferred to another company no longer belongs in this chat.
+    if (senderId === trip.driverId) {
+      const stillHere = await this.prisma.user.findFirst({
+        where: { id: senderId, companyId: trip.companyId },
+        select: { id: true },
+      });
+      if (!stillHere) {
+        throw new ForbiddenException('errors.onlyDriverOrManagerChat');
+      }
+    }
 
     // Translation is intentionally stubbed for now — the feature isn't wired
     // up end-to-end yet and the Google Translate API call was blocking the
@@ -55,14 +69,14 @@ export class MessagesService {
     // and broadcast a separate `messageTranslated` patch event.
     const translatedContent: string | null = null;
 
-    // A quote must come from this trip (audit M1).
+    const session = await this.sessions.getActiveSessionOrThrow(dto.tripId);
+
+    // A quote must come from this trip AND this chat session (audit M1).
     await assertReplyTargets(
       this.prisma,
-      { trip: dto.tripId },
+      { trip: dto.tripId, sessionId: session.id },
       { messageId: dto.replyToId, documentId: dto.replyToDocumentId },
     );
-
-    const session = await this.sessions.getActiveSessionOrThrow(dto.tripId);
 
     const message = await this.prisma.message.create({
       data: {
@@ -120,7 +134,14 @@ export class MessagesService {
     // it — `whenActive: 'skip'` holds the push back then.
     const recipientId =
       senderId === trip.driverId ? trip.managerId : trip.driverId;
-    if (recipientId) {
+    // A driver moved to another company gets nothing from the old company.
+    const recipientIsStale =
+      recipientId === trip.driverId &&
+      !(await this.prisma.user.findFirst({
+        where: { id: recipientId, companyId: trip.companyId },
+        select: { id: true },
+      }));
+    if (recipientId && !recipientIsStale) {
       void (async () => {
         const senderName = fullName(message.sender);
         const plate = message.trip?.truck?.plate;
@@ -413,6 +434,7 @@ export class MessagesService {
           AND m."senderId" != ${driverId}
           AND t."driverId" = ${driverId}
           AND t."deletedAt" IS NULL
+          AND t."companyId" = (SELECT "companyId" FROM "User" WHERE id = ${driverId})
           AND m."sessionId" IN (
             SELECT id FROM "TripChatSession" WHERE "driverId" = ${driverId}
           )
@@ -431,6 +453,7 @@ export class MessagesService {
           AND td."deletedAt" IS NULL
           AND t."driverId" = ${driverId}
           AND t."deletedAt" IS NULL
+          AND t."companyId" = (SELECT "companyId" FROM "User" WHERE id = ${driverId})
       ),
       trip_counts AS (
         SELECT "tripId", trip_title, is_active, COUNT(*)::int AS unread

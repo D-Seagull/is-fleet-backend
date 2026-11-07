@@ -113,6 +113,8 @@ function departResetFor(status?: TripStatus) {
     : { departPromptAt: null };
 }
 
+import { driverStillInCompany } from '../common/utils/access';
+
 @Injectable()
 export class TripsService {
   private readonly logger = new Logger(TripsService.name);
@@ -251,7 +253,7 @@ export class TripsService {
   // Driver's own trips — used by the driver mobile app.
   async findMyTrips(driverId: string) {
     return this.prisma.trip.findMany({
-      where: { driverId, deletedAt: null },
+      where: { driverId, deletedAt: null, ...driverStillInCompany(driverId) },
       include: tripInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -265,6 +267,7 @@ export class TripsService {
       where: {
         driverId,
         deletedAt: null,
+        ...driverStillInCompany(driverId),
         status: { in: [...ACTIVE_STATUSES] },
         truck: { currentDriverId: driverId },
       },
@@ -488,6 +491,8 @@ export class TripsService {
         trip.managerId,
         triggeredById,
       );
+      // The replaced driver's live sockets would keep receiving the new chat.
+      this.gateway.server.in(trip.driverId).socketsLeave(id);
       this.emitTripUpdated(id, trip.companyId, driverId);
       if (systemMessage) {
         this.gateway.server.to(id).emit('newMessage', systemMessage);
@@ -884,6 +889,10 @@ export class TripsService {
       { data: { type: 'NEW_TRIP', tripId, truckId } },
     );
 
+    // The previous driver's live sockets must leave the trip room.
+    if (previousDriverId && previousDriverId !== newDriverId) {
+      this.gateway.server.in(previousDriverId).socketsLeave(tripId);
+    }
     this.emitTripUpdated(tripId, companyId, newDriverId);
     // І менеджеру рейсу — у нього змінився трак під завантаженням, а разом з
     // ним і те, що він бачить у панелі машини.
@@ -1107,7 +1116,7 @@ export class TripsService {
 
   async driverUpdateStatus(id: string, driverId: string, dto: UpdateTripDto) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, driverId, deletedAt: null },
+      where: { id, driverId, deletedAt: null, ...driverStillInCompany(driverId) },
     });
     if (!trip) throw new ForbiddenException('errors.noAccessTrip');
     const updated = await this.prisma.trip.update({
@@ -1221,7 +1230,7 @@ export class TripsService {
 
   async answerDepart(id: string, driverId: string, depart: boolean) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, driverId, deletedAt: null },
+      where: { id, driverId, deletedAt: null, ...driverStillInCompany(driverId) },
       include: { truck: { select: { plate: true } } },
     });
     if (!trip) throw new ForbiddenException('errors.noAccessTrip');

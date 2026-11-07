@@ -12,6 +12,7 @@ import { DirectMessagesGateway } from '../direct-messages/direct-messages.gatewa
 import { ReactionsService } from '../reactions/reactions.service';
 import { assertCanMessageUser, type Requester } from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
+import { finishBatch } from '../common/utils/batch-rollback';
 
 @Injectable()
 export class DirectMessageDocumentsService {
@@ -49,13 +50,16 @@ export class DirectMessageDocumentsService {
     // position so the album keeps the order they were sent in (the sender's
     // instant preview already shows them that way).
     const sentAt = Date.now();
-    const created = await Promise.all(
+    const stored: { storagePath: string; thumbPath: string | null }[] = [];
+    const rowIds: string[] = [];
+    const settled = await Promise.allSettled(
       files.map(async (file, index) => {
         const isImage = file.mimetype.startsWith('image/');
         const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
 
         const { storagePath, thumbPath } =
           await this.storage.uploadAttachment(file);
+        stored.push({ storagePath, thumbPath: thumbPath ?? null });
 
         const doc = await this.prisma.directMessageDocument.create({
           data: {
@@ -99,12 +103,20 @@ export class DirectMessageDocumentsService {
           },
         });
 
+        rowIds.push(doc.id);
+
         const [signedUrl, thumbUrl] = await Promise.all([
           this.storage.getSignedUrl(storagePath, 3600),
           this.storage.getThumbUrl(thumbPath),
         ]);
         return { ...doc, signedUrl, thumbUrl };
       }),
+    );
+    const created = await finishBatch(
+      settled,
+      stored,
+      () => this.prisma.directMessageDocument.deleteMany({ where: { id: { in: rowIds } } }),
+      this.storage,
     );
 
     // Real-time push: обом учасникам у DM-room

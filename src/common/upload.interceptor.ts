@@ -64,17 +64,41 @@ export function UploadInterceptor(
       const handler = opts.single
         ? this.multer.single(field)
         : this.multer.array(field, policy.maxFiles);
-      await new Promise<void>((resolve, reject) =>
-        handler(req, res, (err: unknown) =>
-          err ? reject(toHttpError(err)) : resolve(),
-        ),
-      );
+      await new Promise<void>((resolve, reject) => {
+        // No (or a lying) Content-Length: count the bytes as they stream in and
+        // cut the request off at the cap, before multer buffers it all.
+        let seen = 0;
+        let done = false;
+        const onData = (chunk: Buffer) => {
+          seen += chunk.length;
+          if (!done && seen > policy.maxTotalBytes) {
+            done = true;
+            req.off('data', onData);
+            req.unpipe();
+            req.resume(); // drain and discard the rest
+            reject(new PayloadTooLargeException('errors.uploadTooLarge'));
+          }
+        };
+        req.on('data', onData);
+        handler(req, res, (err: unknown) => {
+          req.off('data', onData);
+          if (done) return;
+          done = true;
+          err ? reject(toHttpError(err)) : resolve();
+        });
+      });
 
       const files = opts.single
         ? req.file
           ? [req.file]
           : []
         : ((req.files as Express.Multer.File[] | undefined) ?? []);
+      // A chunked request has no Content-Length, so the check above never saw
+      // it — enforce the whole-request cap on what multer actually received.
+      const received = files.reduce((sum, f) => sum + (f.size ?? 0), 0);
+      if (received > policy.maxTotalBytes) {
+        throw new PayloadTooLargeException('errors.uploadTooLarge');
+      }
       for (const file of files) assertAllowedFile(file, kind);
 
       return next.handle();

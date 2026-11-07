@@ -440,6 +440,11 @@ export class GroupsService {
         .to(`group:${groupId}`)
         .emit('new_group_message', noticeMsg);
     }
+    // Their live sockets are still in the room — drop them so nothing new
+    // reaches the removed member until they're re-added.
+    this.gateway.server
+      .in(`user:${managerId}`)
+      .socketsLeave(`group:${groupId}`);
     return { message: 'Менеджер видалений з групи' };
   }
 

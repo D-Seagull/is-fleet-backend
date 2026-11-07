@@ -722,7 +722,7 @@ export class UsersService {
       }),
       // Sessions end now, not when the (90-day, for drivers) token expires.
       this.prisma.refreshToken.updateMany({
-        where: { userId: id, revokedAt: null },
+        where: { userId: id, expiresAt: { gt: new Date() } },
         data: { revokedAt: new Date(), expiresAt: new Date() },
       }),
     ]);

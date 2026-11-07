@@ -41,6 +41,7 @@ describe('TripsService', () => {
   let push: { sendLocalizedToUsers: jest.Mock };
   let emit: jest.Mock;
   let toRoom: jest.Mock;
+  let socketsLeave: jest.Mock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -82,7 +83,10 @@ describe('TripsService', () => {
     push = { sendLocalizedToUsers: jest.fn().mockResolvedValue(undefined) };
     emit = jest.fn();
     toRoom = jest.fn().mockReturnValue({ emit });
-    const gateway = { server: { to: toRoom } };
+    socketsLeave = jest.fn();
+    const gateway = {
+      server: { to: toRoom, in: jest.fn().mockReturnValue({ socketsLeave }) },
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [

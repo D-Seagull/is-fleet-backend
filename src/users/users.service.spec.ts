@@ -181,7 +181,7 @@ describe('UsersService', () => {
       prisma.user.findFirst.mockResolvedValue(userRow({ role: 'DRIVER' }));
       await service.deactivate('u1', 'c1', as('MANAGER'));
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
-        where: { userId: 'u1', revokedAt: null },
+        where: { userId: 'u1', expiresAt: { gt: expect.any(Date) } },
         data: { revokedAt: expect.any(Date), expiresAt: expect.any(Date) },
       });
       expect(prisma.$transaction).toHaveBeenCalled();
