@@ -22,10 +22,7 @@ import { OtpChannel } from '@prisma/client';
 import { OtpDeliveryService } from 'src/driver-login/otp-delivery.service';
 import { AuthAuditService } from 'src/driver-login/auth-audit.service';
 import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
-import {
-  CHANNEL_TO_DB,
-  DriverOtpChannel,
-} from 'src/driver-login/otp-channels';
+import { CHANNEL_TO_DB, DriverOtpChannel } from 'src/driver-login/otp-channels';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
@@ -632,8 +629,9 @@ export class AuthService {
   //  - LOGIN_MANAGER_EMAIL_ENABLED: that row's code is emailed to the manager;
   //  - MANAGER_LOGIN_CODE_ENABLED: the manager's "login code" button shows on
   //    the driver card — only while the request is live (15 min, until the
-  //    driver signs in). With no request there is no button and the route
-  //    refuses, so a manager can't mint codes for a driver on their own.
+  //    driver signs in) and for ONE code: generating closes the request.
+  //    With no request there is no button and the route refuses, so a
+  //    manager can't mint codes for a driver on their own.
   // The driver is told in the IS Fleet contact chat when a code reaches the
   // manager and when one is used; every step lands in AuthAuditLog.
 
@@ -757,7 +755,7 @@ export class AuthService {
       driver.role === 'DRIVER' &&
       driver.currentTruck?.managerId === requester.id &&
       driver.companyId === requester.companyId;
-    return ok ? { requester: requester!, driver: driver! } : null;
+    return ok ? { requester, driver } : null;
   }
 
   /**
@@ -825,6 +823,18 @@ export class AuthService {
       actorId: requester.id,
       channel: 'MANAGER',
       ip,
+    });
+    // One request, one code: the request closes, so the button goes away
+    // and the next code needs a new "ask my manager" from the driver. The
+    // request row itself stays a valid code (it may be the emailed one).
+    await this.prisma.otpCode.updateMany({
+      where: {
+        userId: driver.id,
+        issuedById: requester.id,
+        driverRequest: true,
+        usedAt: null,
+      },
+      data: { driverRequest: false },
     });
     this.logger.log(
       `Login code issued by manager ${requester.id} for driver ${driver.id} (${maskPhone(phone)})`,

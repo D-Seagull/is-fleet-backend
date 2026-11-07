@@ -988,6 +988,16 @@ describe('AuthService', () => {
           usedAt: null,
         }),
       );
+      // One request, one code: the request closes (the button goes away).
+      expect(prisma.otpCode.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: 'd1',
+          issuedById: 'm1',
+          driverRequest: true,
+          usedAt: null,
+        },
+        data: { driverRequest: false },
+      });
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'CODE_ISSUED',

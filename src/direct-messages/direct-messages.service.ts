@@ -252,6 +252,9 @@ export class DirectMessagesService {
           -- read it as local time ("last in the app 12:30" in the header).
           'lastSeenAt', to_char(peer."lastSeenAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
           'role', peer.role,
+          -- The IS Fleet contact (role ADMIN): clients list it with the
+          -- managers so service notices aren't lost.
+          'isSystem', peer."isSystem",
           'phone', peer.phone,
           'truckPlate', pt.plate
         ) AS user,
