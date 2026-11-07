@@ -36,10 +36,10 @@ export class CreateDriverDto {
   language?: Language;
 
   /**
-   * Set when the manager has already seen the "this driver exists in
-   * another company" prompt and confirmed the move. Without it, a phone
-   * match against a driver in a different company returns 409 with the
-   * existing driver's name instead of creating/transferring anything.
+   * Deprecated and ignored. Installed web / is-manager builds still send it
+   * after their "this driver exists elsewhere" prompt, which the server no
+   * longer shows (audit P1-6: the phone owner is never revealed) — a number
+   * registered with another company always gets the consent SMS directly.
    */
   @IsBoolean()
   @IsOptional()
