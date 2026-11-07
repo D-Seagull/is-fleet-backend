@@ -16,6 +16,7 @@ import { TranslationModule } from './translation/translation.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AlarmsModule } from './alarms/alarms.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
 import { GroupsModule } from './groups/groups.module';
 import { MailModule } from './mail/mail.module';
 import { CompaniesModule } from './companies/companies.module';
@@ -55,6 +56,9 @@ import { validateEnv } from './config/env.validation';
     ScheduleModule.forRoot(),
     AlarmsModule,
     AnnouncementsModule,
+
+    // Nightly purge of old OTP / token / transfer rows and old sign-in IPs.
+    MaintenanceModule,
     GroupsModule,
     MailModule,
     CompaniesModule,
