@@ -25,6 +25,7 @@ import {
   hasGroupAccess,
 } from 'src/common/utils/access';
 import { pushTitle } from '../push/push-titles';
+import { dedupeSend } from 'src/common/utils/send-dedupe';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class DirectMessagesGateway
@@ -101,6 +102,8 @@ export class DirectMessagesGateway
       content: string;
       replyToId?: string | null;
       replyToDocumentId?: string | null;
+      /** Outbox id — a retry of the same send returns the first result. */
+      clientId?: string;
     },
   ) {
     const me = await socketUser(client);
@@ -111,7 +114,10 @@ export class DirectMessagesGateway
       );
       return { error: 'unauthenticated' };
     }
-    if (typeof data?.receiverId !== 'string' || typeof data.content !== 'string') {
+    if (
+      typeof data?.receiverId !== 'string' ||
+      typeof data.content !== 'string'
+    ) {
       return { error: 'invalid' };
     }
     // Same company (or an ADMIN on either side) — no DMs, and so no pushes,
@@ -128,51 +134,53 @@ export class DirectMessagesGateway
     if (await isCompanyWriteBlocked(this.prisma, senderId)) {
       return { error: 'errors.companyDeactivated' };
     }
-    let message: Awaited<ReturnType<DirectMessagesService['createMessage']>>;
-    try {
-      message = await this.service.createMessage(
-        senderId,
-        data.receiverId,
-        data.content,
-        data.replyToId ?? null,
-        data.replyToDocumentId ?? null,
-      );
-    } catch (e) {
-      // e.g. a reply quoting another conversation (404) — answer, don't crash.
-      if (e instanceof HttpException) return { error: e.message };
-      throw e;
-    }
+    return dedupeSend(senderId, data.clientId, async () => {
+      let message: Awaited<ReturnType<DirectMessagesService['createMessage']>>;
+      try {
+        message = await this.service.createMessage(
+          senderId,
+          data.receiverId,
+          data.content,
+          data.replyToId ?? null,
+          data.replyToDocumentId ?? null,
+        );
+      } catch (e) {
+        // e.g. a reply quoting another conversation (404) — answer, don't crash.
+        if (e instanceof HttpException) return { error: e.message };
+        throw e;
+      }
 
-    // Відправляємо обом учасникам
-    this.server.to(`user:${senderId}`).emit('new_direct_message', message);
-    this.server
-      .to(`user:${data.receiverId}`)
-      .emit('new_direct_message', message);
+      // Відправляємо обом учасникам
+      this.server.to(`user:${senderId}`).emit('new_direct_message', message);
+      this.server
+        .to(`user:${data.receiverId}`)
+        .emit('new_direct_message', message);
 
-    // Push the recipient unless they're using the app — then the socket event
-    // above already shows it (`whenActive: 'skip'`). Never push the sender.
-    void (async () => {
-      const senderName = fullName(message.sender);
-      await this.push.sendLocalizedToUsers(
-        [data.receiverId],
-        (lang) => ({
-          title: pushTitle.direct(senderName, t(lang, 'push.newMessage')),
-          body: data.content.slice(0, 200),
-        }),
-        {
-          sound: 'push_message.mp3',
-          channelId: 'chat',
-          whenActive: 'skip',
-          data: {
-            type: 'DM_MESSAGE',
-            userId: senderId,
-            messageId: message.id,
+      // Push the recipient unless they're using the app — then the socket event
+      // above already shows it (`whenActive: 'skip'`). Never push the sender.
+      void (async () => {
+        const senderName = fullName(message.sender);
+        await this.push.sendLocalizedToUsers(
+          [data.receiverId],
+          (lang) => ({
+            title: pushTitle.direct(senderName, t(lang, 'push.newMessage')),
+            body: data.content.slice(0, 200),
+          }),
+          {
+            sound: 'push_message.mp3',
+            channelId: 'chat',
+            whenActive: 'skip',
+            data: {
+              type: 'DM_MESSAGE',
+              userId: senderId,
+              messageId: message.id,
+            },
           },
-        },
-      );
-    })();
+        );
+      })();
 
-    return message;
+      return message;
+    });
   }
   @SubscribeMessage('typing_start')
   async handleTypingStart(
@@ -181,9 +189,7 @@ export class DirectMessagesGateway
   ) {
     const userId = (await socketUser(client))?.userId;
     if (!userId || typeof data?.receiverId !== 'string') return;
-    this.server
-      .to(`user:${data.receiverId}`)
-      .emit('user_typing', { userId });
+    this.server.to(`user:${data.receiverId}`).emit('user_typing', { userId });
   }
 
   @SubscribeMessage('typing_stop')
@@ -216,9 +222,7 @@ export class DirectMessagesGateway
       .emit('messages_read', { readBy: userId });
     // Also notify the reader so their own DM-unread counter can refresh
     // immediately (without waiting for the 20s polling fallback).
-    this.server
-      .to(`user:${userId}`)
-      .emit('messages_read', { readBy: userId });
+    this.server.to(`user:${userId}`).emit('messages_read', { readBy: userId });
   }
   // ─── Group messages ───────────────────────────────────────────────────────
   /**
@@ -288,6 +292,8 @@ export class DirectMessagesGateway
       content: string;
       replyToId?: string | null;
       replyToDocumentId?: string | null;
+      /** Outbox id — a retry of the same send returns the first result. */
+      clientId?: string;
     },
   ) {
     this.logger.debug(
@@ -330,68 +336,72 @@ export class DirectMessagesGateway
     ) {
       return { error: 'errors.groupNotFound' };
     }
-    let message: Awaited<ReturnType<GroupMessagesService['createMessage']>>;
-    try {
-      message = await this.groupService.createMessage(
-        data.groupId,
-        senderId,
-        data.content,
-        data.replyToId ?? null,
-        data.replyToDocumentId ?? null,
-      );
-    } catch (e) {
-      if (e instanceof HttpException) return { error: e.message };
-      throw e;
-    }
-    this.server.to(`group:${data.groupId}`).emit('new_group_message', message);
-    // Also broadcast a lightweight notification to every group member's
-    // personal room so their unread counter updates even when they're not
-    // currently viewing the group (e.g. on /trucks, /managers, etc).
-    // The company-wide DRIVERS group's `createdBy` is a nominal manager owner
-    // (drivers are members implicitly) — don't ping managers for driver
-    // chatter. Drivers get their group unread via the driver-groups fetch.
-    if (group.type !== 'DRIVERS') {
-      const memberIds = new Set<string>([
-        group.createdBy,
-        ...group.managers.map((m) => m.managerId),
-      ]);
-      for (const memberId of memberIds) {
-        this.server
-          .to(`user:${memberId}`)
-          .emit('group_unread_update', { groupId: data.groupId });
-      }
-
-      // Push the other members — those using the app already got it over the
-      // socket (`new_group_message`), so `whenActive: 'skip'` leaves them be.
-      // Never push the sender.
-      void (async () => {
-        const senderName = fullName(message.sender);
-        const recipientIds = [...memberIds].filter((id) => id !== senderId);
-        if (recipientIds.length === 0) return;
-        await this.push.sendLocalizedToUsers(
-          recipientIds,
-          (lang) => ({
-            title: pushTitle.group(
-              group.name,
-              senderName,
-              t(lang, 'push.newMessage'),
-            ),
-            body: data.content.slice(0, 200),
-          }),
-          {
-            sound: 'push_message.mp3',
-            channelId: 'chat',
-            whenActive: 'skip',
-            data: {
-              type: 'GROUP_MESSAGE',
-              groupId: data.groupId,
-              messageId: message.id,
-            },
-          },
+    return dedupeSend(senderId, data.clientId, async () => {
+      let message: Awaited<ReturnType<GroupMessagesService['createMessage']>>;
+      try {
+        message = await this.groupService.createMessage(
+          data.groupId,
+          senderId,
+          data.content,
+          data.replyToId ?? null,
+          data.replyToDocumentId ?? null,
         );
-      })();
-    }
-    return message;
+      } catch (e) {
+        if (e instanceof HttpException) return { error: e.message };
+        throw e;
+      }
+      this.server
+        .to(`group:${data.groupId}`)
+        .emit('new_group_message', message);
+      // Also broadcast a lightweight notification to every group member's
+      // personal room so their unread counter updates even when they're not
+      // currently viewing the group (e.g. on /trucks, /managers, etc).
+      // The company-wide DRIVERS group's `createdBy` is a nominal manager owner
+      // (drivers are members implicitly) — don't ping managers for driver
+      // chatter. Drivers get their group unread via the driver-groups fetch.
+      if (group.type !== 'DRIVERS') {
+        const memberIds = new Set<string>([
+          group.createdBy,
+          ...group.managers.map((m) => m.managerId),
+        ]);
+        for (const memberId of memberIds) {
+          this.server
+            .to(`user:${memberId}`)
+            .emit('group_unread_update', { groupId: data.groupId });
+        }
+
+        // Push the other members — those using the app already got it over the
+        // socket (`new_group_message`), so `whenActive: 'skip'` leaves them be.
+        // Never push the sender.
+        void (async () => {
+          const senderName = fullName(message.sender);
+          const recipientIds = [...memberIds].filter((id) => id !== senderId);
+          if (recipientIds.length === 0) return;
+          await this.push.sendLocalizedToUsers(
+            recipientIds,
+            (lang) => ({
+              title: pushTitle.group(
+                group.name,
+                senderName,
+                t(lang, 'push.newMessage'),
+              ),
+              body: data.content.slice(0, 200),
+            }),
+            {
+              sound: 'push_message.mp3',
+              channelId: 'chat',
+              whenActive: 'skip',
+              data: {
+                type: 'GROUP_MESSAGE',
+                groupId: data.groupId,
+                messageId: message.id,
+              },
+            },
+          );
+        })();
+      }
+      return message;
+    });
   }
 
   /**
@@ -478,11 +488,7 @@ export class DirectMessagesGateway
 
   // ─── Conversation documents (called from services) ────────────────────────
 
-  emitNewDirectDocument(
-    uploaderId: string,
-    otherUserId: string,
-    doc: unknown,
-  ) {
+  emitNewDirectDocument(uploaderId: string, otherUserId: string, doc: unknown) {
     this.server.to(`user:${uploaderId}`).emit('new_direct_document', doc);
     this.server.to(`user:${otherUserId}`).emit('new_direct_document', doc);
   }
