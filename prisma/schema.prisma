@@ -323,6 +323,7 @@ model Trip {
   comments     TripComment[]
   alarms       Alarm[]
   chatSessions TripChatSession[]
+  statusEvents TripStatusEvent[]
 
   @@index([companyId])
   // A driver's / a truck's active trip: driverId|truckId + status IN (...).
@@ -918,4 +919,24 @@ enum BugStatus {
   NEW
   TRIAGED
   RESOLVED
+}
+
+/// One row per trip status change, with who made it. Trip.status is just
+/// overwritten, so without this "did the driver set the statuses themselves?"
+/// (pilot usage metric) cannot be answered. Written only from now on.
+model TripStatusEvent {
+  id         String      @id @default(uuid())
+  tripId     String
+  companyId  String
+  fromStatus TripStatus?
+  toStatus   TripStatus
+  /// null = the system (e.g. auto-complete).
+  actorId    String?
+  actorRole  Role?
+  createdAt  DateTime    @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([tripId, createdAt])
 }
