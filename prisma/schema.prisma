@@ -59,6 +59,11 @@ model User {
   /// Set once the address owner clicked the confirmation link. Drivers get
   /// sign-in codes by email only while this is set; changing `email` clears it.
   emailVerifiedAt  DateTime?
+  /// ADMIN two-factor: AES-GCM sealed base32 secret, set at setup and active once
+  /// totpEnabledAt is set; recovery codes are keyed hashes, each usable once.
+  totpSecret        String?
+  totpEnabledAt     DateTime?
+  totpRecoveryCodes String[]
   /// The built-in "IS Fleet contact" account: posts service notices into
   /// users' chats, and admins answer as it. Never signs in (no phone, email
   /// or password). Exactly one row has this set.
