@@ -55,6 +55,12 @@ export class AdminController {
   }
 
   @Roles('ADMIN')
+  @Get('companies/:id/usage')
+  getCompanyUsage(@Param('id') id: string, @Query('days') days?: string) {
+    return this.adminService.getCompanyUsage(id, days ? Number(days) || 30 : 30);
+  }
+
+  @Roles('ADMIN')
   @Get('billing')
   getBilling(@Query('month') month: string, @GetUser('id') adminId: string) {
     return this.adminService.getBilling(month, adminId);

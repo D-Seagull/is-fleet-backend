@@ -5,7 +5,12 @@ jest.mock('expo-server-sdk', () => ({ Expo: class {} }));
 
 describe('SupportContactService', () => {
   let prisma: {
-    user: { findFirst: jest.Mock; findUnique: jest.Mock; create: jest.Mock };
+    user: {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      findMany: jest.Mock;
+      create: jest.Mock;
+    };
   };
   let dms: {
     createMessage: jest.Mock;
@@ -27,6 +32,7 @@ describe('SupportContactService', () => {
           language: 'PL',
           uiLocale: 'UK',
         }),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: 'sys' }),
       },
     };
@@ -119,6 +125,23 @@ describe('SupportContactService', () => {
     expect(dms.getMessages).toHaveBeenCalledWith('sys', 'd1', {});
     await svc.markRead('d1');
     expect(dms.markAsRead).toHaveBeenCalledWith('sys', 'd1');
+  });
+
+  it('tags each conversation peer with their company', async () => {
+    prisma.user.findFirst.mockResolvedValueOnce({ id: 'sys' });
+    dms.getConversations.mockResolvedValue([
+      { user: { id: 'd1' }, unreadCount: 1 },
+      { user: { id: 'd2' }, unreadCount: 0 },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'd1', company: { id: 'c1', name: 'Acme' } },
+    ]);
+    const rows = await svc.conversations();
+    expect(rows[0].user).toEqual({
+      id: 'd1',
+      company: { id: 'c1', name: 'Acme' },
+    });
+    expect(rows[1].user.company).toBeNull();
   });
 
   it('admin reply goes out as the contact', async () => {
