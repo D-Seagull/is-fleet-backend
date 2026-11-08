@@ -127,8 +127,22 @@ export class SupportContactService {
     return id;
   }
 
+  /**
+   * Every chat the contact has, each peer tagged with their company so the
+   * admin inbox can group Company → employee. Same rows as the ordinary chat
+   * list, plus `user.company` ({ id, name } or null).
+   */
   async conversations() {
-    return this.dms.getConversations(await this.requireId());
+    const rows = await this.dms.getConversations(await this.requireId());
+    const peers = await this.prisma.user.findMany({
+      where: { id: { in: rows.map((r) => r.user.id) } },
+      select: { id: true, company: { select: { id: true, name: true } } },
+    });
+    const companyOf = new Map(peers.map((p) => [p.id, p.company]));
+    return rows.map((r) => ({
+      ...r,
+      user: { ...r.user, company: companyOf.get(r.user.id) ?? null },
+    }));
   }
 
   async messages(userId: string, opts: { take?: number; before?: Date }) {
