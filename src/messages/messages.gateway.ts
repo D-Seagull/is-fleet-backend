@@ -20,6 +20,8 @@ import { authenticateSocket, socketUser } from 'src/common/utils/socket-auth';
 import { assertTripAccess } from 'src/common/utils/access';
 import { PresenceService } from 'src/push/presence.service';
 
+import { dedupeSend } from 'src/common/utils/send-dedupe';
+
 @WebSocketGateway({
   cors: {
     origin: corsOrigin,
@@ -135,7 +137,10 @@ export class MessagesGateway implements OnGatewayInit {
           ),
         );
         const awayUserIds = await this.awayUserIds(companyId, onlineUserIds);
-        client.emit('presenceSnapshot', { userIds: onlineUserIds, awayUserIds });
+        client.emit('presenceSnapshot', {
+          userIds: onlineUserIds,
+          awayUserIds,
+        });
 
         // If this is the user's first socket in the company room, tell
         // everyone else they came online. (Skip the broadcast on the
@@ -223,9 +228,7 @@ export class MessagesGateway implements OnGatewayInit {
   async handleRequestPresence(@ConnectedSocket() client: Socket) {
     const companyId = (await socketUser(client))?.companyId;
     if (!companyId) return;
-    const sockets = await this.server
-      .in(`company-${companyId}`)
-      .fetchSockets();
+    const sockets = await this.server.in(`company-${companyId}`).fetchSockets();
     const onlineUserIds = Array.from(
       new Set(
         sockets
@@ -290,52 +293,55 @@ export class MessagesGateway implements OnGatewayInit {
     }
 
     try {
-      const message = await this.messagesService.create(senderId, dto);
-      // Echo the client-side tempId so the sender's UI can locate its
-      // optimistic placeholder bubble and replace it with the real row.
-      const payload = { ...message, tempId: dto.tempId ?? null };
-      // Emit to the trip room (driver + manager in that trip) — these are
-      // the only sockets that actually need the full message body to
-      // render it in the chat.
-      this.server.to(dto.tripId).emit('newMessage', payload);
+      return await dedupeSend(senderId, dto.tempId, async () => {
+        const message = await this.messagesService.create(senderId, dto);
+        // Echo the client-side tempId so the sender's UI can locate its
+        // optimistic placeholder bubble and replace it with the real row.
+        const payload = { ...message, tempId: dto.tempId ?? null };
+        // Emit to the trip room (driver + manager in that trip) — these are
+        // the only sockets that actually need the full message body to
+        // render it in the chat.
+        this.server.to(dto.tripId).emit('newMessage', payload);
 
-      // Phase 2 fan-out: send the lightweight tripUnreadChanged signal
-      // ONLY to the stakeholders who actually need their unread badges
-      // invalidated. Drivers / managers of other trips no longer see
-      // signals about chats they're not involved with.
-      const companyId = (message as { trip?: { companyId?: string } }).trip
-        ?.companyId;
-      const driverId = (message as { session?: { driverId: string | null } })
-        .session?.driverId;
-      const managerId = (message as { session?: { managerId: string | null } })
-        .session?.managerId;
-      // Carry just enough for the client to raise a desktop notification
-      // (sender + text + truck to navigate to) without a follow-up fetch.
-      const sender = (
-        message as {
-          sender?: { firstName: string; lastName: string | null };
-        }
-      ).sender;
-      const senderName = sender
-        ? `${sender.firstName} ${sender.lastName ?? ''}`.trim()
-        : '';
-      const truckId = (message as { trip?: { truckId: string | null } }).trip
-        ?.truckId;
-      const signal = {
-        tripId: dto.tripId,
-        truckId: truckId ?? null,
-        senderId,
-        senderName,
-        content: message.content ?? '',
-      };
+        // Phase 2 fan-out: send the lightweight tripUnreadChanged signal
+        // ONLY to the stakeholders who actually need their unread badges
+        // invalidated. Drivers / managers of other trips no longer see
+        // signals about chats they're not involved with.
+        const companyId = (message as { trip?: { companyId?: string } }).trip
+          ?.companyId;
+        const driverId = (message as { session?: { driverId: string | null } })
+          .session?.driverId;
+        const managerId = (
+          message as { session?: { managerId: string | null } }
+        ).session?.managerId;
+        // Carry just enough for the client to raise a desktop notification
+        // (sender + text + truck to navigate to) without a follow-up fetch.
+        const sender = (
+          message as {
+            sender?: { firstName: string; lastName: string | null };
+          }
+        ).sender;
+        const senderName = sender
+          ? `${sender.firstName} ${sender.lastName ?? ''}`.trim()
+          : '';
+        const truckId = (message as { trip?: { truckId: string | null } }).trip
+          ?.truckId;
+        const signal = {
+          tripId: dto.tripId,
+          truckId: truckId ?? null,
+          senderId,
+          senderName,
+          content: message.content ?? '',
+        };
 
-      // Company ADMIN / TEAMLEAD + the session's driver and manager (their
-      // personal rooms — what refreshes the sidebar badge on other pages).
-      this.emitTripUnread(signal, { companyId, driverId, managerId });
-      this.logger.debug(
-        `newMessage emitted to room ${dto.tripId} id=${message.id}`,
-      );
-      return payload;
+        // Company ADMIN / TEAMLEAD + the session's driver and manager (their
+        // personal rooms — what refreshes the sidebar badge on other pages).
+        this.emitTripUnread(signal, { companyId, driverId, managerId });
+        this.logger.debug(
+          `newMessage emitted to room ${dto.tripId} id=${message.id}`,
+        );
+        return payload;
+      });
     } catch (e) {
       // Refusals (not a participant, quote from another trip…) answer the
       // sender with the i18n key instead of a generic socket exception.
@@ -352,11 +358,9 @@ export class MessagesGateway implements OnGatewayInit {
   ) {
     const userId = (await socketUser(client))?.userId;
     if (!userId || typeof body?.tripId !== 'string') return;
-    const result = await this.messagesService.markTripRead(
-      body.tripId,
-      userId,
-    );
-    if (result.messageIds.length === 0 && result.documentIds.length === 0) return;
+    const result = await this.messagesService.markTripRead(body.tripId, userId);
+    if (result.messageIds.length === 0 && result.documentIds.length === 0)
+      return;
     // Notify everyone in the trip room (incl. the original sender) so their
     // bubbles can flip to ✓✓.
     this.server.to(body.tripId).emit('tripMessagesRead', {
@@ -368,9 +372,7 @@ export class MessagesGateway implements OnGatewayInit {
     // Refresh the reader's own unread badge / bell — they just cleared this
     // trip, so their notification counter must drop (they may not be sitting
     // in the trip room from the bell's perspective).
-    this.server
-      .to(userId)
-      .emit('tripUnreadChanged', { tripId: body.tripId });
+    this.server.to(userId).emit('tripUnreadChanged', { tripId: body.tripId });
   }
 
   /**
@@ -399,7 +401,11 @@ export class MessagesGateway implements OnGatewayInit {
     // Broadcast to everyone else in the trip room (skip the sender's socket).
     client.to(body.tripId).emit('userTyping', {
       tripId: body.tripId,
-      user: { id: userId, firstName: user?.firstName ?? null, lastName: user?.lastName ?? null },
+      user: {
+        id: userId,
+        firstName: user?.firstName ?? null,
+        lastName: user?.lastName ?? null,
+      },
     });
   }
 
@@ -430,17 +436,20 @@ export class MessagesGateway implements OnGatewayInit {
   // document (attachments count toward the unread bell like text) to the
   // stakeholders who aren't sitting in the trip room. Skips the sender /
   // uploader — no unread for self.
-  emitTripUnread(signal: {
-    tripId: string;
-    truckId: string | null;
-    senderId: string;
-    senderName: string;
-    content: string;
-  }, opts: {
-    companyId?: string | null;
-    driverId?: string | null;
-    managerId?: string | null;
-  }) {
+  emitTripUnread(
+    signal: {
+      tripId: string;
+      truckId: string | null;
+      senderId: string;
+      senderName: string;
+      content: string;
+    },
+    opts: {
+      companyId?: string | null;
+      driverId?: string | null;
+      managerId?: string | null;
+    },
+  ) {
     const { companyId, driverId, managerId } = opts;
     // ONE emit to all rooms: socket.io then delivers once per socket. Separate
     // emits reached a teamlead/admin who is also the trip's manager twice

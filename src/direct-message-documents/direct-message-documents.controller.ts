@@ -20,6 +20,10 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UploadInterceptor } from 'src/common/upload.interceptor';
+import {
+  parseDurationMs,
+  parseWaveform,
+} from 'src/common/utils/attachment-kind';
 
 @ApiTags('direct-message-documents')
 @ApiBearerAuth()
@@ -42,6 +46,8 @@ export class DirectMessageDocumentsController {
     @Body('replyToMessageId') replyToMessageId: string | undefined,
     @Body('replyToDocumentId') replyToDocumentId: string | undefined,
     @Body('caption') caption: string | undefined,
+    @Body('durationMs') durationMs: string | undefined,
+    @Body('waveform') waveform: string | undefined,
     @GetUser() user: JwtUser,
   ) {
     return this.service.uploadMany(
@@ -51,6 +57,8 @@ export class DirectMessageDocumentsController {
       replyToMessageId || null,
       replyToDocumentId || null,
       caption || null,
+      parseDurationMs(durationMs),
+      parseWaveform(waveform),
     );
   }
 

@@ -19,6 +19,7 @@ import { MessagesGateway } from 'src/messages/messages.gateway';
 import { MailService } from 'src/mail/mail.service';
 import { SELF_PROFILE_SELECT } from 'src/users/self-profile';
 import { OtpChannel } from '@prisma/client';
+import { assertTotpOk, totpKey } from './admin-totp';
 import { OtpDeliveryService } from 'src/driver-login/otp-delivery.service';
 import { AuthAuditService } from 'src/driver-login/auth-audit.service';
 import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
@@ -243,6 +244,23 @@ export class AuthService {
     );
     if (!user?.password || !valid || !user.isActive || user.deletedAt) {
       throw new UnauthorizedException('errors.loginOrPasswordWrong');
+    }
+    // Only after the password was right, so the code step reveals nothing.
+    if (user.role === 'ADMIN') {
+      await assertTotpOk(
+        user,
+        dto.totp,
+        totpKey({
+          TOTP_ENC_KEY: this.config.get<string>('TOTP_ENC_KEY'),
+          JWT_SECRET: this.config.get<string>('JWT_SECRET'),
+        }),
+        async (userId, remaining) => {
+          await this.prisma.user.update({
+            where: { id: userId },
+            data: { totpRecoveryCodes: remaining },
+          });
+        },
+      );
     }
     await this.markSessionStart(user.id);
     return this.signToken(
@@ -558,6 +576,14 @@ export class AuthService {
         OTP_TTL_MS / 60_000,
       );
     } catch (err) {
+      await this.audit.record({
+        action: 'DELIVERY_FAILED',
+        companyId: driver.companyId,
+        driverId: driver.id,
+        actorId: driver.id,
+        channel: CHANNEL_TO_DB[target.name],
+        ip,
+      });
       this.logger.error(
         `OTP delivery [${target.name}] failed for ${maskPhone(phone)}: ${
           err instanceof Error ? err.message : String(err)
@@ -902,6 +928,14 @@ export class AuthService {
     }
     const live = pending.filter((o) => o.attempts < OTP_MAX_ATTEMPTS);
     if (live.length === 0) {
+      await this.audit.record({
+        action: 'CODE_LOCKED',
+        companyId: pending[0].user.companyId,
+        driverId: pending[0].user.id,
+        actorId: pending[0].user.id,
+        channel: pending[0].channel,
+        ip,
+      });
       throw new UnauthorizedException('errors.tooManyAttempts');
     }
 
@@ -913,6 +947,14 @@ export class AuthService {
       await this.prisma.otpCode.updateMany({
         where: { id: { in: live.map((o) => o.id) } },
         data: { attempts: { increment: 1 } },
+      });
+      await this.audit.record({
+        action: 'CODE_FAILED',
+        companyId: live[0].user.companyId,
+        driverId: live[0].user.id,
+        actorId: live[0].user.id,
+        channel: live[0].channel,
+        ip,
       });
       throw new UnauthorizedException('errors.codeInvalidOrExpired');
     }

@@ -5,6 +5,7 @@ import { EDIT_WINDOW_MS } from 'src/common/constants';
 import { ReactionsService } from 'src/reactions/reactions.service';
 import { fullName } from 'src/common/utils/full-name';
 import { assertReplyTargets } from 'src/common/utils/reply-targets';
+import { voicePreviewSql } from 'src/common/utils/attachment-kind';
 
 @Injectable()
 export class GroupMessagesService {
@@ -277,7 +278,8 @@ export class GroupMessagesService {
         -- isRead flag (first member to open clears it), unlike text messages
         -- which track per-user reads via GroupMessageRead.
         SELECT gd.id, gd."groupId", gd."uploadedBy" AS "senderId",
-               '📎 ' || COALESCE(NULLIF(gd.caption, ''), gd."fileName") AS content,
+               CASE WHEN gd."fileType" = 'AUDIO' THEN ${voicePreviewSql('gd')}
+                    ELSE '📎 ' || COALESCE(NULLIF(gd.caption, ''), gd."fileName") END AS content,
                gd."createdAt"
         FROM "GroupMessageDocument" gd
         WHERE gd."groupId" IN (SELECT id FROM user_groups)

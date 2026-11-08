@@ -76,8 +76,18 @@ describe('DocumentsService — driver scope', () => {
     truckLookup('drvA');
     await service.findByTruck('tr1', driver);
     // No driverId narrowing — the whole truck.
+    // Voice messages are chat, not documents — left out of the list.
     expect(prisma.tripDocument.findMany.mock.calls[0][0].where).toEqual({
+      fileType: { not: 'AUDIO' },
       trip: { truckId: 'tr1', deletedAt: null, companyId: 'c1' },
+    });
+  });
+
+  it('the company-wide Documents list leaves voice messages out too', async () => {
+    await service.findByCompany('c1');
+    expect(prisma.tripDocument.findMany.mock.calls[0][0].where).toEqual({
+      fileType: { not: 'AUDIO' },
+      trip: { companyId: 'c1', deletedAt: null },
     });
   });
 

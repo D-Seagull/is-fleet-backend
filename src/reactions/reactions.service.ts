@@ -18,7 +18,35 @@ export type ReactionTarget =
   | 'TRIP_DOC'
   | 'DM_DOC'
   | 'GROUP_DOC';
-const ALLOWED_EMOJI = ['👍', '😮', '😢'] as const;
+/** Quick row shown first in every picker. */
+export const BASE_EMOJI = ['👍', '😂', '😮', '😢', '😡'] as const;
+/** Behind the "+" button in the pickers. */
+export const EXTRA_EMOJI = [
+  '❤️',
+  '🙏',
+  '🔥',
+  '🎉',
+  '👎',
+  '💩',
+  '🤔',
+  '👀',
+  '😍',
+  '🤝',
+  '😅',
+  '🫡',
+  '👏',
+  '💪',
+  '😭',
+  '🤣',
+  '😎',
+  '🥳',
+  '😴',
+  '✅',
+  '❌',
+  '🚛',
+] as const;
+/** The single whitelist the API accepts (keep clients' pickers in step). */
+export const ALLOWED_EMOJI = [...BASE_EMOJI, ...EXTRA_EMOJI] as const;
 export type AllowedEmoji = (typeof ALLOWED_EMOJI)[number];
 
 export interface ReactionRow {

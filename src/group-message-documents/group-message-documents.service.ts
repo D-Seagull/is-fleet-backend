@@ -13,6 +13,7 @@ import { ReactionsService } from '../reactions/reactions.service';
 import { assertGroupAccess, type Requester } from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
 import { finishBatch } from '../common/utils/batch-rollback';
+import { attachmentFileType } from '../common/utils/attachment-kind';
 
 @Injectable()
 export class GroupMessageDocumentsService {
@@ -30,6 +31,8 @@ export class GroupMessageDocumentsService {
     replyToMessageId?: string | null,
     replyToDocumentId?: string | null,
     caption?: string | null,
+    durationMs?: number | null,
+    waveform?: string | null,
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
@@ -74,8 +77,7 @@ export class GroupMessageDocumentsService {
     const rowIds: string[] = [];
     const settled = await Promise.allSettled(
       files.map(async (file, index) => {
-        const isImage = file.mimetype.startsWith('image/');
-        const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
+        const fileType = attachmentFileType(file.mimetype);
 
         const { storagePath, thumbPath } =
           await this.storage.uploadAttachment(file);
@@ -92,6 +94,9 @@ export class GroupMessageDocumentsService {
             createdAt: new Date(sentAt + index),
             fileName: file.originalname,
             fileType,
+            // Only a voice message has a length.
+            durationMs: fileType === 'AUDIO' ? (durationMs ?? null) : null,
+            waveform: fileType === 'AUDIO' ? (waveform ?? null) : null,
             replyToMessageId: replyToMessageId ?? null,
             replyToDocumentId: replyToDocumentId ?? null,
             caption: caption?.trim() ? caption.trim() : null,

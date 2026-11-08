@@ -5,10 +5,12 @@ import {
   Patch,
   Param,
   Body,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
+import { UpdateBillingDto } from './dto/update-billing.dto';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -38,6 +40,46 @@ export class AdminController {
   @Get('stats')
   getStats(@GetUser('id') adminId: string) {
     return this.adminService.getStats(adminId);
+  }
+
+  @Roles('ADMIN')
+  @Get('login-issues')
+  getLoginIssues(
+    @Query('days') days?: string,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.adminService.getLoginIssues({
+      days: days ? Number(days) || undefined : undefined,
+      companyId: companyId || undefined,
+    });
+  }
+
+  @Roles('ADMIN')
+  @Get('companies/:id/usage')
+  getCompanyUsage(@Param('id') id: string, @Query('days') days?: string) {
+    return this.adminService.getCompanyUsage(id, days ? Number(days) || 30 : 30);
+  }
+
+  @Roles('ADMIN')
+  @Get('companies/:id/trucks')
+  getCompanyTrucks(
+    @Param('id') id: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    return this.adminService.getCompanyTrucks(id, from, to);
+  }
+
+  @Roles('ADMIN')
+  @Get('billing')
+  getBilling(@Query('month') month: string, @GetUser('id') adminId: string) {
+    return this.adminService.getBilling(month, adminId);
+  }
+
+  @Roles('ADMIN')
+  @Patch('companies/:id/billing')
+  updateBilling(@Param('id') id: string, @Body() dto: UpdateBillingDto) {
+    return this.adminService.updateBilling(id, dto);
   }
 
   @Roles('ADMIN')

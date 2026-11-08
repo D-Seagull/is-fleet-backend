@@ -582,12 +582,15 @@ describe('AuthService', () => {
       expect(notices.managerCode).toHaveBeenCalledWith('used', 'u1', 'm1');
     });
 
-    it('a wrong code neither audits nor notifies', async () => {
+    it('a wrong code is audited as CODE_FAILED and never notifies', async () => {
       prisma.otpCode.findMany.mockResolvedValue([
         otpRow({ channel: 'MANAGER', code: otpHash('999999') }),
       ]);
       await service.verifyDriverOtp(VALID_PHONE, '123456').catch(() => {});
-      expect(audit.record).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'CODE_FAILED', driverId: 'u1' }),
+      );
       expect(notices.managerCode).not.toHaveBeenCalled();
     });
 

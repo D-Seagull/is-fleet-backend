@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 
 import { Cron } from '@nestjs/schedule';
-import { Prisma, TripStatus } from '@prisma/client';
+import { Prisma, Role, TripStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { AssignTruckDto, UpdateTripDto } from './dto/update-trip.dto';
@@ -404,12 +404,48 @@ export class TripsService {
     }));
   }
 
-  async updateStatus(id: string, companyId: string, dto: UpdateTripDto) {
-    await this.findOne(id, companyId);
+  /**
+   * Log who changed a trip's status (pilot metric: how much the drivers do
+   * themselves). Best effort — a failed log must never fail the status change.
+   */
+  private async recordStatusEvent(
+    trip: { id: string; companyId: string; status: TripStatus },
+    to: TripStatus | undefined,
+    actor: { id: string; role: string } | null,
+  ) {
+    if (!to || to === trip.status) return;
+    try {
+      await this.prisma.tripStatusEvent.create({
+        data: {
+          tripId: trip.id,
+          companyId: trip.companyId,
+          fromStatus: trip.status,
+          toStatus: to,
+          actorId: actor?.id ?? null,
+          actorRole: (actor?.role as Role | undefined) ?? null,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `TripStatusEvent for ${trip.id} failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  async updateStatus(
+    id: string,
+    companyId: string,
+    dto: UpdateTripDto,
+    actor: { id: string; role: string } | null = null,
+  ) {
+    const before = await this.findOne(id, companyId);
     const updated = await this.prisma.trip.update({
       where: { id },
       data: { status: dto.status, ...departResetFor(dto.status) },
     });
+    await this.recordStatusEvent(before, dto.status, actor);
     this.emitTripUpdated(id, companyId, updated.driverId);
     if (dto.status) await this.afterStatusChange(updated.driverId, dto.status);
     return updated;
@@ -627,6 +663,7 @@ export class TripsService {
         where: { id: blocking.id },
         data: { status: 'DELIVERED' },
       });
+      await this.recordStatusEvent(blocking, 'DELIVERED', actor);
       await this.sessions.closeActive(blocking.id, 'TRIP_COMPLETED');
       this.emitTripUpdated(blocking.id, trip.companyId, done.driverId);
     }
@@ -1126,6 +1163,10 @@ export class TripsService {
         truck: { select: { plate: true } },
         driver: { select: { firstName: true, lastName: true } },
       },
+    });
+    await this.recordStatusEvent(trip, dto.status, {
+      id: driverId,
+      role: 'DRIVER',
     });
     // Driver changed it themselves (their app updates optimistically); push
     // to the company room + trip room so web managers see it live.

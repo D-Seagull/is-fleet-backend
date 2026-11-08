@@ -22,6 +22,7 @@ import {
   type Requester,
 } from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
+import { voicePreviewSql } from 'src/common/utils/attachment-kind';
 
 @Injectable()
 export class MessagesService {
@@ -321,7 +322,8 @@ export class MessagesService {
         -- Attachments count toward unread too. Trip docs use a single shared
         -- isRead flag; fall back to the filename when there's no caption.
         SELECT td.id, td."tripId", td."uploadedBy" AS "senderId",
-               COALESCE(NULLIF(td.caption, ''), td."fileName") AS content,
+               CASE WHEN td."fileType" = 'AUDIO' THEN ${voicePreviewSql('td')}
+                    ELSE COALESCE(NULLIF(td.caption, ''), td."fileName") END AS content,
                td."createdAt",
                t."truckId",
                (t.status IN ('ASSIGNED','ACCEPTED','ON_WAY','ON_SITE','LOADED'))
@@ -441,7 +443,8 @@ export class MessagesService {
         UNION ALL
         -- Attachments count toward unread too (single shared isRead flag).
         SELECT td.id, td."tripId", td."uploadedBy" AS "senderId",
-               COALESCE(NULLIF(td.caption, ''), td."fileName") AS content,
+               CASE WHEN td."fileType" = 'AUDIO' THEN ${voicePreviewSql('td')}
+                    ELSE COALESCE(NULLIF(td.caption, ''), td."fileName") END AS content,
                td."createdAt",
                t.title AS trip_title,
                (t.status IN ('ASSIGNED','ACCEPTED','ON_WAY','ON_SITE','LOADED'))

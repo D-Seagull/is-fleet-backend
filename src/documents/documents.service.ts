@@ -18,6 +18,7 @@ import {
 } from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
 import { finishBatch } from '../common/utils/batch-rollback';
+import { attachmentFileType, voicePreview } from '../common/utils/attachment-kind';
 
 @Injectable()
 export class DocumentsService {
@@ -35,6 +36,8 @@ export class DocumentsService {
     replyToMessageId?: string | null,
     replyToDocumentId?: string | null,
     caption?: string | null,
+    durationMs?: number | null,
+    waveform?: string | null,
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
@@ -70,8 +73,7 @@ export class DocumentsService {
     const rowIds: string[] = [];
     const settled = await Promise.allSettled(
       files.map(async (file, index) => {
-        const isImage = file.mimetype.startsWith('image/');
-        const fileType = isImage ? 'PHOTO' : 'DOCUMENT';
+        const fileType = attachmentFileType(file.mimetype);
 
         const { storagePath, thumbPath } =
           await this.storage.uploadAttachment(file);
@@ -88,6 +90,9 @@ export class DocumentsService {
             fileName: file.originalname,
             uploadedBy,
             fileType,
+            // Only a voice message has a length.
+            durationMs: fileType === 'AUDIO' ? (durationMs ?? null) : null,
+            waveform: fileType === 'AUDIO' ? (waveform ?? null) : null,
             replyToMessageId: replyToMessageId ?? null,
             replyToDocumentId: replyToDocumentId ?? null,
             caption: caption?.trim() ? caption.trim() : null,
@@ -164,7 +169,10 @@ export class DocumentsService {
           truckId: trip?.truck?.id ?? null,
           senderId: uploadedBy,
           senderName,
-          content: first.caption?.trim() || first.fileName,
+          content:
+            first.fileType === 'AUDIO'
+              ? voicePreview(first.durationMs)
+              : first.caption?.trim() || first.fileName,
         },
         {
           companyId: trip?.companyId ?? null,
@@ -415,6 +423,8 @@ export class DocumentsService {
     }
     const docs = await this.prisma.tripDocument.findMany({
       where: {
+        // Voice messages belong to the chat, not to the Documents list.
+        fileType: { not: 'AUDIO' },
         trip: {
           truckId,
           deletedAt: null,
@@ -446,7 +456,8 @@ export class DocumentsService {
   // single "all my docs" page grouped by trip.
   async findByCompany(companyId: string) {
     const docs = await this.prisma.tripDocument.findMany({
-      where: { trip: { companyId, deletedAt: null } },
+      // Voice messages belong to the chat, not to the Documents list.
+      where: { fileType: { not: 'AUDIO' }, trip: { companyId, deletedAt: null } },
       include: {
         uploader: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
         trip: {
