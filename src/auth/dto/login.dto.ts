@@ -1,4 +1,10 @@
-import { IsBoolean, IsEmail, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class LoginDto {
   @IsEmail()
@@ -12,6 +18,13 @@ export class LoginDto {
   @IsOptional()
   @IsBoolean()
   remember?: boolean;
+
+  /** Second factor for ADMIN accounts that turned 2FA on: the 6-digit
+   *  authenticator code, or a one-time recovery code. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  totp?: string;
 
   /** Native clients (is-manager / is-driver) can't rely on an httpOnly cookie,
    *  so when true the refresh token is returned in the JSON body instead of

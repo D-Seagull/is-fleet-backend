@@ -210,9 +210,14 @@ export class TripsController {
   updateStatus(
     @Param('id') id: string,
     @GetUser('companyId') companyId: string,
+    @GetUser('id') userId: string,
+    @GetUser('role') role: string,
     @Body() dto: UpdateTripDto,
   ) {
-    return this.tripsService.updateStatus(id, companyId, dto);
+    return this.tripsService.updateStatus(id, companyId, dto, {
+      id: userId,
+      role,
+    });
   }
 
   @Roles('ADMIN', 'DRIVER')

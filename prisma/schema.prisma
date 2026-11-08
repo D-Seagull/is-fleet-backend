@@ -32,6 +32,12 @@ model Company {
   alarms             Alarm[]
   bugReports         BugReport[]
   driverTransfersIn  DriverTransfer[]
+  /// Platform billing — set by hand in the admin panel.
+  billingStatus      BillingStatus       @default(TRIAL)
+  pricePerTruck      Decimal?            @db.Decimal(10, 2)
+  currency           String              @default("EUR")
+  pilotEndsAt        DateTime?
+  adminNote          String?
 }
 
 model TruckNote {
@@ -53,6 +59,11 @@ model User {
   /// Set once the address owner clicked the confirmation link. Drivers get
   /// sign-in codes by email only while this is set; changing `email` clears it.
   emailVerifiedAt  DateTime?
+  /// ADMIN two-factor: AES-GCM sealed base32 secret, set at setup and active once
+  /// totpEnabledAt is set; recovery codes are keyed hashes, each usable once.
+  totpSecret        String?
+  totpEnabledAt     DateTime?
+  totpRecoveryCodes String[]
   /// The built-in "IS Fleet contact" account: posts service notices into
   /// users' chats, and admins answer as it. Never signs in (no phone, email
   /// or password). Exactly one row has this set.
@@ -323,6 +334,7 @@ model Trip {
   comments     TripComment[]
   alarms       Alarm[]
   chatSessions TripChatSession[]
+  statusEvents TripStatusEvent[]
 
   @@index([companyId])
   // A driver's / a truck's active trip: driverId|truckId + status IN (...).
@@ -715,6 +727,12 @@ enum AuthAuditAction {
   CODE_USED
   EMAIL_VERIFICATION_SENT
   EMAIL_VERIFIED
+  /// Wrong code typed (counts against the live codes).
+  CODE_FAILED
+  /// Attempts exhausted — the driver needs a fresh code.
+  CODE_LOCKED
+  /// The provider refused / failed to send the code.
+  DELIVERY_FAILED
 }
 
 /// Who did what around driver sign-in. Read by admin/teamlead (no UI yet).
@@ -734,6 +752,7 @@ model AuthAuditLog {
 
   @@index([companyId, createdAt])
   @@index([driverId, createdAt])
+  @@index([createdAt])
 }
 
 enum GroupType {
@@ -925,4 +944,32 @@ enum BugStatus {
   NEW
   TRIAGED
   RESOLVED
+}
+
+/// One row per trip status change, with who made it. Trip.status is just
+/// overwritten, so without this "did the driver set the statuses themselves?"
+/// (pilot usage metric) cannot be answered. Written only from now on.
+model TripStatusEvent {
+  id         String      @id @default(uuid())
+  tripId     String
+  companyId  String
+  fromStatus TripStatus?
+  toStatus   TripStatus
+  /// null = the system (e.g. auto-complete).
+  actorId    String?
+  actorRole  Role?
+  createdAt  DateTime    @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([tripId, createdAt])
+}
+
+enum BillingStatus {
+  TRIAL
+  PILOT
+  PAYING
+  OVERDUE
+  DEACTIVATED
 }

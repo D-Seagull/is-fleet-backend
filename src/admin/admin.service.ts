@@ -8,6 +8,11 @@ import { MailService } from 'src/mail/mail.service';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { Prisma } from '@prisma/client';
+import { UpdateBillingDto } from './dto/update-billing.dto';
+
+/** A code issued and not used within this many minutes counts as "didn't arrive". */
+const NOT_USED_MINUTES = 10;
 
 @Injectable()
 export class AdminService {
@@ -363,7 +368,7 @@ export class AdminService {
   async deactivateCompany(id: string) {
     const company = await this.prisma.company.update({
       where: { id },
-      data: { isActive: false },
+      data: { isActive: false, billingStatus: 'DEACTIVATED' },
     });
     // Live-notify every connected session of this company so the write
     // lockout (banner + blocked writes) applies immediately, without
@@ -375,9 +380,17 @@ export class AdminService {
   }
 
   async reactivateCompany(id: string) {
+    const prev = await this.prisma.company.findUnique({
+      where: { id },
+      select: { billingStatus: true },
+    });
     const company = await this.prisma.company.update({
       where: { id },
-      data: { isActive: true },
+      // Back from DEACTIVATED: neutral TRIAL until the admin sets the real one.
+      data: {
+        isActive: true,
+        ...(prev?.billingStatus === 'DEACTIVATED' ? { billingStatus: 'TRIAL' } : {}),
+      },
     });
     this.gateway.server
       .to(`company-${id}`)
@@ -385,6 +398,316 @@ export class AdminService {
     return company;
   }
 
+
+  // ── Sign-in problems ───────────────────────────────────────────────────
+
+  /**
+   * Driver sign-in trouble from AuthAuditLog over the last `days`: wrong codes,
+   * locked codes, failed deliveries and codes issued but never used within
+   * `NOT_USED_MINUTES` ("the code didn't arrive").
+   */
+  async getLoginIssues(opts: { days?: number; companyId?: string }) {
+    const days = Math.min(Math.max(opts.days ?? 7, 1), 60);
+    const since = new Date(Date.now() - days * 86_400_000);
+    const rows = await this.prisma.authAuditLog.findMany({
+      where: {
+        createdAt: { gte: since },
+        action: { in: ['CODE_ISSUED', 'CODE_USED', 'CODE_FAILED', 'CODE_LOCKED', 'DELIVERY_FAILED'] },
+        ...(opts.companyId ? { companyId: opts.companyId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 2000,
+      select: {
+        id: true,
+        action: true,
+        channel: true,
+        ip: true,
+        createdAt: true,
+        companyId: true,
+        driver: { select: { id: true, firstName: true, lastName: true, phone: true } },
+      },
+    });
+    const companyIds = [...new Set(rows.map((r) => r.companyId).filter((x): x is string => !!x))];
+    const companies = await this.prisma.company.findMany({
+      where: { id: { in: companyIds } },
+      select: { id: true, name: true },
+    });
+    const nameOf = new Map(companies.map((c) => [c.id, c.name]));
+
+    // Used-times per driver, to spot issued codes nobody used.
+    const used = new Map<string, number[]>();
+    for (const r of rows) {
+      if (r.action === 'CODE_USED' && r.driver) {
+        const list = used.get(r.driver.id) ?? [];
+        list.push(r.createdAt.getTime());
+        used.set(r.driver.id, list);
+      }
+    }
+    const graceMs = NOT_USED_MINUTES * 60_000;
+    const now = Date.now();
+    const events = rows
+      .filter((r) => r.action !== 'CODE_USED')
+      .map((r) => {
+        const t = r.createdAt.getTime();
+        const notUsed =
+          r.action === 'CODE_ISSUED' &&
+          !!r.driver &&
+          now - t > graceMs &&
+          !(used.get(r.driver.id) ?? []).some((u) => u >= t && u - t <= graceMs);
+        return {
+          id: r.id,
+          action: r.action,
+          channel: r.channel,
+          ip: r.ip,
+          createdAt: r.createdAt,
+          driver: r.driver,
+          company: r.companyId ? { id: r.companyId, name: nameOf.get(r.companyId) ?? '' } : null,
+          notUsed,
+        };
+      })
+      // A plain issued-and-used code is not an issue.
+      .filter((e) => e.action !== 'CODE_ISSUED' || e.notUsed);
+    return { days, notUsedMinutes: NOT_USED_MINUTES, events };
+  }
+
+  // ── Pilot usage ────────────────────────────────────────────────────────
+
+  /**
+   * How a company really uses the product over the last `days`: share of trips
+   * where the driver set statuses, uploaded documents, driver activity (seen in
+   * 7 days / never signed in) and the company's last activity. The status
+   * share counts only trips that logged a status event in the period
+   * (TripStatusEvent exists from its deploy on).
+   */
+  async getCompanyUsage(companyId: string, days = 30) {
+    const exists = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('errors.companyNotFound');
+    const d = Math.min(Math.max(days, 1), 365);
+    const since = new Date(Date.now() - d * 86_400_000);
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000);
+
+    const [
+      trips,
+      eventTrips,
+      driverTrips,
+      documents,
+      drivers,
+      lastSeen,
+      lastTrip,
+      lastDoc,
+      lastEvent,
+    ] = await Promise.all([
+      this.prisma.trip.count({
+        where: { companyId, deletedAt: null, createdAt: { gte: since } },
+      }),
+      this.prisma.tripStatusEvent.findMany({
+        where: { companyId, createdAt: { gte: since } },
+        distinct: ['tripId'],
+        select: { tripId: true },
+      }),
+      this.prisma.tripStatusEvent.findMany({
+        where: { companyId, createdAt: { gte: since }, actorRole: 'DRIVER' },
+        distinct: ['tripId'],
+        select: { tripId: true },
+      }),
+      this.prisma.tripDocument.count({
+        where: {
+          deletedAt: null,
+          createdAt: { gte: since },
+          trip: { companyId },
+        },
+      }),
+      this.prisma.user.findMany({
+        where: { companyId, role: 'DRIVER', isActive: true, deletedAt: null },
+        select: { id: true, firstName: true, lastName: true, phone: true, lastSeenAt: true },
+        orderBy: { firstName: 'asc' },
+      }),
+      this.prisma.user.aggregate({
+        where: { companyId, isSystem: false },
+        _max: { lastSeenAt: true },
+      }),
+      this.prisma.trip.aggregate({ where: { companyId }, _max: { createdAt: true } }),
+      this.prisma.tripDocument.aggregate({
+        where: { trip: { companyId } },
+        _max: { createdAt: true },
+      }),
+      this.prisma.tripStatusEvent.aggregate({
+        where: { companyId },
+        _max: { createdAt: true },
+      }),
+    ]);
+
+    const stamps = [
+      lastSeen._max.lastSeenAt,
+      lastTrip._max.createdAt,
+      lastDoc._max.createdAt,
+      lastEvent._max.createdAt,
+    ].filter((x): x is Date => !!x);
+    const lastActivityAt = stamps.length
+      ? new Date(Math.max(...stamps.map((s) => s.getTime())))
+      : null;
+
+    const withEvents = eventTrips.length;
+    const byDriver = driverTrips.length;
+    return {
+      days: d,
+      trips,
+      statusTrips: withEvents,
+      driverStatusTrips: byDriver,
+      /** 0..1, null while no trip logged a status change yet. */
+      driverStatusShare: withEvents ? byDriver / withEvents : null,
+      documents,
+      drivers: {
+        total: drivers.length,
+        activeLast7d: drivers.filter((x) => x.lastSeenAt && x.lastSeenAt >= weekAgo).length,
+        neverSignedIn: drivers
+          .filter((x) => !x.lastSeenAt)
+          .map(({ id, firstName, lastName, phone }) => ({ id, firstName, lastName, phone })),
+      },
+      lastActivityAt,
+    };
+  }
+
+  // ── Billing ────────────────────────────────────────────────────────────
+
+  /**
+   * Per company, for `month` (YYYY-MM): the paid trucks, drivers, managers
+   * and the amount. A truck is paid when it had at least one trip in the
+   * month; a trip belongs to the month of its first stop's date
+   * (`TripStop.windowDate`), or of `createdAt` when that stop has no date.
+   * Deleted trips don't count. Months are UTC.
+   */
+  async getBilling(month: string, adminId?: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new BadRequestException('errors.invalidMonth');
+    }
+    const excludeCompanyId = adminId
+      ? await this.getAdminCompanyId(adminId)
+      : undefined;
+
+    const [companies, truckRows, people, seenRows, tripRows] = await Promise.all([
+      this.prisma.company.findMany({
+        where: excludeCompanyId ? { NOT: { id: excludeCompanyId } } : undefined,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          isActive: true,
+          billingStatus: true,
+          pricePerTruck: true,
+          currency: true,
+          pilotEndsAt: true,
+          adminNote: true,
+        },
+      }),
+      this.prisma.$queryRaw<{ companyId: string; trucks: bigint }[]>`
+        WITH trip_month AS (
+          SELECT t."companyId", t."truckId",
+                 COALESCE(
+                   substring(fs."windowDate" from 1 for 7),
+                   to_char(t."createdAt" AT TIME ZONE 'UTC', 'YYYY-MM')
+                 ) AS month
+          FROM "Trip" t
+          LEFT JOIN LATERAL (
+            SELECT s."windowDate" FROM "TripStop" s
+            WHERE s."tripId" = t.id
+            ORDER BY s."order" ASC LIMIT 1
+          ) fs ON true
+          WHERE t."deletedAt" IS NULL
+        )
+        SELECT "companyId", COUNT(DISTINCT "truckId") AS trucks
+        FROM trip_month WHERE month = ${month}
+        GROUP BY "companyId"`,
+      this.prisma.user.groupBy({
+        by: ['companyId', 'role'],
+        where: {
+          deletedAt: null,
+          isSystem: false,
+          role: { in: ['DRIVER', 'MANAGER', 'TEAMLEAD'] },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.user.groupBy({
+        by: ['companyId'],
+        where: { isSystem: false },
+        _max: { lastSeenAt: true },
+      }),
+      this.prisma.trip.groupBy({
+        by: ['companyId'],
+        _max: { createdAt: true },
+      }),
+    ]);
+
+    // Last sign of life per company: newest sign-in / app use or new trip.
+    const lastBy = new Map<string, Date>();
+    const bump = (id: string | null, at: Date | null | undefined) => {
+      if (!id || !at) return;
+      const cur = lastBy.get(id);
+      if (!cur || at > cur) lastBy.set(id, at);
+    };
+    for (const r of seenRows) bump(r.companyId, r._max.lastSeenAt);
+    for (const r of tripRows) bump(r.companyId, r._max.createdAt);
+
+    const trucksBy = new Map(truckRows.map((r) => [r.companyId, Number(r.trucks)]));
+    const peopleBy = new Map<string, { drivers: number; managers: number }>();
+    for (const p of people) {
+      if (!p.companyId) continue;
+      const e = peopleBy.get(p.companyId) ?? { drivers: 0, managers: 0 };
+      if (p.role === 'DRIVER') e.drivers += p._count._all;
+      else e.managers += p._count._all;
+      peopleBy.set(p.companyId, e);
+    }
+
+    return {
+      month,
+      companies: companies.map((c) => {
+        const paidTrucks = trucksBy.get(c.id) ?? 0;
+        const price = c.pricePerTruck ? Number(c.pricePerTruck) : null;
+        return {
+          ...c,
+          pricePerTruck: price,
+          paidTrucks,
+          lastActivityAt: lastBy.get(c.id) ?? null,
+          drivers: peopleBy.get(c.id)?.drivers ?? 0,
+          managers: peopleBy.get(c.id)?.managers ?? 0,
+          amount: price === null ? null : Math.round(price * paidTrucks * 100) / 100,
+        };
+      }),
+    };
+  }
+
+  async updateBilling(id: string, dto: UpdateBillingDto) {
+    const exists = await this.prisma.company.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('errors.companyNotFound');
+    const data: Prisma.CompanyUpdateInput = {
+      billingStatus: dto.billingStatus,
+      pricePerTruck: dto.pricePerTruck,
+      currency: dto.currency?.toUpperCase(),
+      pilotEndsAt:
+        dto.pilotEndsAt === undefined
+          ? undefined
+          : dto.pilotEndsAt === null
+            ? null
+            : new Date(dto.pilotEndsAt),
+      adminNote: dto.adminNote === undefined ? undefined : dto.adminNote?.trim() || null,
+    };
+    // "Deactivated" billing status and the access switch are one thing.
+    if (dto.billingStatus === 'DEACTIVATED') data.isActive = false;
+    const company = await this.prisma.company.update({ where: { id }, data });
+    if (dto.billingStatus === 'DEACTIVATED') {
+      this.gateway.server
+        .to(`company-${id}`)
+        .emit('companyStatusChanged', { companyId: id, isActive: false });
+    }
+    return company;
+  }
   async resendInvite(id: string, email: string) {
     const exists = await this.prisma.company.findFirst({ where: { id } });
     if (!exists) throw new NotFoundException('errors.companyNotFound');

@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { AdminTotpController } from './admin-totp.controller';
 import { AuthController } from './auth.controller';
 import { SmsModule } from 'src/sms/sms.module';
 import { MessagesModule } from 'src/messages/messages.module';
@@ -27,7 +28,7 @@ import { DriverLoginModule } from 'src/driver-login/driver-login.module';
     }),
   ],
   providers: [AuthService, JwtStrategy],
-  controllers: [AuthController],
+  controllers: [AuthController, AdminTotpController],
   exports: [JwtModule],
 })
 export class AuthModule {}
