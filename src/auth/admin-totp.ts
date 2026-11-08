@@ -65,7 +65,10 @@ export async function assertTotpOk(
   consume: (userId: string, remaining: string[]) => Promise<void>,
 ): Promise<void> {
   if (!user.totpEnabledAt || !user.totpSecret) return;
-  if (!code) throw new UnauthorizedException('errors.totpRequired');
+  if (!code) throw new UnauthorizedException({
+      message: 'errors.totpRequired',
+      code: 'TOTP_REQUIRED',
+    });
   if (verifyTotp(openSecret(user.totpSecret, key), code)) return;
   const hashed = hashRecoveryCode(code, key);
   if (user.totpRecoveryCodes.includes(hashed)) {
