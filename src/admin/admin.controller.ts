@@ -43,6 +43,18 @@ export class AdminController {
   }
 
   @Roles('ADMIN')
+  @Get('login-issues')
+  getLoginIssues(
+    @Query('days') days?: string,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.adminService.getLoginIssues({
+      days: days ? Number(days) || undefined : undefined,
+      companyId: companyId || undefined,
+    });
+  }
+
+  @Roles('ADMIN')
   @Get('billing')
   getBilling(@Query('month') month: string, @GetUser('id') adminId: string) {
     return this.adminService.getBilling(month, adminId);

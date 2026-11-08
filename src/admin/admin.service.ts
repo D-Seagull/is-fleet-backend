@@ -11,6 +11,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { Prisma } from '@prisma/client';
 import { UpdateBillingDto } from './dto/update-billing.dto';
 
+/** A code issued and not used within this many minutes counts as "didn't arrive". */
+const NOT_USED_MINUTES = 10;
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -395,6 +398,77 @@ export class AdminService {
     return company;
   }
 
+
+  // ── Sign-in problems ───────────────────────────────────────────────────
+
+  /**
+   * Driver sign-in trouble from AuthAuditLog over the last `days`: wrong codes,
+   * locked codes, failed deliveries and codes issued but never used within
+   * `NOT_USED_MINUTES` ("the code didn't arrive").
+   */
+  async getLoginIssues(opts: { days?: number; companyId?: string }) {
+    const days = Math.min(Math.max(opts.days ?? 7, 1), 60);
+    const since = new Date(Date.now() - days * 86_400_000);
+    const rows = await this.prisma.authAuditLog.findMany({
+      where: {
+        createdAt: { gte: since },
+        action: { in: ['CODE_ISSUED', 'CODE_USED', 'CODE_FAILED', 'CODE_LOCKED', 'DELIVERY_FAILED'] },
+        ...(opts.companyId ? { companyId: opts.companyId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 2000,
+      select: {
+        id: true,
+        action: true,
+        channel: true,
+        ip: true,
+        createdAt: true,
+        companyId: true,
+        driver: { select: { id: true, firstName: true, lastName: true, phone: true } },
+      },
+    });
+    const companyIds = [...new Set(rows.map((r) => r.companyId).filter((x): x is string => !!x))];
+    const companies = await this.prisma.company.findMany({
+      where: { id: { in: companyIds } },
+      select: { id: true, name: true },
+    });
+    const nameOf = new Map(companies.map((c) => [c.id, c.name]));
+
+    // Used-times per driver, to spot issued codes nobody used.
+    const used = new Map<string, number[]>();
+    for (const r of rows) {
+      if (r.action === 'CODE_USED' && r.driver) {
+        const list = used.get(r.driver.id) ?? [];
+        list.push(r.createdAt.getTime());
+        used.set(r.driver.id, list);
+      }
+    }
+    const graceMs = NOT_USED_MINUTES * 60_000;
+    const now = Date.now();
+    const events = rows
+      .filter((r) => r.action !== 'CODE_USED')
+      .map((r) => {
+        const t = r.createdAt.getTime();
+        const notUsed =
+          r.action === 'CODE_ISSUED' &&
+          !!r.driver &&
+          now - t > graceMs &&
+          !(used.get(r.driver.id) ?? []).some((u) => u >= t && u - t <= graceMs);
+        return {
+          id: r.id,
+          action: r.action,
+          channel: r.channel,
+          ip: r.ip,
+          createdAt: r.createdAt,
+          driver: r.driver,
+          company: r.companyId ? { id: r.companyId, name: nameOf.get(r.companyId) ?? '' } : null,
+          notUsed,
+        };
+      })
+      // A plain issued-and-used code is not an issue.
+      .filter((e) => e.action !== 'CODE_ISSUED' || e.notUsed);
+    return { days, notUsedMinutes: NOT_USED_MINUTES, events };
+  }
 
   // ── Billing ────────────────────────────────────────────────────────────
 

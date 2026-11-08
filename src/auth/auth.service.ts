@@ -558,6 +558,14 @@ export class AuthService {
         OTP_TTL_MS / 60_000,
       );
     } catch (err) {
+      await this.audit.record({
+        action: 'DELIVERY_FAILED',
+        companyId: driver.companyId,
+        driverId: driver.id,
+        actorId: driver.id,
+        channel: CHANNEL_TO_DB[target.name],
+        ip,
+      });
       this.logger.error(
         `OTP delivery [${target.name}] failed for ${maskPhone(phone)}: ${
           err instanceof Error ? err.message : String(err)
@@ -902,6 +910,14 @@ export class AuthService {
     }
     const live = pending.filter((o) => o.attempts < OTP_MAX_ATTEMPTS);
     if (live.length === 0) {
+      await this.audit.record({
+        action: 'CODE_LOCKED',
+        companyId: pending[0].user.companyId,
+        driverId: pending[0].user.id,
+        actorId: pending[0].user.id,
+        channel: pending[0].channel,
+        ip,
+      });
       throw new UnauthorizedException('errors.tooManyAttempts');
     }
 
@@ -913,6 +929,14 @@ export class AuthService {
       await this.prisma.otpCode.updateMany({
         where: { id: { in: live.map((o) => o.id) } },
         data: { attempts: { increment: 1 } },
+      });
+      await this.audit.record({
+        action: 'CODE_FAILED',
+        companyId: live[0].user.companyId,
+        driverId: live[0].user.id,
+        actorId: live[0].user.id,
+        channel: live[0].channel,
+        ip,
       });
       throw new UnauthorizedException('errors.codeInvalidOrExpired');
     }

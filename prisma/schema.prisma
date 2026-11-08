@@ -715,6 +715,12 @@ enum AuthAuditAction {
   CODE_USED
   EMAIL_VERIFICATION_SENT
   EMAIL_VERIFIED
+  /// Wrong code typed (counts against the live codes).
+  CODE_FAILED
+  /// Attempts exhausted — the driver needs a fresh code.
+  CODE_LOCKED
+  /// The provider refused / failed to send the code.
+  DELIVERY_FAILED
 }
 
 /// Who did what around driver sign-in. Read by admin/teamlead (no UI yet).
@@ -734,6 +740,7 @@ model AuthAuditLog {
 
   @@index([companyId, createdAt])
   @@index([driverId, createdAt])
+  @@index([createdAt])
 }
 
 enum GroupType {
