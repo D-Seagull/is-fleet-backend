@@ -470,6 +470,71 @@ export class AdminService {
     return { days, notUsedMinutes: NOT_USED_MINUTES, events };
   }
 
+  // ── Company trucks ─────────────────────────────────────────────────────
+
+  /**
+   * Every truck of the company (active and inactive) with how many trips it
+   * had in `from`..`to` (YYYY-MM-DD, inclusive). A trip's date is its first
+   * stop's date, else its creation day (UTC) — the same rule as billing.
+   */
+  async getCompanyTrucks(companyId: string, from: string, to: string) {
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    if (!day.test(from) || !day.test(to) || from > to) {
+      throw new BadRequestException('errors.invalidPeriod');
+    }
+    const exists = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('errors.companyNotFound');
+
+    const [trucks, counts] = await Promise.all([
+      this.prisma.truck.findMany({
+        where: { companyId },
+        orderBy: { plate: 'asc' },
+        select: {
+          id: true,
+          plate: true,
+          isActive: true,
+          currentDriver: { select: { firstName: true, lastName: true } },
+          manager: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      this.prisma.$queryRaw<{ truckId: string; trips: bigint }[]>`
+        SELECT t."truckId", COUNT(*) AS trips
+        FROM "Trip" t
+        LEFT JOIN LATERAL (
+          SELECT s."windowDate" FROM "TripStop" s
+          WHERE s."tripId" = t.id
+          ORDER BY s."order" ASC LIMIT 1
+        ) fs ON true
+        WHERE t."companyId" = ${companyId}
+          AND t."deletedAt" IS NULL
+          AND COALESCE(
+                fs."windowDate",
+                to_char(t."createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD')
+              ) BETWEEN ${from} AND ${to}
+        GROUP BY t."truckId"`,
+    ]);
+    const tripsBy = new Map(counts.map((c) => [c.truckId, Number(c.trips)]));
+    const rows = trucks.map((tr) => ({
+      id: tr.id,
+      plate: tr.plate,
+      isActive: tr.isActive,
+      driver: tr.currentDriver,
+      manager: tr.manager,
+      trips: tripsBy.get(tr.id) ?? 0,
+    }));
+    return {
+      from,
+      to,
+      total: rows.length,
+      active: rows.filter((r) => r.isActive).length,
+      inactive: rows.filter((r) => !r.isActive).length,
+      trucks: rows,
+    };
+  }
+
   // ── Pilot usage ────────────────────────────────────────────────────────
 
   /**

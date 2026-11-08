@@ -61,6 +61,16 @@ export class AdminController {
   }
 
   @Roles('ADMIN')
+  @Get('companies/:id/trucks')
+  getCompanyTrucks(
+    @Param('id') id: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    return this.adminService.getCompanyTrucks(id, from, to);
+  }
+
+  @Roles('ADMIN')
   @Get('billing')
   getBilling(@Query('month') month: string, @GetUser('id') adminId: string) {
     return this.adminService.getBilling(month, adminId);
