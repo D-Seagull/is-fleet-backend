@@ -32,6 +32,7 @@ export class GroupMessageDocumentsService {
     replyToDocumentId?: string | null,
     caption?: string | null,
     durationMs?: number | null,
+    waveform?: string | null,
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
@@ -95,6 +96,7 @@ export class GroupMessageDocumentsService {
             fileType,
             // Only a voice message has a length.
             durationMs: fileType === 'AUDIO' ? (durationMs ?? null) : null,
+            waveform: fileType === 'AUDIO' ? (waveform ?? null) : null,
             replyToMessageId: replyToMessageId ?? null,
             replyToDocumentId: replyToDocumentId ?? null,
             caption: caption?.trim() ? caption.trim() : null,

@@ -9,8 +9,8 @@ export function attachmentFileType(
   return 'DOCUMENT';
 }
 
-/** Longest recording a client may claim, in ms (the 5 MB cap bites first). */
-const MAX_VOICE_MS = 10 * 60 * 1000;
+/** Longest recording a client may claim, in ms: the apps stop at 60 s. */
+const MAX_VOICE_MS = 65 * 1000;
 
 /**
  * `durationMs` from a multipart field (a string) — a positive whole number of
@@ -21,6 +21,28 @@ export function parseDurationMs(raw: unknown): number | null {
   const n = typeof raw === 'number' ? raw : Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.min(Math.round(n), MAX_VOICE_MS);
+}
+
+const WAVEFORM_MIN = 8;
+const WAVEFORM_MAX = 128;
+
+/**
+ * `waveform` from a multipart field: comma-separated loudness values 0–100
+ * (the player's bars, one per value), or null when it is missing or not that.
+ * Normalised to whole numbers so what is stored is always well-formed.
+ */
+export function parseWaveform(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const parts = raw.split(',');
+  if (parts.length < WAVEFORM_MIN || parts.length > WAVEFORM_MAX) return null;
+  const values: number[] = [];
+  for (const part of parts) {
+    if (!/^\s*\d{1,3}(\.\d+)?\s*$/.test(part)) return null;
+    const n = Math.round(Number(part));
+    if (n < 0 || n > 100) return null;
+    values.push(n);
+  }
+  return values.join(',');
 }
 
 /** "0:07" / "1:23". */

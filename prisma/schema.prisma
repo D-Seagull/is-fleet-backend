@@ -430,6 +430,8 @@ model TripDocument {
   batchId           String?
   // Voice messages (fileType AUDIO): length in ms, as reported by the recorder.
   durationMs        Int?
+  // Voice messages: loudness bars for the player, "12,40,33,…" (0–100 each).
+  waveform          String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -465,6 +467,8 @@ model DirectMessageDocument {
   batchId           String?
   // Voice messages (fileType AUDIO): length in ms, as reported by the recorder.
   durationMs        Int?
+  // Voice messages: loudness bars for the player, "12,40,33,…" (0–100 each).
+  waveform          String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -502,6 +506,8 @@ model GroupMessageDocument {
   batchId           String?
   // Voice messages (fileType AUDIO): length in ms, as reported by the recorder.
   durationMs        Int?
+  // Voice messages: loudness bars for the player, "12,40,33,…" (0–100 each).
+  waveform          String?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?

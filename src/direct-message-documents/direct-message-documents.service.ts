@@ -32,6 +32,7 @@ export class DirectMessageDocumentsService {
     replyToDocumentId?: string | null,
     caption?: string | null,
     durationMs?: number | null,
+    waveform?: string | null,
   ) {
     if (!files || files.length === 0) throw new Error('No files provided');
 
@@ -75,6 +76,7 @@ export class DirectMessageDocumentsService {
             fileType,
             // Only a voice message has a length.
             durationMs: fileType === 'AUDIO' ? (durationMs ?? null) : null,
+            waveform: fileType === 'AUDIO' ? (waveform ?? null) : null,
             replyToMessageId: replyToMessageId ?? null,
             replyToDocumentId: replyToDocumentId ?? null,
             // Caption — same text for every file in this upload batch. Empty
