@@ -7,7 +7,9 @@ import {
  * What may be uploaded where (audit P1-1). Checked on the server by size
  * (multer limits), count, total request size, and type — extension, MIME
  * AND the file's first bytes, so a renamed `.html` → `.pdf` doesn't pass.
- * SVG, HTML, scripts, archives, video and executables are refused.
+ * SVG, HTML, scripts, archives, video and executables are refused. Voice
+ * messages (short audio recordings) are the one media type let in, capped
+ * per type at VOICE_MAX_BYTES.
  */
 export type UploadKind = 'document' | 'image' | 'screenshot';
 
@@ -27,6 +29,8 @@ interface FileType {
   mimes: string[];
   /** True when the first bytes look like this type. */
   sniff: (head: Buffer) => boolean;
+  /** A tighter cap than the policy's maxFileBytes (voice messages). */
+  maxBytes?: number;
 }
 
 const startsWith = (head: Buffer, bytes: number[], at = 0) =>
@@ -127,6 +131,55 @@ const TEXT: FileType = {
   sniff: (h) => !h.includes(0) && !MARKUP.test(h.toString('utf8')),
 };
 
+// ── Voice messages ────────────────────────────────────────────────────────
+// Recorded in the apps (AAC in an .m4a) or the browser (MediaRecorder: mp4 or
+// webm/opus). Judged by extension + MIME + first bytes like everything else.
+// The extension is deliberately `m4a` only — `.mp4` is where video would
+// sneak in, and video stays refused.
+export const VOICE_MAX_BYTES = 5 * MB;
+
+const M4A: FileType = {
+  name: 'm4a',
+  exts: ['m4a'],
+  mimes: ['audio/mp4', 'audio/m4a', 'audio/x-m4a'],
+  // ISO base media file: "ftyp" at byte 4, and not a HEIF/AVIF image brand.
+  sniff: (h) =>
+    ascii(h, 'ftyp', 4) &&
+    !HEIF_BRANDS.has(h.subarray(8, 12).toString('latin1')),
+  maxBytes: VOICE_MAX_BYTES,
+};
+// Raw AAC stream (ADTS frame header: 12 sync bits).
+const AAC: FileType = {
+  name: 'aac',
+  exts: ['aac'],
+  mimes: ['audio/aac', 'audio/aacp'],
+  sniff: (h) => h[0] === 0xff && (h[1] & 0xf6) === 0xf0,
+  maxBytes: VOICE_MAX_BYTES,
+};
+const MP3: FileType = {
+  name: 'mp3',
+  exts: ['mp3'],
+  mimes: ['audio/mpeg', 'audio/mp3'],
+  sniff: (h) => ascii(h, 'ID3') || (h[0] === 0xff && (h[1] & 0xe0) === 0xe0),
+  maxBytes: VOICE_MAX_BYTES,
+};
+const OGG: FileType = {
+  name: 'ogg',
+  exts: ['ogg', 'oga', 'opus'],
+  mimes: ['audio/ogg', 'audio/opus', 'application/ogg'],
+  sniff: (h) => ascii(h, 'OggS'),
+  maxBytes: VOICE_MAX_BYTES,
+};
+const WEBM_AUDIO: FileType = {
+  name: 'webm',
+  exts: ['webm'],
+  mimes: ['audio/webm'],
+  sniff: (h) => startsWith(h, [0x1a, 0x45, 0xdf, 0xa3]),
+  maxBytes: VOICE_MAX_BYTES,
+};
+const VOICE = [M4A, AAC, MP3, OGG, WEBM_AUDIO];
+const VOICE_TYPES = new Set<FileType>(VOICE);
+
 const IMAGES = [JPEG, PNG, WEBP, HEIC];
 
 export const UPLOAD_POLICIES: Record<UploadKind, UploadPolicy> = {
@@ -135,7 +188,7 @@ export const UPLOAD_POLICIES: Record<UploadKind, UploadPolicy> = {
     maxFileBytes: 20 * MB,
     maxFiles: 10,
     maxTotalBytes: 60 * MB,
-    types: [...IMAGES, GIF, PDF, OOXML, OLE, TEXT],
+    types: [...IMAGES, GIF, PDF, OOXML, OLE, TEXT, ...VOICE],
   },
   // Avatars, company logos, group pictures — the server shrinks them; the
   // phone apps send the picker's file as is, hence 10 MB, not 5.
@@ -193,7 +246,8 @@ export function assertAllowedFile(
     throw new PayloadTooLargeException('errors.fileTooLarge');
   }
   const ext = extOf(file.originalname);
-  const mime = (file.mimetype ?? '').toLowerCase();
+  // "audio/webm;codecs=opus" → "audio/webm": MediaRecorder labels blobs so.
+  const mime = (file.mimetype ?? '').toLowerCase().split(';')[0].trim();
   const type = ext
     ? policy.types.find((t) => t.exts.includes(ext))
     : policy.types.find((t) => t.mimes.includes(mime));
@@ -222,5 +276,13 @@ export function assertAllowedFile(
     throw unsupported();
   }
   if (!type.sniff(head)) throw unsupported();
+  if (type.maxBytes && file.size > type.maxBytes) {
+    throw new PayloadTooLargeException('errors.fileTooLarge');
+  }
+  if (VOICE_TYPES.has(type)) {
+    // Store and serve it under one canonical audio MIME, so players (and the
+    // attachment kind, decided by `audio/`) don't depend on the recorder.
+    file.mimetype = type.mimes[0];
+  }
   return type.name;
 }

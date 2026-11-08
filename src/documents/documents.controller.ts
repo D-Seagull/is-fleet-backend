@@ -20,6 +20,7 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import type { JwtUser } from '../auth/interfaces/jwt-user.interface';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UploadInterceptor } from 'src/common/upload.interceptor';
+import { parseDurationMs } from 'src/common/utils/attachment-kind';
 
 @ApiTags('documents')
 @ApiBearerAuth()
@@ -42,6 +43,7 @@ export class DocumentsController {
     @Body('replyToMessageId') replyToMessageId: string | undefined,
     @Body('replyToDocumentId') replyToDocumentId: string | undefined,
     @Body('caption') caption: string | undefined,
+    @Body('durationMs') durationMs: string | undefined,
     @GetUser() user: JwtUser,
   ) {
     return this.documentsService.uploadMany(
@@ -51,6 +53,7 @@ export class DocumentsController {
       replyToMessageId || null,
       replyToDocumentId || null,
       caption || null,
+      parseDurationMs(durationMs),
     );
   }
 

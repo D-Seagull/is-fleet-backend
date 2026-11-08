@@ -396,6 +396,7 @@ enum TripStatus {
 enum FileDocType {
   PHOTO
   DOCUMENT
+  AUDIO // voice message recorded in the app
 }
 
 model TripDocument {
@@ -415,6 +416,8 @@ model TripDocument {
   // Files sent together in one message (an album) share this id; null
   // for a single file and for uploads made before albums existed.
   batchId           String?
+  // Voice messages (fileType AUDIO): length in ms, as reported by the recorder.
+  durationMs        Int?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -448,6 +451,8 @@ model DirectMessageDocument {
   // Files sent together in one message (an album) share this id; null
   // for a single file and for uploads made before albums existed.
   batchId           String?
+  // Voice messages (fileType AUDIO): length in ms, as reported by the recorder.
+  durationMs        Int?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
@@ -483,6 +488,8 @@ model GroupMessageDocument {
   // Files sent together in one message (an album) share this id; null
   // for a single file and for uploads made before albums existed.
   batchId           String?
+  // Voice messages (fileType AUDIO): length in ms, as reported by the recorder.
+  durationMs        Int?
   caption           String?
   replyToMessageId  String?
   replyToDocumentId String?
