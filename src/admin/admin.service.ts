@@ -8,6 +8,8 @@ import { MailService } from 'src/mail/mail.service';
 import { MessagesGateway } from 'src/messages/messages.gateway';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { Prisma } from '@prisma/client';
+import { UpdateBillingDto } from './dto/update-billing.dto';
 
 @Injectable()
 export class AdminService {
@@ -363,7 +365,7 @@ export class AdminService {
   async deactivateCompany(id: string) {
     const company = await this.prisma.company.update({
       where: { id },
-      data: { isActive: false },
+      data: { isActive: false, billingStatus: 'DEACTIVATED' },
     });
     // Live-notify every connected session of this company so the write
     // lockout (banner + blocked writes) applies immediately, without
@@ -375,9 +377,17 @@ export class AdminService {
   }
 
   async reactivateCompany(id: string) {
+    const prev = await this.prisma.company.findUnique({
+      where: { id },
+      select: { billingStatus: true },
+    });
     const company = await this.prisma.company.update({
       where: { id },
-      data: { isActive: true },
+      // Back from DEACTIVATED: neutral TRIAL until the admin sets the real one.
+      data: {
+        isActive: true,
+        ...(prev?.billingStatus === 'DEACTIVATED' ? { billingStatus: 'TRIAL' } : {}),
+      },
     });
     this.gateway.server
       .to(`company-${id}`)
@@ -385,6 +395,124 @@ export class AdminService {
     return company;
   }
 
+
+  // ── Billing ────────────────────────────────────────────────────────────
+
+  /**
+   * Per company, for `month` (YYYY-MM): the paid trucks, drivers, managers
+   * and the amount. A truck is paid when it had at least one trip in the
+   * month; a trip belongs to the month of its first stop's date
+   * (`TripStop.windowDate`), or of `createdAt` when that stop has no date.
+   * Deleted trips don't count. Months are UTC.
+   */
+  async getBilling(month: string, adminId?: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new BadRequestException('errors.invalidMonth');
+    }
+    const excludeCompanyId = adminId
+      ? await this.getAdminCompanyId(adminId)
+      : undefined;
+
+    const [companies, truckRows, people] = await Promise.all([
+      this.prisma.company.findMany({
+        where: excludeCompanyId ? { NOT: { id: excludeCompanyId } } : undefined,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          isActive: true,
+          billingStatus: true,
+          pricePerTruck: true,
+          currency: true,
+          pilotEndsAt: true,
+          adminNote: true,
+        },
+      }),
+      this.prisma.$queryRaw<{ companyId: string; trucks: bigint }[]>`
+        WITH trip_month AS (
+          SELECT t."companyId", t."truckId",
+                 COALESCE(
+                   substring(fs."windowDate" from 1 for 7),
+                   to_char(t."createdAt" AT TIME ZONE 'UTC', 'YYYY-MM')
+                 ) AS month
+          FROM "Trip" t
+          LEFT JOIN LATERAL (
+            SELECT s."windowDate" FROM "TripStop" s
+            WHERE s."tripId" = t.id
+            ORDER BY s."order" ASC LIMIT 1
+          ) fs ON true
+          WHERE t."deletedAt" IS NULL
+        )
+        SELECT "companyId", COUNT(DISTINCT "truckId") AS trucks
+        FROM trip_month WHERE month = ${month}
+        GROUP BY "companyId"`,
+      this.prisma.user.groupBy({
+        by: ['companyId', 'role'],
+        where: {
+          deletedAt: null,
+          isSystem: false,
+          role: { in: ['DRIVER', 'MANAGER', 'TEAMLEAD'] },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const trucksBy = new Map(truckRows.map((r) => [r.companyId, Number(r.trucks)]));
+    const peopleBy = new Map<string, { drivers: number; managers: number }>();
+    for (const p of people) {
+      if (!p.companyId) continue;
+      const e = peopleBy.get(p.companyId) ?? { drivers: 0, managers: 0 };
+      if (p.role === 'DRIVER') e.drivers += p._count._all;
+      else e.managers += p._count._all;
+      peopleBy.set(p.companyId, e);
+    }
+
+    return {
+      month,
+      companies: companies.map((c) => {
+        const paidTrucks = trucksBy.get(c.id) ?? 0;
+        const price = c.pricePerTruck ? Number(c.pricePerTruck) : null;
+        return {
+          ...c,
+          pricePerTruck: price,
+          paidTrucks,
+          drivers: peopleBy.get(c.id)?.drivers ?? 0,
+          managers: peopleBy.get(c.id)?.managers ?? 0,
+          amount: price === null ? null : Math.round(price * paidTrucks * 100) / 100,
+        };
+      }),
+    };
+  }
+
+  async updateBilling(id: string, dto: UpdateBillingDto) {
+    const exists = await this.prisma.company.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('errors.companyNotFound');
+    const data: Prisma.CompanyUpdateInput = {
+      billingStatus: dto.billingStatus,
+      pricePerTruck: dto.pricePerTruck,
+      currency: dto.currency?.toUpperCase(),
+      pilotEndsAt:
+        dto.pilotEndsAt === undefined
+          ? undefined
+          : dto.pilotEndsAt === null
+            ? null
+            : new Date(dto.pilotEndsAt),
+      adminNote: dto.adminNote === undefined ? undefined : dto.adminNote?.trim() || null,
+    };
+    // "Deactivated" billing status and the access switch are one thing.
+    if (dto.billingStatus === 'DEACTIVATED') data.isActive = false;
+    const company = await this.prisma.company.update({ where: { id }, data });
+    if (dto.billingStatus === 'DEACTIVATED') {
+      this.gateway.server
+        .to(`company-${id}`)
+        .emit('companyStatusChanged', { companyId: id, isActive: false });
+    }
+    return company;
+  }
   async resendInvite(id: string, email: string) {
     const exists = await this.prisma.company.findFirst({ where: { id } });
     if (!exists) throw new NotFoundException('errors.companyNotFound');

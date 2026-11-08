@@ -32,6 +32,12 @@ model Company {
   alarms             Alarm[]
   bugReports         BugReport[]
   driverTransfersIn  DriverTransfer[]
+  /// Platform billing — set by hand in the admin panel.
+  billingStatus      BillingStatus       @default(TRIAL)
+  pricePerTruck      Decimal?            @db.Decimal(10, 2)
+  currency           String              @default("EUR")
+  pilotEndsAt        DateTime?
+  adminNote          String?
 }
 
 model TruckNote {
@@ -939,4 +945,12 @@ model TripStatusEvent {
 
   @@index([companyId, createdAt])
   @@index([tripId, createdAt])
+}
+
+enum BillingStatus {
+  TRIAL
+  PILOT
+  PAYING
+  OVERDUE
+  DEACTIVATED
 }
