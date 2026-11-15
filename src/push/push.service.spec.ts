@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { PushService, channelFor } from './push.service';
+import { PushService, channelFor, soundFor } from './push.service';
 import { PresenceService } from './presence.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -74,6 +74,38 @@ describe('PushService', () => {
     });
 
     expect(recipients().sort()).toEqual(['tok-away', 'tok-busy', 'tok-on']);
+  });
+
+  it('names the wav twin of a bundled mp3 for iOS devices only', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'ios', status: 'ONLINE', statusUntil: null, language: 'uk' },
+      { id: 'and', status: 'ONLINE', statusUntil: null, language: 'uk' },
+    ]);
+    prisma.pushToken.findMany.mockResolvedValue([
+      { token: 'tok-ios', userId: 'ios', platform: 'ios' },
+      { token: 'tok-and', userId: 'and', platform: 'android' },
+    ]);
+
+    await service.sendToUsers(['ios', 'and'], {
+      title: 'alarm',
+      body: 'b',
+      sound: 'is_alarm.mp3',
+    });
+
+    const byToken = Object.fromEntries(
+      (sent as { to: string; sound: string }[]).map((m) => [m.to, m.sound]),
+    );
+    expect(byToken).toEqual({
+      'tok-ios': 'is_alarm_ios.wav',
+      'tok-and': 'is_alarm.mp3',
+    });
+  });
+
+  it('soundFor leaves default / missing sounds and other platforms alone', () => {
+    expect(soundFor('default', 'ios')).toBe('default');
+    expect(soundFor(undefined, 'ios')).toBeUndefined();
+    expect(soundFor('push_message.mp3', null)).toBe('push_message.mp3');
+    expect(soundFor('push_message.mp3', 'ios')).toBe('push_message_ios.wav');
   });
 
   it('passes the Android channel (it carries the custom sound)', async () => {
