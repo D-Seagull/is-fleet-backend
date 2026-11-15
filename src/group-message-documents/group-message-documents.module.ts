@@ -4,9 +4,15 @@ import { GroupMessageDocumentsController } from './group-message-documents.contr
 import { SupabaseStorageModule } from '../supabase-storage/supabase-storage.module';
 import { DirectMessagesModule } from '../direct-messages/direct-messages.module';
 import { ReactionsModule } from '../reactions/reactions.module';
+import { PushModule } from '../push/push.module';
 
 @Module({
-  imports: [SupabaseStorageModule, DirectMessagesModule, ReactionsModule],
+  imports: [
+    SupabaseStorageModule,
+    DirectMessagesModule,
+    ReactionsModule,
+    PushModule,
+  ],
   providers: [GroupMessageDocumentsService],
   controllers: [GroupMessageDocumentsController],
 })

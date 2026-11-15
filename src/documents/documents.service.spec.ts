@@ -55,6 +55,7 @@ describe('DocumentsService — driver scope', () => {
       storage as never,
       {} as never,
       {} as never,
+      { sendLocalizedToUsers: jest.fn() } as never,
     );
   });
 

@@ -13,7 +13,14 @@ import { ReactionsService } from '../reactions/reactions.service';
 import { assertCanMessageUser, type Requester } from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
 import { finishBatch } from '../common/utils/batch-rollback';
-import { attachmentFileType } from '../common/utils/attachment-kind';
+import {
+  attachmentFileType,
+  voicePreview,
+} from '../common/utils/attachment-kind';
+import { PushService } from '../push/push.service';
+import { pushTitle } from '../push/push-titles';
+import { t } from '../i18n/i18n';
+import { fullName } from '../common/utils/full-name';
 
 @Injectable()
 export class DirectMessageDocumentsService {
@@ -22,6 +29,7 @@ export class DirectMessageDocumentsService {
     private storage: SupabaseStorageService,
     private gateway: DirectMessagesGateway,
     private reactions: ReactionsService,
+    private push: PushService,
   ) {}
 
   async uploadMany(
@@ -127,6 +135,37 @@ export class DirectMessageDocumentsService {
     // Real-time push: обом учасникам у DM-room
     for (const doc of created) {
       this.gateway.emitNewDirectDocument(uploadedBy, otherUserId, doc);
+    }
+
+    // A voice message pushes the other person, as a text message does (other
+    // attachments don't push today). `whenActive: 'skip'` - someone in the app
+    // already got it over the socket.
+    const first = created[0];
+    if (first?.fileType === 'AUDIO') {
+      void this.push
+        .sendLocalizedToUsers(
+          [otherUserId],
+          (lang) => ({
+            title: pushTitle.direct(
+              fullName(first.uploader),
+              t(lang, 'push.newMessage'),
+            ),
+            body: voicePreview(first.durationMs),
+          }),
+          {
+            sound: 'push_message.mp3',
+            channelId: 'chat',
+            whenActive: 'skip',
+            data: {
+              type: 'DM_MESSAGE',
+              userId: uploadedBy,
+              messageId: first.id,
+            },
+          },
+        )
+        .catch((e: Error) =>
+          this.logger.warn(`Voice push failed: ${e.message}`),
+        );
     }
 
     return created;
