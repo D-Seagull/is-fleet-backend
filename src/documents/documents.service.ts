@@ -18,7 +18,14 @@ import {
 } from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
 import { finishBatch } from '../common/utils/batch-rollback';
-import { attachmentFileType, voicePreview } from '../common/utils/attachment-kind';
+import {
+  attachmentFileType,
+  voicePreview,
+} from '../common/utils/attachment-kind';
+import { PushService } from '../push/push.service';
+import { pushTitle } from '../push/push-titles';
+import { t } from '../i18n/i18n';
+import { fullName } from '../common/utils/full-name';
 
 @Injectable()
 export class DocumentsService {
@@ -27,6 +34,7 @@ export class DocumentsService {
     private storage: SupabaseStorageService,
     private gateway: MessagesGateway,
     private reactions: ReactionsService,
+    private push: PushService,
   ) {}
 
   async uploadMany(
@@ -182,7 +190,64 @@ export class DocumentsService {
       );
     }
 
+    // A voice message pushes the other chat participant, as a text message
+    // does (other attachments don't push today). `whenActive: 'skip'` - whoever
+    // is in the app already got it over the socket.
+    if (first?.fileType === 'AUDIO') void this.pushVoice(first);
+
     return created;
+  }
+
+  private async pushVoice(doc: {
+    id: string;
+    uploadedBy: string;
+    durationMs: number | null;
+    uploader: { firstName: string | null; lastName: string | null } | null;
+    trip: {
+      id: string;
+      companyId: string | null;
+      driverId: string | null;
+      managerId: string | null;
+      truck: { id: string; plate: string } | null;
+    } | null;
+  }) {
+    try {
+      const trip = doc.trip;
+      if (!trip) return;
+      const recipientId =
+        doc.uploadedBy === trip.driverId ? trip.managerId : trip.driverId;
+      if (!recipientId) return;
+      // A driver moved to another company gets nothing from the old company.
+      if (recipientId === trip.driverId) {
+        const here = await this.prisma.user.findFirst({
+          where: { id: recipientId, companyId: trip.companyId ?? undefined },
+          select: { id: true },
+        });
+        if (!here) return;
+      }
+      const senderName = fullName(doc.uploader);
+      const plate = trip.truck?.plate;
+      await this.push.sendLocalizedToUsers(
+        [recipientId],
+        (lang) => ({
+          title: pushTitle.trip(plate, senderName, t(lang, 'push.newMessage')),
+          body: voicePreview(doc.durationMs),
+        }),
+        {
+          sound: 'push_message.mp3',
+          channelId: 'chat',
+          whenActive: 'skip',
+          data: {
+            type: 'MESSAGE',
+            tripId: trip.id,
+            truckId: trip.truck?.id,
+            messageId: doc.id,
+          },
+        },
+      );
+    } catch (e) {
+      this.logger.warn(`Voice push failed: ${(e as Error).message}`);
+    }
   }
 
   /**

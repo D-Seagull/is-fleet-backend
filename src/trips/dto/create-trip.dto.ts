@@ -7,7 +7,8 @@ import {
   IsInt,
   Matches,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimOrderNumber } from 'src/common/utils/order-number';
 
 export class TripStopDto {
   @IsEnum(['LOADING', 'UNLOADING', 'WAYPOINT'])
@@ -62,6 +63,7 @@ export class CreateTripDto {
   @IsOptional()
   notes?: string;
 
+  @Transform(trimOrderNumber)
   @IsString()
   @IsOptional()
   orderNumber?: string;

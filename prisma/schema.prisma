@@ -220,6 +220,10 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
+  /// The token issued when this one was rotated. Lets refresh() tell a lost
+  /// response (successor never used → the phone never got it) from a real
+  /// reuse of a stolen token (successor already used).
+  replacedById String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

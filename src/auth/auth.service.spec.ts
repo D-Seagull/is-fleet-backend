@@ -302,8 +302,102 @@ describe('AuthService', () => {
 
       expect(res.access_token).toBe('access.jwt');
       expect(prisma.refreshToken.create).toHaveBeenCalled();
-      // Already revoked — not touched again.
-      expect(prisma.refreshToken.update).not.toHaveBeenCalled();
+      // Already revoked — not revoked again (only linked to the new pair).
+      expect(prisma.refreshToken.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ revokedAt: expect.anything() }),
+        }),
+      );
+    });
+
+    describe('lost response (past the grace window)', () => {
+      const old = (over: Record<string, unknown> = {}) => ({
+        id: 'old',
+        revokedAt: new Date(Date.now() - 10 * 60_000), // 10 min ago
+        expiresAt: new Date(Date.now() + DAY),
+        replacedById: 'succ',
+        user: userRow(),
+        ...over,
+      });
+      const successor = (over: Record<string, unknown> = {}) => ({
+        id: 'succ',
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + DAY),
+        ...over,
+      });
+
+      it('successor never used → the phone never got it: retire it, new pair', async () => {
+        prisma.refreshToken.findUnique
+          .mockResolvedValueOnce(old())
+          .mockResolvedValueOnce(successor());
+        prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+        const res = await service.refresh('raw');
+
+        expect(res.access_token).toBe('access.jwt');
+        // The unused successor is retired (revoked AND expired)…
+        expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+          where: { id: 'succ', revokedAt: null },
+          data: { revokedAt: expect.any(Date), expiresAt: expect.any(Date) },
+        });
+        // …and the old row now points at the new pair.
+        expect(prisma.refreshToken.create).toHaveBeenCalled();
+        expect(prisma.refreshToken.update).toHaveBeenCalledWith({
+          where: { id: 'old' },
+          data: { replacedById: 'r1' },
+        });
+      });
+
+      it.each([
+        [
+          'already used (a real reuse — e.g. a stolen token)',
+          { revokedAt: new Date() },
+        ],
+        [
+          'expired (logout / deactivation / reset)',
+          { expiresAt: new Date(Date.now() - 1) },
+        ],
+      ])('successor %s → 401', async (_, over) => {
+        prisma.refreshToken.findUnique
+          .mockResolvedValueOnce(old())
+          .mockResolvedValueOnce(successor(over));
+        await expect(service.refresh('raw')).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      });
+
+      it('no successor on record → 401', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValueOnce(
+          old({ replacedById: null }),
+        );
+        await expect(service.refresh('raw')).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      });
+
+      it('successor being used at this very moment wins → 401', async () => {
+        prisma.refreshToken.findUnique
+          .mockResolvedValueOnce(old())
+          .mockResolvedValueOnce(successor());
+        prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+        await expect(service.refresh('raw')).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      });
+
+      it('a deactivated user is still refused', async () => {
+        prisma.refreshToken.findUnique
+          .mockResolvedValueOnce(old({ user: userRow({ isActive: false }) }))
+          .mockResolvedValueOnce(successor());
+        prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+        await expect(service.refresh('raw')).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      });
     });
 
     it('returns the full own profile — clients keep it, a bare user wiped the avatar', async () => {
