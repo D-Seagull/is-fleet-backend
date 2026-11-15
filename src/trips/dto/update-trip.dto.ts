@@ -9,7 +9,8 @@ import {
   Matches,
 } from 'class-validator';
 import { TripStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimOrderNumber } from 'src/common/utils/order-number';
 
 /** Driver's answer to "Are we heading to loading?". */
 export class DepartAnswerDto {
@@ -92,6 +93,7 @@ export class UpdateTripDto {
   @IsOptional()
   notes?: string;
 
+  @Transform(trimOrderNumber)
   @IsString()
   @IsOptional()
   orderNumber?: string;
