@@ -283,9 +283,15 @@ export class AuthService {
     firstName: string,
     lastName: string | null,
     uiLocale: 'UK' | 'EN' | 'PL' | 'LT' | 'DE' | 'RU',
+    /** Refresh row this pair replaces (rotation) — linked to the new one. */
+    previousRefreshId?: string,
   ) {
     const payload = { sub: userId, role, companyId };
-    const refresh_token = await this.issueRefreshToken(userId, role);
+    const refresh_token = await this.issueRefreshToken(
+      userId,
+      role,
+      previousRefreshId,
+    );
     // The full own profile, same as /auth/me — clients keep this as their
     // user, and a bare id/role/name here wiped the mobile avatar on every
     // token refresh. The bare shape is only a fallback if the row is gone.
@@ -329,15 +335,24 @@ export class AuthService {
   private async issueRefreshToken(
     userId: string,
     role: string,
+    previousId?: string,
   ): Promise<string> {
     const raw = crypto.randomBytes(48).toString('base64url');
-    await this.prisma.refreshToken.create({
+    const row = await this.prisma.refreshToken.create({
       data: {
         tokenHash: this.hashToken(raw),
         userId,
         expiresAt: new Date(Date.now() + AuthService.refreshTtlMs(role)),
       },
+      select: { id: true },
     });
+    // Remember the successor — see refresh(), lost-response recovery.
+    if (previousId) {
+      await this.prisma.refreshToken.update({
+        where: { id: previousId },
+        data: { replacedById: row.id },
+      });
+    }
     return raw;
   }
 
@@ -354,6 +369,15 @@ export class AuthService {
    * 401 there logged the user out (and the losing tab's logout then revoked
    * the winner's new token too). Logout makes a token unusable at once by
    * also expiring it (revokeRefresh), so it never falls in the grace window.
+   *
+   * Lost response, past the grace window: the server rotated the token but
+   * the answer never reached the phone (a network switch at a border, the OS
+   * killing the app mid-request), and the driver only comes back online
+   * minutes later — still holding the old token. If that token's successor
+   * has never been used, the phone never got it: retire the successor and
+   * issue a new pair. If the successor HAS been used, this is a real reuse
+   * (e.g. a stolen token) and stays a 401. Logout / deactivation / reset
+   * expire tokens, so none of those can be revived this way.
    */
   async refresh(rawRefresh: string | undefined) {
     if (!rawRefresh) throw new UnauthorizedException('errors.noAccess');
@@ -367,7 +391,7 @@ export class AuthService {
     }
     if (record.revokedAt) {
       if (now - record.revokedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
-        throw new UnauthorizedException('errors.noAccess');
+        await this.retireUnusedSuccessor(record.replacedById, now);
       }
     } else {
       await this.prisma.refreshToken.update({
@@ -388,6 +412,37 @@ export class AuthService {
       u.firstName,
       u.lastName,
       u.uiLocale,
+      record.id,
+    );
+  }
+
+  /**
+   * Lost-response recovery (see refresh): accept an old token only if the
+   * token that replaced it was never used — then retire that successor, the
+   * phone never had it. Anything else is a reuse → 401.
+   */
+  private async retireUnusedSuccessor(successorId: string | null, now: number) {
+    const successor = successorId
+      ? await this.prisma.refreshToken.findUnique({
+          where: { id: successorId },
+          select: { id: true, revokedAt: true, expiresAt: true },
+        })
+      : null;
+    if (
+      !successor ||
+      successor.revokedAt ||
+      successor.expiresAt.getTime() < now
+    ) {
+      throw new UnauthorizedException('errors.noAccess');
+    }
+    // Atomic: if the successor is being used right now, it wins.
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { id: successor.id, revokedAt: null },
+      data: { revokedAt: new Date(now), expiresAt: new Date(now) },
+    });
+    if (count !== 1) throw new UnauthorizedException('errors.noAccess');
+    this.logger.log(
+      `Refresh: lost response recovered — unused successor ${successor.id} retired`,
     );
   }
 
