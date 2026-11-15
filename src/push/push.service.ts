@@ -70,6 +70,20 @@ export function channelFor(asked: string, deviceChannels: string[]): string {
   return FALLBACK_CHANNEL[asked];
 }
 
+/**
+ * The sound file to name in the push for this device. iOS plays notification
+ * sounds only from aiff / wav / caf (30 s max), so each bundled `x.mp3` has an
+ * `x_ios.wav` twin (assets/sounds in both apps) that iOS devices are sent.
+ * Android takes its sound from the channel, so it keeps the mp3 name.
+ */
+export function soundFor(
+  sound: string | undefined,
+  platform: string | null,
+): string | undefined {
+  if (platform !== 'ios' || !sound || !sound.endsWith('.mp3')) return sound;
+  return `${sound.slice(0, -'.mp3'.length)}_ios.wav`;
+}
+
 // Receipts are ready a few seconds to minutes after sending.
 const RECEIPT_DELAY_MS = 60_000;
 
@@ -174,7 +188,7 @@ export class PushService {
 
     const tokens = await this.prisma.pushToken.findMany({
       where: { userId: { in: deliverIds } },
-      select: { token: true, userId: true, channels: true },
+      select: { token: true, userId: true, channels: true, platform: true },
     });
     this.logger.log(
       `Push "${label}" → users=[${deliverIds.join(',')}] tokens=${tokens.length}`,
@@ -188,7 +202,7 @@ export class PushService {
 
     const messages: ExpoPushMessage[] = [];
     const validTokens: string[] = [];
-    for (const { token, userId, channels } of tokens) {
+    for (const { token, userId, channels, platform } of tokens) {
       if (!Expo.isExpoPushToken(token)) {
         this.logger.warn(`Drop invalid token format: ${token}`);
         await this.prisma.pushToken.deleteMany({ where: { token } });
@@ -203,7 +217,10 @@ export class PushService {
         // priority, which Android holds back in Doze — pushes to a locked
         // phone arrived minutes late and batched, often silently.
         priority: 'high',
-        sound: extra.sound === null ? undefined : (extra.sound ?? BRAND_SOUND),
+        sound:
+          extra.sound === null
+            ? undefined
+            : soundFor(extra.sound ?? BRAND_SOUND, platform),
         title,
         body,
         data: extra.data,
