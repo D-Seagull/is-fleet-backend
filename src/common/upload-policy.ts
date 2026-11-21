@@ -11,7 +11,7 @@ import {
  * messages (short audio recordings) are the one media type let in, capped
  * per type at VOICE_MAX_BYTES.
  */
-export type UploadKind = 'document' | 'image' | 'screenshot';
+export type UploadKind = 'document' | 'image' | 'screenshot' | 'order';
 
 const MB = 1024 * 1024;
 
@@ -197,6 +197,14 @@ export const UPLOAD_POLICIES: Record<UploadKind, UploadPolicy> = {
     maxFiles: 1,
     maxTotalBytes: 11 * MB,
     types: IMAGES,
+  },
+  // A transport order for "fill from order" / the trip's order file: one
+  // file the parser can read (no legacy .doc/.xls, no voice).
+  order: {
+    maxFileBytes: 20 * MB,
+    maxFiles: 1,
+    maxTotalBytes: 21 * MB,
+    types: [...IMAGES, PDF, OOXML, TEXT],
   },
   // Bug-report screenshots.
   screenshot: {

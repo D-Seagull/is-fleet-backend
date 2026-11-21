@@ -160,33 +160,58 @@ export class TripsService {
       'errors.driverNotFound',
     );
     await assertTruckInCompany(this.prisma, dto.truckId, companyId);
-    const trip = await this.prisma.trip.create({
-      data: {
-        title: dto.title,
-        managerId,
-        driverId: dto.driverId,
-        truckId: dto.truckId,
-        companyId,
-        notes: dto.notes,
-        orderNumber: dto.orderNumber,
-        stops: dto.stops?.length
-          ? {
-              create: dto.stops.map((s, i) => ({
-                type: s.type,
-                order: s.order ?? i,
-                name: s.name,
-                address: s.address,
-                ref: s.ref,
-                coords: s.coords,
-                windowDate: s.windowDate,
-                windowStart: s.windowStart,
-                windowEnd: s.windowEnd,
-              })),
-            }
-          : undefined,
-      },
-      include: tripInclude,
-    });
+
+    // Same import key again → the trip that key already made, no second
+    // trip, chat session or push. Scoped to the company: a key is not a
+    // way to read another company's trip.
+    if (dto.importKey) {
+      const existing = await this.findByImportKey(dto.importKey, companyId);
+      if (existing) return existing;
+    }
+
+    let trip: Prisma.TripGetPayload<{ include: typeof tripInclude }>;
+    try {
+      trip = await this.prisma.trip.create({
+        data: {
+          title: dto.title,
+          importKey: dto.importKey,
+          managerId,
+          driverId: dto.driverId,
+          truckId: dto.truckId,
+          companyId,
+          notes: dto.notes,
+          orderNumber: dto.orderNumber,
+          stops: dto.stops?.length
+            ? {
+                create: dto.stops.map((s, i) => ({
+                  type: s.type,
+                  order: s.order ?? i,
+                  name: s.name,
+                  address: s.address,
+                  ref: s.ref,
+                  coords: s.coords,
+                  windowDate: s.windowDate,
+                  windowStart: s.windowStart,
+                  windowEnd: s.windowEnd,
+                })),
+              }
+            : undefined,
+        },
+        include: tripInclude,
+      });
+    } catch (err) {
+      // Two requests with the same key raced past the lookup: the loser
+      // hits the unique index and answers with the winner's trip.
+      if (
+        dto.importKey &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const existing = await this.findByImportKey(dto.importKey, companyId);
+        if (existing) return existing;
+      }
+      throw err;
+    }
     await this.sessions.openInitial(trip.id, trip.driverId, trip.managerId);
 
     // Push: notify the assigned driver right away — even mid-trip: they
@@ -214,6 +239,13 @@ export class TripsService {
     this.emitTripUpdated(trip.id, companyId, trip.driverId);
 
     return trip;
+  }
+
+  private findByImportKey(importKey: string, companyId: string) {
+    return this.prisma.trip.findFirst({
+      where: { importKey, companyId },
+      include: tripInclude,
+    });
   }
 
   async findAll(companyId: string) {

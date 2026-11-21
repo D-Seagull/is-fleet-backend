@@ -5,6 +5,7 @@ import {
   ValidateNested,
   IsEnum,
   IsInt,
+  IsUUID,
   Matches,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -73,4 +74,10 @@ export class CreateTripDto {
   @Type(() => TripStopDto)
   @IsOptional()
   stops?: TripStopDto[];
+
+  // "Fill from order": one key per draft. Sending it again (double click,
+  // retry after a timeout) returns the trip it already made.
+  @IsUUID()
+  @IsOptional()
+  importKey?: string;
 }

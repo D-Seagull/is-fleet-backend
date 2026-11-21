@@ -80,3 +80,6 @@ GoogleService-Info.plist
 *.p12
 *.jks
 *.keystore
+
+# Order-import pilot: real transport orders (client data), never commit
+/order-samples
