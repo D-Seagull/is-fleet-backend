@@ -103,6 +103,14 @@ describe('TrucksService', () => {
       });
     });
 
+    it('stores the plate upper-case', async () => {
+      prisma.truck.findMany.mockResolvedValue([]);
+      await service.create('c1', { plate: ' ab 12-cd ' });
+      expect(prisma.truck.create).toHaveBeenCalledWith({
+        data: { plate: 'AB 12-CD', companyId: 'c1' },
+      });
+    });
+
     it('creates a truck with a new plate, trimmed', async () => {
       prisma.truck.findMany.mockResolvedValue([
         { id: 'tr1', plate: 'AB1234CD', isActive: true },

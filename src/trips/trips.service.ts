@@ -1153,7 +1153,12 @@ export class TripsService {
 
   async driverUpdateStatus(id: string, driverId: string, dto: UpdateTripDto) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, driverId, deletedAt: null, ...driverStillInCompany(driverId) },
+      where: {
+        id,
+        driverId,
+        deletedAt: null,
+        ...driverStillInCompany(driverId),
+      },
     });
     if (!trip) throw new ForbiddenException('errors.noAccessTrip');
     const updated = await this.prisma.trip.update({
@@ -1271,7 +1276,12 @@ export class TripsService {
 
   async answerDepart(id: string, driverId: string, depart: boolean) {
     const trip = await this.prisma.trip.findFirst({
-      where: { id, driverId, deletedAt: null, ...driverStillInCompany(driverId) },
+      where: {
+        id,
+        driverId,
+        deletedAt: null,
+        ...driverStillInCompany(driverId),
+      },
       include: { truck: { select: { plate: true } } },
     });
     if (!trip) throw new ForbiddenException('errors.noAccessTrip');
@@ -1300,10 +1310,14 @@ export class TripsService {
     driverId: string;
     truck?: { plate: string } | null;
   }) {
-    await this.prisma.trip.update({
-      where: { id: trip.id },
+    // Claim the give-up: only the call that clears `departPromptAt` tells the
+    // manager. The cron on a second instance (deploy overlap), or "No" tapped
+    // on two devices, finds it already null → count 0 → no second notice.
+    const claimed = await this.prisma.trip.updateMany({
+      where: { id: trip.id, departPromptAt: { not: null } },
       data: { departPromptAt: null },
     });
+    if (claimed.count === 0) return;
     const driver = await this.prisma.user.findUnique({
       where: { id: trip.driverId },
       select: { firstName: true, lastName: true },

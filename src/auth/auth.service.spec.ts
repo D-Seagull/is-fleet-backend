@@ -90,6 +90,7 @@ describe('AuthService', () => {
       user: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({
           id: 'u1',
           status: 'ONLINE',
