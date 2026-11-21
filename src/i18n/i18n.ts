@@ -158,6 +158,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.truckHasNoDriver': 'На цій вантажівці немає водія',
     'errors.targetTruckBusy': 'На цій вантажівці вже є активний рейс',
     'errors.truckPlateExists': 'Вантажівка з таким номером уже існує',
+    'errors.userNameExists':
+      'Користувач з таким імʼям і прізвищем уже є в компанії',
+    'errors.userNameExistsInactive':
+      'Користувач з таким імʼям і прізвищем уже є в компанії, але деактивований — активуйте його',
     'errors.companyDeactivated':
       'Компанію деактивовано — зміни тимчасово недоступні',
     'errors.driverExistsElsewhere':
@@ -300,6 +304,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.truckHasNoDriver': 'This truck has no driver',
     'errors.targetTruckBusy': 'This truck already has an active trip',
     'errors.truckPlateExists': 'A truck with this plate already exists',
+    'errors.userNameExists':
+      'A user with this first and last name already exists in the company',
+    'errors.userNameExistsInactive':
+      'A user with this first and last name already exists in the company but is deactivated — activate them instead',
     'errors.companyDeactivated':
       'Company is deactivated — changes are temporarily unavailable',
     'errors.driverExistsElsewhere':
@@ -451,6 +459,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.targetTruckBusy': 'Ten pojazd ma już aktywną trasę',
     'errors.truckPlateExists':
       'Pojazd o tym numerze rejestracyjnym już istnieje',
+    'errors.userNameExists':
+      'Użytkownik o tym imieniu i nazwisku już istnieje w firmie',
+    'errors.userNameExistsInactive':
+      'Użytkownik o tym imieniu i nazwisku już istnieje w firmie, ale jest dezaktywowany — aktywuj go',
     'errors.companyDeactivated':
       'Firma jest dezaktywowana — zmiany są tymczasowo niedostępne',
     'errors.driverExistsElsewhere':
@@ -596,6 +608,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.truckHasNoDriver': 'Ši transporto priemonė neturi vairuotojo',
     'errors.targetTruckBusy': 'Ši transporto priemonė jau turi aktyvų reisą',
     'errors.truckPlateExists': 'Transporto priemonė su šiuo numeriu jau yra',
+    'errors.userNameExists':
+      'Naudotojas su tokiu vardu ir pavarde įmonėje jau yra',
+    'errors.userNameExistsInactive':
+      'Naudotojas su tokiu vardu ir pavarde įmonėje jau yra, bet yra deaktyvuotas — aktyvuokite jį',
     'errors.companyDeactivated':
       'Įmonė deaktyvuota — pakeitimai laikinai negalimi',
     'errors.driverExistsElsewhere':
@@ -746,6 +762,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.truckHasNoDriver': 'На этой машине нет водителя',
     'errors.targetTruckBusy': 'На этой машине уже есть активный рейс',
     'errors.truckPlateExists': 'Машина с таким номером уже существует',
+    'errors.userNameExists':
+      'Пользователь с таким именем и фамилией уже есть в компании',
+    'errors.userNameExistsInactive':
+      'Пользователь с таким именем и фамилией уже есть в компании, но деактивирован — активируйте его',
     'errors.companyDeactivated':
       'Компания деактивирована — изменения временно недоступны',
     'errors.driverExistsElsewhere':

@@ -19,6 +19,7 @@ import { MessagesGateway } from 'src/messages/messages.gateway';
 import { PushService } from 'src/push/push.service';
 import { DriverTransfersService } from 'src/driver-transfers/driver-transfers.service';
 import { fullName } from 'src/common/utils/full-name';
+import { assertNameFree } from 'src/common/utils/name-unique';
 import {
   assertTruckInCompany,
   assertUserInCompany,
@@ -86,6 +87,7 @@ export class UsersService {
     inviteExpiry.setDate(inviteExpiry.getDate() + 7);
 
     const phone = requireValidPhone(dto.phone);
+    await assertNameFree(this.prisma, companyId, dto.firstName, dto.lastName);
 
     // Route guard restricts this endpoint to TEAMLEAD only, so creatorId
     // is always a TEAMLEAD — pin the new manager to them as their team
@@ -166,6 +168,8 @@ export class UsersService {
       }
       return CREATE_DRIVER_OK;
     }
+
+    await assertNameFree(this.prisma, companyId, dto.firstName, dto.lastName);
 
     const hash = dto.password ? await bcrypt.hash(dto.password, 10) : null;
     try {
@@ -282,6 +286,16 @@ export class UsersService {
     // Only users ranked below you (role-rank.ts). Your own profile goes
     // through PATCH /users/me.
     this.assertCanManage(requester, user);
+
+    if (dto.firstName !== undefined || dto.lastName !== undefined) {
+      await assertNameFree(
+        this.prisma,
+        user.companyId,
+        dto.firstName ?? user.firstName,
+        dto.lastName !== undefined ? dto.lastName : user.lastName,
+        id,
+      );
+    }
 
     // Same phone rules as driver creation; stored in canonical form. A number
     // that already signs someone else in is refused up front (it's unique) —
@@ -497,6 +511,22 @@ export class UsersService {
   ) {
     const phone =
       dto.phone !== undefined ? requireValidPhone(dto.phone) : undefined;
+
+    if (dto.firstName !== undefined || dto.lastName !== undefined) {
+      const me = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { companyId: true, firstName: true, lastName: true },
+      });
+      if (me) {
+        await assertNameFree(
+          this.prisma,
+          me.companyId,
+          dto.firstName ?? me.firstName,
+          dto.lastName !== undefined ? dto.lastName : me.lastName,
+          userId,
+        );
+      }
+    }
 
     const statusPatch: {
       status?: 'ONLINE' | 'BUSY' | 'AWAY' | 'SLEEP' | 'VACATION';

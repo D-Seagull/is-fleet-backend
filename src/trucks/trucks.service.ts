@@ -44,7 +44,8 @@ export class TrucksService {
   ) {}
 
   async create(companyId: string, dto: CreateTruckDto) {
-    const plate = dto.plate.trim();
+    // Plates are stored upper-case ("ab 1234" → "AB 1234").
+    const plate = dto.plate.trim().toUpperCase();
     await this.assertPlateFree(companyId, plate);
     await this.assertRefs(companyId, dto);
     return this.prisma.truck.create({
@@ -171,7 +172,7 @@ export class TrucksService {
     const oldTruck = await this.findOne(id, companyId);
     await this.assertRefs(oldTruck.companyId, dto);
     if (dto.plate !== undefined) {
-      dto.plate = dto.plate.trim();
+      dto.plate = dto.plate.trim().toUpperCase();
       await this.assertPlateFree(companyId, dto.plate, id);
     }
 

@@ -21,6 +21,7 @@ import { SELF_PROFILE_SELECT } from 'src/users/self-profile';
 import { OtpChannel } from '@prisma/client';
 import { assertTotpOk, totpKey } from './admin-totp';
 import { OtpDeliveryService } from 'src/driver-login/otp-delivery.service';
+import { assertNameFree } from 'src/common/utils/name-unique';
 import { AuthAuditService } from 'src/driver-login/auth-audit.service';
 import { DriverLoginNoticeService } from 'src/driver-login/driver-login-notice.service';
 import {
@@ -144,6 +145,13 @@ export class AuthService {
 
     if (existingUser) {
       // Реєструємо manager або driver
+      await assertNameFree(
+        this.prisma,
+        existingUser.companyId,
+        dto.firstName,
+        dto.lastName,
+        existingUser.id,
+      );
       const hash = await bcrypt.hash(dto.password, 10);
 
       const user = await this.prisma.user.update({
@@ -180,6 +188,7 @@ export class AuthService {
     });
 
     if (!company) throw new BadRequestException('errors.invalidOrExpiredToken');
+    await assertNameFree(this.prisma, company.id, dto.firstName, dto.lastName);
 
     const hash = await bcrypt.hash(dto.password, 10);
 

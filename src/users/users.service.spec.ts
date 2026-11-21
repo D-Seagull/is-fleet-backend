@@ -62,6 +62,7 @@ describe('UsersService', () => {
     prisma = {
       user: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({}),
       },
       driverRating: { upsert: jest.fn().mockResolvedValue({ id: 'dr1' }) },
@@ -416,6 +417,112 @@ describe('UsersService', () => {
       await expect(
         service.createDriver('cA', 'mgrA', dto as never),
       ).rejects.toThrow(/phoneUsedUser/);
+    });
+  });
+
+  // ─── one first + last name per company ──────────────────────────────────────
+  describe('duplicate first + last name', () => {
+    const ivan = (over: Record<string, unknown> = {}) => ({
+      id: 'old',
+      firstName: 'Ivan',
+      lastName: 'Petrenko',
+      isActive: true,
+      ...over,
+    });
+
+    beforeEach(() => {
+      prisma.user.create = jest.fn().mockResolvedValue({ id: 'new' });
+      prisma.user.findUnique = jest.fn().mockResolvedValue(null);
+    });
+
+    it('createDriver refuses a name the company has (case / spaces ignored)', async () => {
+      prisma.user.findMany.mockResolvedValue([ivan()]);
+      await expect(
+        service.createDriver('cA', 'mgrA', {
+          firstName: '  ivan ',
+          lastName: 'PETRENKO',
+          phone: '+380971234567',
+        } as never),
+      ).rejects.toThrow(/errors\.userNameExists$/);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { companyId: 'cA', deletedAt: null, isSystem: false },
+        }),
+      );
+    });
+
+    it('says when the twin is deactivated', async () => {
+      prisma.user.findMany.mockResolvedValue([ivan({ isActive: false })]);
+      await expect(
+        service.createDriver('cA', 'mgrA', {
+          firstName: 'Ivan',
+          lastName: 'Petrenko',
+          phone: '+380971234567',
+        } as never),
+      ).rejects.toThrow(/userNameExistsInactive/);
+    });
+
+    it('createManager refuses a name a driver already has', async () => {
+      prisma.user.findMany.mockResolvedValue([ivan()]);
+      await expect(
+        service.createManager('cA', 'tl1', {
+          email: 'i@x.eu',
+          phone: '+380971234567',
+          firstName: 'Ivan',
+          lastName: 'Petrenko',
+        } as never),
+      ).rejects.toThrow(/userNameExists/);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('a different last name (or none) is a different person', async () => {
+      prisma.user.findMany.mockResolvedValue([ivan()]);
+      await expect(
+        service.createDriver('cA', 'mgrA', {
+          firstName: 'Ivan',
+          phone: '+380971234567',
+        } as never),
+      ).resolves.toEqual({ ok: true });
+      await expect(
+        service.createDriver('cA', 'mgrA', {
+          firstName: 'Ivan',
+          lastName: 'Kovalenko',
+          phone: '+380971234568',
+        } as never),
+      ).resolves.toEqual({ ok: true });
+    });
+
+    it('updateDriver refuses a rename onto someone else, ignoring the driver itself', async () => {
+      prisma.user.findFirst.mockResolvedValue(userRow());
+      prisma.user.findMany.mockResolvedValue([ivan()]);
+      await expect(
+        service.updateDriver(
+          'u1',
+          'c1',
+          { firstName: 'Ivan', lastName: 'Petrenko' },
+          as('MANAGER', 'm1'),
+        ),
+      ).rejects.toThrow(/userNameExists/);
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { not: 'u1' } }),
+        }),
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('updateMe refuses a rename onto a colleague', async () => {
+      prisma.user.findUnique = jest.fn().mockResolvedValue({
+        companyId: 'c1',
+        firstName: 'Ann',
+        lastName: 'Doe',
+      });
+      prisma.user.findMany.mockResolvedValue([ivan()]);
+      await expect(
+        service.updateMe('u1', { firstName: 'Ivan', lastName: 'Petrenko' }),
+      ).rejects.toThrow(/userNameExists/);
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 
