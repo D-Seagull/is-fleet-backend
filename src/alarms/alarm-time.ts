@@ -9,7 +9,10 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
  * - Otherwise (e.g. "2026-05-09T14:00:00") → interpret as wall-clock in `tz`.
  *   Falls back to UTC when `tz` is missing.
  */
-export function parseAlarmTime(input: string, tz: string | null | undefined): Date {
+export function parseAlarmTime(
+  input: string,
+  tz: string | null | undefined,
+): Date {
   const hasTzSuffix = /Z$|[+-]\d{2}:?\d{2}$/.test(input);
   if (hasTzSuffix) return new Date(input);
   return fromZonedTime(input, tz ?? 'UTC');

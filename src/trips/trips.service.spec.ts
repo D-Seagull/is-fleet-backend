@@ -462,8 +462,8 @@ describe('TripsService', () => {
 
       await service.answerDepart('t1', 'd1', false);
 
-      expect(prisma.trip.update).toHaveBeenCalledWith({
-        where: { id: 't1' },
+      expect(prisma.trip.updateMany).toHaveBeenCalledWith({
+        where: { id: 't1', departPromptAt: { not: null } },
         data: { departPromptAt: null },
       });
       expect(pushTypes()).toEqual(['TRIP_NOT_DEPARTED']);
@@ -516,6 +516,23 @@ describe('TripsService', () => {
         .mockResolvedValueOnce([accepted]);
       await service.checkDepartPrompts();
       expect(pushTypes()).toEqual(['TRIP_NOT_DEPARTED']);
+    });
+
+    it('tells the manager once when the give-up was already claimed', async () => {
+      prisma.trip.findFirst.mockResolvedValue({
+        ...accepted,
+        departPromptCount: 3,
+      });
+      // e.g. the cron on another instance, or "No" from a second device
+      prisma.trip.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await service.answerDepart('t1', 'd1', false);
+
+      expect(pushTypes()).toEqual([]);
+      expect(emit).not.toHaveBeenCalledWith(
+        'tripStatusNotice',
+        expect.anything(),
+      );
     });
   });
 

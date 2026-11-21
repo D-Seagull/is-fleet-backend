@@ -13,8 +13,30 @@ import { MessagesGateway } from 'src/messages/messages.gateway';
 import { nextFireTime, parseAlarmTime } from './alarm-time';
 
 const ALARM_INCLUDE = {
-  creator: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
-  target: { select: { id: true, firstName: true, lastName: true, avatar: true, status: true, statusUntil: true, lastSeenAt: true, role: true } },
+  creator: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      avatar: true,
+      status: true,
+      statusUntil: true,
+      lastSeenAt: true,
+      role: true,
+    },
+  },
+  target: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      avatar: true,
+      status: true,
+      statusUntil: true,
+      lastSeenAt: true,
+      role: true,
+    },
+  },
   trip: { select: { id: true, title: true, truckId: true } },
 } as const;
 
@@ -216,12 +238,39 @@ export class AlarmsService {
     const due = await this.prisma.alarm.findMany({
       where: { time: { lte: now }, isSent: false },
       include: {
-        target: { select: { id: true, firstName: true, lastName: true, avatar: true, timezone: true } },
+        target: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            timezone: true,
+          },
+        },
       },
     });
     if (due.length === 0) return;
 
     for (const alarm of due) {
+      // Claim the alarm BEFORE ringing: recurring ones move on to the next
+      // interval, one-shot ones get marked sent. The `where` is the version we
+      // read (same time, still unsent) — when a second process runs this cron
+      // too (Render keeps the old instance up during a deploy), only one of
+      // them moves the row; the other gets count 0 and stays quiet. Trade-off:
+      // a crash between claim and push loses that one ring instead of
+      // doubling it on every deploy.
+      const next = nextFireTime(
+        alarm.time,
+        alarm.recurrence,
+        alarm.target.timezone,
+        now,
+      );
+      const claimed = await this.prisma.alarm.updateMany({
+        where: { id: alarm.id, time: alarm.time, isSent: false },
+        data: next ? { time: next } : { isSent: true },
+      });
+      if (claimed.count === 0) continue;
+
       try {
         await this.push.sendToUsers([alarm.targetUserId], {
           title: alarm.title,
@@ -262,26 +311,6 @@ export class AlarmsService {
           `Socket emit failed for alarm ${alarm.id}: ${(e as Error).message}`,
         );
       }
-
-      // Recurring alarms re-fire on the next interval; one-shot get marked sent.
-      const next = nextFireTime(
-        alarm.time,
-        alarm.recurrence,
-        alarm.target.timezone,
-        now,
-      );
-      if (next) {
-        await this.prisma.alarm.update({
-          where: { id: alarm.id },
-          data: { time: next, isSent: false },
-        });
-      } else {
-        await this.prisma.alarm.update({
-          where: { id: alarm.id },
-          data: { isSent: true },
-        });
-      }
     }
   }
 }
-
