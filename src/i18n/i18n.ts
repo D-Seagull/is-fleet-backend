@@ -170,6 +170,15 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.uploadTooLarge': 'Завеликий запит: забагато даних за один раз',
     'errors.tooManyFiles': 'Забагато файлів за один раз',
     'errors.fileTypeNotSupported': 'Цей тип файлу не підтримується',
+    'errors.orderImportDisabled': 'Заповнення з заявки зараз вимкнене',
+    'errors.orderEmpty': 'Додайте файл заявки або вставте її текст',
+    'errors.orderParseFailed':
+      'Не вдалося прочитати заявку. Заповніть рейс вручну',
+    'errors.orderParseUnavailable':
+      'Сервіс розпізнавання тимчасово недоступний. Спробуйте за хвилину',
+    'errors.orderNotRecognised': 'Це не схоже на транспортну заявку',
+    'errors.fileRequired': 'Файл не додано',
+    'errors.aiDisabledForCompany': 'AI-функції для вашої компанії вимкнені',
     'errors.cannotManageUser': 'Ви можете змінювати лише користувачів нижчої ролі',
     'errors.transferInvalid': 'Посилання недійсне або застаріло',
     'sms.driverTransfer':
@@ -316,6 +325,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.uploadTooLarge': 'Upload too large: too much data at once',
     'errors.tooManyFiles': 'Too many files at once',
     'errors.fileTypeNotSupported': 'This file type is not supported',
+    'errors.orderImportDisabled':
+      'Filling from an order is switched off right now',
+    'errors.orderEmpty': 'Add the order file or paste its text',
+    'errors.orderParseFailed':
+      'Could not read the order. Please fill in the trip by hand',
+    'errors.orderParseUnavailable':
+      'The order reader is unavailable right now. Try again in a minute',
+    'errors.orderNotRecognised': 'This does not look like a transport order',
+    'errors.fileRequired': 'No file attached',
+    'errors.aiDisabledForCompany': 'AI features are switched off for your company',
     'errors.cannotManageUser': 'You can only manage users with a lower role',
     'errors.transferInvalid': 'This link is invalid or has expired',
     'sms.driverTransfer':
@@ -471,6 +490,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.uploadTooLarge': 'Za dużo danych naraz',
     'errors.tooManyFiles': 'Za dużo plików naraz',
     'errors.fileTypeNotSupported': 'Ten typ pliku nie jest obsługiwany',
+    'errors.orderImportDisabled':
+      'Wypełnianie ze zlecenia jest teraz wyłączone',
+    'errors.orderEmpty': 'Dodaj plik zlecenia lub wklej jego treść',
+    'errors.orderParseFailed':
+      'Nie udało się odczytać zlecenia. Wypełnij trasę ręcznie',
+    'errors.orderParseUnavailable':
+      'Odczyt zleceń jest chwilowo niedostępny. Spróbuj za minutę',
+    'errors.orderNotRecognised': 'To nie wygląda na zlecenie transportowe',
+    'errors.fileRequired': 'Nie dodano pliku',
+    'errors.aiDisabledForCompany': 'Funkcje AI są wyłączone dla Twojej firmy',
     'errors.cannotManageUser': 'Możesz zarządzać tylko użytkownikami o niższej roli',
     'errors.transferInvalid': 'Link jest nieprawidłowy lub wygasł',
     'sms.driverTransfer':
@@ -620,6 +649,15 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.uploadTooLarge': 'Per daug duomenų vienu metu',
     'errors.tooManyFiles': 'Per daug failų vienu metu',
     'errors.fileTypeNotSupported': 'Šis failo tipas nepalaikomas',
+    'errors.orderImportDisabled': 'Pildymas iš užsakymo šiuo metu išjungtas',
+    'errors.orderEmpty': 'Pridėkite užsakymo failą arba įklijuokite jo tekstą',
+    'errors.orderParseFailed':
+      'Nepavyko perskaityti užsakymo. Užpildykite reisą rankiniu būdu',
+    'errors.orderParseUnavailable':
+      'Užsakymų skaitymas laikinai nepasiekiamas. Bandykite po minutės',
+    'errors.orderNotRecognised': 'Tai nepanašu į transporto užsakymą',
+    'errors.fileRequired': 'Failas nepridėtas',
+    'errors.aiDisabledForCompany': 'Jūsų įmonei DI funkcijos išjungtos',
     'errors.cannotManageUser': 'Galite valdyti tik žemesnio vaidmens naudotojus',
     'errors.transferInvalid': 'Nuoroda neteisinga arba nebegalioja',
     'sms.driverTransfer':
@@ -774,6 +812,15 @@ const messages: Record<Locale, Record<string, string>> = {
     'errors.uploadTooLarge': 'Слишком большой запрос: слишком много данных за раз',
     'errors.tooManyFiles': 'Слишком много файлов за раз',
     'errors.fileTypeNotSupported': 'Этот тип файла не поддерживается',
+    'errors.orderImportDisabled': 'Заполнение из заявки сейчас выключено',
+    'errors.orderEmpty': 'Добавьте файл заявки или вставьте её текст',
+    'errors.orderParseFailed':
+      'Не удалось прочитать заявку. Заполните рейс вручную',
+    'errors.orderParseUnavailable':
+      'Распознавание заявок временно недоступно. Попробуйте через минуту',
+    'errors.orderNotRecognised': 'Это не похоже на транспортную заявку',
+    'errors.fileRequired': 'Файл не добавлен',
+    'errors.aiDisabledForCompany': 'AI-функции для вашей компании отключены',
     'errors.cannotManageUser': 'Вы можете изменять только пользователей с более низкой ролью',
     'errors.transferInvalid': 'Ссылка недействительна или устарела',
     'sms.driverTransfer':

@@ -1,5 +1,6 @@
 import { BillingStatus } from '@prisma/client';
 import {
+  IsBoolean,
   IsEnum,
   IsISO8601,
   IsNumber,
@@ -36,4 +37,9 @@ export class UpdateBillingDto {
   @IsString()
   @MaxLength(1000)
   adminNote?: string | null;
+
+  /** AI features (fill from order, …) for this company. */
+  @IsOptional()
+  @IsBoolean()
+  aiEnabled?: boolean;
 }

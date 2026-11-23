@@ -667,6 +667,7 @@ export class AdminService {
           currency: true,
           pilotEndsAt: true,
           adminNote: true,
+          aiEnabled: true,
         },
       }),
       this.prisma.$queryRaw<{ companyId: string; trucks: bigint }[]>`
@@ -762,6 +763,7 @@ export class AdminService {
             ? null
             : new Date(dto.pilotEndsAt),
       adminNote: dto.adminNote === undefined ? undefined : dto.adminNote?.trim() || null,
+      aiEnabled: dto.aiEnabled,
     };
     // "Deactivated" billing status and the access switch are one thing.
     if (dto.billingStatus === 'DEACTIVATED') data.isActive = false;

@@ -10,6 +10,7 @@ import { UsersModule } from './users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TrucksModule } from './trucks/trucks.module';
 import { TripsModule } from './trips/trips.module';
+import { OrderImportModule } from './order-import/order-import.module';
 import { DocumentsModule } from './documents/documents.module';
 import { MessagesModule } from './messages/messages.module';
 import { TranslationModule } from './translation/translation.module';
@@ -50,6 +51,7 @@ import { validateEnv } from './config/env.validation';
     PrismaModule,
     TrucksModule,
     TripsModule,
+    OrderImportModule,
     DocumentsModule,
     MessagesModule,
     TranslationModule,

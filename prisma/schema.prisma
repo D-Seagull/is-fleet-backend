@@ -38,6 +38,9 @@ model Company {
   currency           String              @default("EUR")
   pilotEndsAt        DateTime?
   adminNote          String?
+  /// AI features (fill a trip from an order, …) for this company — switched
+  /// by the platform ADMIN in the admin panel; off until switched on.
+  aiEnabled          Boolean             @default(false)
 }
 
 model TruckNote {
@@ -123,6 +126,8 @@ model User {
   alarmsCreated           Alarm[]                  @relation("AlarmCreator")
   alarmsTargeted          Alarm[]                  @relation("AlarmTarget")
   uploadedDocuments       TripDocument[]
+  uploadedOrderFiles      TripOrderFile[]          @relation("OrderFileUploader")
+  tripFinanceEdits        TripFinance[]            @relation("TripFinanceEditor")
   dmDocsUploaded          DirectMessageDocument[]  @relation("DMDocsUploader")
   dmDocsReceived          DirectMessageDocument[]  @relation("DMDocsOtherUser")
   groupDocsUploaded       GroupMessageDocument[]   @relation("GroupDocsUploader")
@@ -327,6 +332,9 @@ model Trip {
   // наступна перевірка (повтор через 20 хв, максимум 3 питання). null = не питаємо.
   departPromptCount Int        @default(0)
   departPromptAt    DateTime?
+  // "Fill from order": the client's one-off key for this create, so a double
+  // click / retry returns the trip already made instead of a second one.
+  importKey         String?    @unique
 
   manager      User              @relation("ManagerTrips", fields: [managerId], references: [id])
   driver       User              @relation("DriverTrips", fields: [driverId], references: [id])
@@ -334,6 +342,8 @@ model Trip {
   company      Company           @relation(fields: [companyId], references: [id])
   stops        TripStop[]
   documents    TripDocument[]
+  orderFiles   TripOrderFile[]
+  finance      TripFinance?
   messages     Message[]
   comments     TripComment[]
   alarms       Alarm[]
@@ -594,6 +604,47 @@ model Message {
 
 // Note: TripDocument also gets `isRead` so the trip chat shows ✓/✓✓ on docs
 // the same way it does on messages. Updated below — see model TripDocument.
+
+// The transport order a trip was made from. Apart from TripDocument on
+// purpose: trip documents are the driver's, this file is for ADMIN /
+// TEAMLEAD / MANAGER only (prices, client terms) and no driver endpoint
+// selects it. One current file per trip; a new upload soft-deletes the old.
+model TripOrderFile {
+  id           String    @id @default(uuid())
+  tripId       String
+  storagePath  String
+  fileName     String
+  mimeType     String
+  size         Int
+  uploadedById String
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  trip       Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation("OrderFileUploader", fields: [uploadedById], references: [id])
+
+  @@index([tripId, deletedAt])
+}
+
+// Money side of a trip — freight, kilometres, tolls. Its own table on
+// purpose: every trip query (the driver's too) returns all Trip columns, so a
+// rate added there would reach the driver app. Managers only; no trip query
+// includes `finance` (see order-import.spec.ts).
+model TripFinance {
+  id          String   @id @default(uuid())
+  tripId      String   @unique
+  freightRate Decimal? @db.Decimal(12, 2)
+  currency    String?
+  loadedKm    Int?
+  emptyKm     Int?
+  tolls       Decimal? @db.Decimal(12, 2)
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  trip      Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  updatedBy User @relation("TripFinanceEditor", fields: [updatedById], references: [id])
+}
 
 model TripComment {
   id        String   @id @default(uuid())
