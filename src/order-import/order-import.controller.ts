@@ -62,8 +62,8 @@ export class OrderImportController {
 
   /** Whether "fill from order" is switched on here (the web hides the button if not). */
   @Get('order-import/status')
-  status() {
-    return { enabled: this.orderImport.enabled };
+  async status(@GetUser('id') userId: string) {
+    return { enabled: await this.orderImport.enabledFor(userId) };
   }
 
   /**

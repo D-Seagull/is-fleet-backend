@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -23,8 +24,9 @@ import type { OrderDraft } from './order-draft.schema';
  * the new-trip form. Nothing is stored here — the file is uploaded again,
  * with the trip, once the manager confirms (OrderFilesService).
  *
- * Off unless ORDER_IMPORT_ENABLED=true and ANTHROPIC_API_KEY is set, so an
- * environment without a key answers a clear 503 instead of a crash.
+ * Two switches, both must be on: the server's (ORDER_IMPORT_ENABLED=true and
+ * ANTHROPIC_API_KEY set — without them a clear 503, not a crash) and the
+ * company's `aiEnabled`, which the platform ADMIN flips in the admin panel.
  */
 @Injectable()
 export class OrderImportService {
@@ -47,6 +49,23 @@ export class OrderImportService {
     return this.client !== null;
   }
 
+  /**
+   * Is AI on for this user's company? Looked up by user id, not by the
+   * request's companyId: AdminInterceptor nulls that for an ADMIN.
+   */
+  async companyAiEnabled(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { company: { select: { aiEnabled: true } } },
+    });
+    return user?.company?.aiEnabled === true;
+  }
+
+  /** Both switches on → the web shows "fill from order". */
+  async enabledFor(userId: string): Promise<boolean> {
+    return this.enabled && (await this.companyAiEnabled(userId));
+  }
+
   async parse(
     source: OrderSource,
     ctx: {
@@ -59,6 +78,9 @@ export class OrderImportService {
   ): Promise<OrderDraft> {
     if (!this.client) {
       throw new ServiceUnavailableException('errors.orderImportDisabled');
+    }
+    if (!(await this.companyAiEnabled(ctx.userId))) {
+      throw new ForbiddenException('errors.aiDisabledForCompany');
     }
     const started = Date.now();
     try {

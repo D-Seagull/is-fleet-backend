@@ -38,6 +38,9 @@ model Company {
   currency           String              @default("EUR")
   pilotEndsAt        DateTime?
   adminNote          String?
+  /// AI features (fill a trip from an order, …) for this company — switched
+  /// by the platform ADMIN in the admin panel; off until switched on.
+  aiEnabled          Boolean             @default(false)
 }
 
 model TruckNote {

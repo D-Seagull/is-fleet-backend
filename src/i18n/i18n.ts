@@ -178,6 +178,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Сервіс розпізнавання тимчасово недоступний. Спробуйте за хвилину',
     'errors.orderNotRecognised': 'Це не схоже на транспортну заявку',
     'errors.fileRequired': 'Файл не додано',
+    'errors.aiDisabledForCompany': 'AI-функції для вашої компанії вимкнені',
     'errors.cannotManageUser': 'Ви можете змінювати лише користувачів нижчої ролі',
     'errors.transferInvalid': 'Посилання недійсне або застаріло',
     'sms.driverTransfer':
@@ -333,6 +334,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'The order reader is unavailable right now. Try again in a minute',
     'errors.orderNotRecognised': 'This does not look like a transport order',
     'errors.fileRequired': 'No file attached',
+    'errors.aiDisabledForCompany': 'AI features are switched off for your company',
     'errors.cannotManageUser': 'You can only manage users with a lower role',
     'errors.transferInvalid': 'This link is invalid or has expired',
     'sms.driverTransfer':
@@ -497,6 +499,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Odczyt zleceń jest chwilowo niedostępny. Spróbuj za minutę',
     'errors.orderNotRecognised': 'To nie wygląda na zlecenie transportowe',
     'errors.fileRequired': 'Nie dodano pliku',
+    'errors.aiDisabledForCompany': 'Funkcje AI są wyłączone dla Twojej firmy',
     'errors.cannotManageUser': 'Możesz zarządzać tylko użytkownikami o niższej roli',
     'errors.transferInvalid': 'Link jest nieprawidłowy lub wygasł',
     'sms.driverTransfer':
@@ -654,6 +657,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Užsakymų skaitymas laikinai nepasiekiamas. Bandykite po minutės',
     'errors.orderNotRecognised': 'Tai nepanašu į transporto užsakymą',
     'errors.fileRequired': 'Failas nepridėtas',
+    'errors.aiDisabledForCompany': 'Jūsų įmonei DI funkcijos išjungtos',
     'errors.cannotManageUser': 'Galite valdyti tik žemesnio vaidmens naudotojus',
     'errors.transferInvalid': 'Nuoroda neteisinga arba nebegalioja',
     'sms.driverTransfer':
@@ -816,6 +820,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'Распознавание заявок временно недоступно. Попробуйте через минуту',
     'errors.orderNotRecognised': 'Это не похоже на транспортную заявку',
     'errors.fileRequired': 'Файл не добавлен',
+    'errors.aiDisabledForCompany': 'AI-функции для вашей компании отключены',
     'errors.cannotManageUser': 'Вы можете изменять только пользователей с более низкой ролью',
     'errors.transferInvalid': 'Ссылка недействительна или устарела',
     'sms.driverTransfer':
