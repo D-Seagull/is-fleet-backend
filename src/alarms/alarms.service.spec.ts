@@ -91,3 +91,68 @@ describe('AlarmsService.checkAlarms', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 });
+
+describe('AlarmsService.findByTrip — privacy', () => {
+  const trip = { driverId: 'drv', managerId: 'mgrA' };
+  const findMany = jest.fn().mockResolvedValue([]);
+  const prisma = {
+    trip: { findFirst: jest.fn().mockResolvedValue(trip) },
+    alarm: { findMany },
+  };
+  const service = new AlarmsService(
+    prisma as unknown as PrismaService,
+    {} as PushService,
+    {} as MessagesGateway,
+  );
+  const who = (id: string, role: string) => ({ id, role, companyId: 'cA' });
+
+  it('refuses a team lead who is not on the trip', async () => {
+    await expect(
+      service.findByTrip('t1', who('tl1', 'TEAMLEAD')),
+    ).rejects.toThrow('errors.noAccessTrip');
+  });
+
+  it('lets a team lead see alarms of a trip they manage, and ADMIN any', async () => {
+    await expect(
+      service.findByTrip('t1', who('mgrA', 'TEAMLEAD')),
+    ).resolves.toEqual([]);
+    await expect(
+      service.findByTrip('t1', who('adm', 'ADMIN')),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe('AlarmsService.findByTruck — privacy', () => {
+  const findMany = jest.fn().mockResolvedValue([]);
+  const prisma = {
+    truck: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ currentDriverId: 'drv', managerId: 'mgrA' }),
+    },
+    alarm: { findMany },
+  };
+  const service = new AlarmsService(
+    prisma as unknown as PrismaService,
+    {} as PushService,
+    {} as MessagesGateway,
+  );
+  const who = (id: string, role: string) => ({ id, role, companyId: 'cA' });
+  const where = () =>
+    (findMany.mock.calls.at(-1) as [{ where: Record<string, unknown> }])[0]
+      .where;
+
+  it('limits a team lead to alarms they set or that ring for them', async () => {
+    await service.findByTruck('tr1', who('tl1', 'TEAMLEAD'));
+    expect(where().AND).toEqual([
+      { OR: [{ createdById: 'tl1' }, { targetUserId: 'tl1' }] },
+    ]);
+  });
+
+  it('shows the truck manager and ADMIN everything', async () => {
+    await service.findByTruck('tr1', who('mgrA', 'MANAGER'));
+    expect(where().AND).toBeUndefined();
+    await service.findByTruck('tr1', who('adm', 'ADMIN'));
+    expect(where().AND).toBeUndefined();
+  });
+});

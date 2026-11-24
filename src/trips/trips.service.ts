@@ -564,11 +564,6 @@ export class TripsService {
       this.emitTripUpdated(id, trip.companyId, driverId);
       if (systemMessage) {
         this.gateway.server.to(id).emit('newMessage', systemMessage);
-        if (trip.companyId) {
-          this.gateway.server
-            .to(`company-${trip.companyId}`)
-            .emit('newMessage', systemMessage);
-        }
         // Refresh the bell/badges of the trip's participants — the driver-change
         // system message is a fresh unread (skip whoever triggered it).
         const signal = { tripId: id, truckId: updated.truckId };
@@ -881,9 +876,6 @@ export class TripsService {
       );
       if (systemMessage) {
         this.gateway.server.to(activeTrip.id).emit('newMessage', systemMessage);
-        this.gateway.server
-          .to(`company-${companyId}`)
-          .emit('newMessage', systemMessage);
 
         const signal = { tripId: activeTrip.id, truckId };
         if (truck.currentDriverId !== triggeredById) {
@@ -1036,11 +1028,6 @@ export class TripsService {
       this.emitTripUpdated(id, trip.companyId, trip.driverId);
       if (systemMessage) {
         this.gateway.server.to(id).emit('newMessage', systemMessage);
-        if (trip.companyId) {
-          this.gateway.server
-            .to(`company-${trip.companyId}`)
-            .emit('newMessage', systemMessage);
-        }
       }
 
       // Invalidate the unread badge for the driver + new manager in real time
@@ -1106,34 +1093,6 @@ export class TripsService {
               type: 'MANAGER_CHANGED',
               tripId: id,
               managerId,
-            },
-          },
-        );
-      }
-
-      // Keep team leads in the loop on the change (info, third person).
-      const excludeIds = [managerId, trip.managerId].filter(
-        (x): x is string => !!x,
-      );
-      const teamleads = await this.prisma.user.findMany({
-        where: { companyId, role: 'TEAMLEAD', id: { notIn: excludeIds } },
-        select: { id: true },
-      });
-      if (teamleads.length > 0) {
-        await this.push.sendLocalizedToUsers(
-          teamleads.map((u) => u.id),
-          (lang) => ({
-            title: t(lang, 'push.managerInfoTitle'),
-            body: t(lang, 'push.managerAssignedTripInfo', {
-              title: updated.title,
-              name: fullName(newManager) || t(lang, 'push.noName'),
-            }),
-          }),
-          {
-            data: {
-              type: 'MANAGER_ASSIGNED_TRIP',
-              tripId: id,
-              truckId: updated.truckId,
             },
           },
         );
