@@ -246,8 +246,13 @@ describe('MessagesGateway — socket auth & trip rooms', () => {
         driverId: 'drv',
         managerId: 'mgrA',
       });
-      const full = calls.find((c) => c.payload === signal);
+      const full = calls.find((c) => c.rooms !== 'company-admin-cA');
       expect(full?.rooms).toEqual(['mgrA']);
+      expect(full?.payload).toEqual({
+        ...signal,
+        driverId: 'drv',
+        managerId: 'mgrA',
+      });
       // The ADMIN room only gets a bare badge nudge — nothing that can chime.
       const admin = calls.find((c) => c.rooms === 'company-admin-cA');
       expect(admin?.payload).toEqual({ tripId: 'tA' });

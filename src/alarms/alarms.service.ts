@@ -174,6 +174,12 @@ export class AlarmsService {
       (x): x is string => !!x,
     );
 
+    // Only the truck's own manager / driver (and ADMIN) see all of its
+    // alarms. Anyone else (a team lead, another manager) sees just the ones
+    // they set or that ring for them — never someone else's work.
+    const ownsTruck =
+      requester.role === 'ADMIN' || targetIds.includes(requester.id);
+
     return this.prisma.alarm.findMany({
       where: {
         companyId: requester.companyId,
@@ -183,6 +189,18 @@ export class AlarmsService {
             ? { targetUserId: { in: targetIds } }
             : { id: 'never' }, // empty fallback
         ],
+        ...(ownsTruck
+          ? {}
+          : {
+              AND: [
+                {
+                  OR: [
+                    { createdById: requester.id },
+                    { targetUserId: requester.id },
+                  ],
+                },
+              ],
+            }),
       },
       include: ALARM_INCLUDE,
       orderBy: { time: 'asc' },

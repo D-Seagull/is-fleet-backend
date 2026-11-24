@@ -121,3 +121,38 @@ describe('AlarmsService.findByTrip — privacy', () => {
     ).resolves.toEqual([]);
   });
 });
+
+describe('AlarmsService.findByTruck — privacy', () => {
+  const findMany = jest.fn().mockResolvedValue([]);
+  const prisma = {
+    truck: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ currentDriverId: 'drv', managerId: 'mgrA' }),
+    },
+    alarm: { findMany },
+  };
+  const service = new AlarmsService(
+    prisma as unknown as PrismaService,
+    {} as PushService,
+    {} as MessagesGateway,
+  );
+  const who = (id: string, role: string) => ({ id, role, companyId: 'cA' });
+  const where = () =>
+    (findMany.mock.calls.at(-1) as [{ where: Record<string, unknown> }])[0]
+      .where;
+
+  it('limits a team lead to alarms they set or that ring for them', async () => {
+    await service.findByTruck('tr1', who('tl1', 'TEAMLEAD'));
+    expect(where().AND).toEqual([
+      { OR: [{ createdById: 'tl1' }, { targetUserId: 'tl1' }] },
+    ]);
+  });
+
+  it('shows the truck manager and ADMIN everything', async () => {
+    await service.findByTruck('tr1', who('mgrA', 'MANAGER'));
+    expect(where().AND).toBeUndefined();
+    await service.findByTruck('tr1', who('adm', 'ADMIN'));
+    expect(where().AND).toBeUndefined();
+  });
+});

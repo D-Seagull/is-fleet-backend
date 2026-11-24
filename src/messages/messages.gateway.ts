@@ -460,7 +460,15 @@ export class MessagesGateway implements OnGatewayInit {
     const rooms: string[] = [];
     if (driverId && driverId !== signal.senderId) rooms.push(driverId);
     if (managerId && managerId !== signal.senderId) rooms.push(managerId);
-    if (rooms.length) this.server.to(rooms).emit('tripUnreadChanged', signal);
+    // driverId / managerId let the client double-check the chat is its own
+    // before it chimes (older servers sent the signal company-wide).
+    if (rooms.length) {
+      this.server.to(rooms).emit('tripUnreadChanged', {
+        ...signal,
+        driverId: driverId ?? null,
+        managerId: managerId ?? null,
+      });
+    }
     if (companyId) {
       this.server
         .to(`company-admin-${companyId}`)
