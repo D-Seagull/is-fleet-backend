@@ -113,13 +113,13 @@ export class MessagesGateway implements OnGatewayInit {
       {
         await client.join(`company-${companyId}`);
 
-        // Role-scoped rooms for tripUnreadChanged routing. ADMIN/TEAMLEAD
-        // see all chats via the company-admin room. MANAGER and DRIVER
+        // Role-scoped rooms for tripUnreadChanged routing. ADMIN
+        // sees all chats via the company-admin room (bare badge nudges). MANAGER and DRIVER
         // get signals through their personal userId room (emitted from
         // session.driverId / session.managerId at send-time), so they
         // stop receiving updates the moment they're replaced on a trip
         // without needing to reconnect.
-        if (role === 'ADMIN' || role === 'TEAMLEAD') {
+        if (role === 'ADMIN') {
           await client.join(`company-admin-${companyId}`);
         }
 
@@ -260,7 +260,7 @@ export class MessagesGateway implements OnGatewayInit {
         this.prisma,
         body?.tripId,
         { id: me.userId, role: me.role, companyId: me.companyId },
-        { currentDriverOnly: true },
+        { currentDriverOnly: true, liveParticipantOnly: true },
       );
       await client.join(trip.id);
       this.logger.log(`${client.id} joined room:${trip.id}`);
@@ -454,11 +454,19 @@ export class MessagesGateway implements OnGatewayInit {
     // ONE emit to all rooms: socket.io then delivers once per socket. Separate
     // emits reached a teamlead/admin who is also the trip's manager twice
     // (company-admin room + personal room) → two desktop notifications.
+    // Only the trip's own participants are signalled. A team lead (or any
+    // other manager) never hears someone else's chat; the ADMIN room gets a
+    // bare badge nudge without the sender / text so nothing can chime.
     const rooms: string[] = [];
-    if (companyId) rooms.push(`company-admin-${companyId}`);
     if (driverId && driverId !== signal.senderId) rooms.push(driverId);
     if (managerId && managerId !== signal.senderId) rooms.push(managerId);
     if (rooms.length) this.server.to(rooms).emit('tripUnreadChanged', signal);
+    if (companyId) {
+      this.server
+        .to(`company-admin-${companyId}`)
+        .except(rooms)
+        .emit('tripUnreadChanged', { tripId: signal.tripId });
+    }
   }
 
   /**

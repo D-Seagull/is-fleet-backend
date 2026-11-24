@@ -91,3 +91,33 @@ describe('AlarmsService.checkAlarms', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 });
+
+describe('AlarmsService.findByTrip — privacy', () => {
+  const trip = { driverId: 'drv', managerId: 'mgrA' };
+  const findMany = jest.fn().mockResolvedValue([]);
+  const prisma = {
+    trip: { findFirst: jest.fn().mockResolvedValue(trip) },
+    alarm: { findMany },
+  };
+  const service = new AlarmsService(
+    prisma as unknown as PrismaService,
+    {} as PushService,
+    {} as MessagesGateway,
+  );
+  const who = (id: string, role: string) => ({ id, role, companyId: 'cA' });
+
+  it('refuses a team lead who is not on the trip', async () => {
+    await expect(
+      service.findByTrip('t1', who('tl1', 'TEAMLEAD')),
+    ).rejects.toThrow('errors.noAccessTrip');
+  });
+
+  it('lets a team lead see alarms of a trip they manage, and ADMIN any', async () => {
+    await expect(
+      service.findByTrip('t1', who('mgrA', 'TEAMLEAD')),
+    ).resolves.toEqual([]);
+    await expect(
+      service.findByTrip('t1', who('adm', 'ADMIN')),
+    ).resolves.toEqual([]);
+  });
+});

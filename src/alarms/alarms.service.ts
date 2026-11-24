@@ -143,8 +143,8 @@ export class AlarmsService {
     });
     if (!trip) throw new NotFoundException('errors.tripNotFound');
 
-    const isManager =
-      requester.role === 'ADMIN' || requester.role === 'TEAMLEAD';
+    // A team lead only sees the alarms of trips they take part in.
+    const isManager = requester.role === 'ADMIN';
     const isParticipant =
       trip.driverId === requester.id || trip.managerId === requester.id;
     if (!isManager && !isParticipant) {

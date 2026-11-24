@@ -163,4 +163,95 @@ describe('MessagesGateway — socket auth & trip rooms', () => {
       expect(s.join).toHaveBeenCalledWith('tA');
     });
   });
+  // ─── Privacy: a team lead / other manager never listens to a foreign chat ──
+  describe('live trip room is for the trip’s own participants', () => {
+    const trip = {
+      id: 'tA',
+      companyId: 'cA',
+      driverId: 'drv',
+      managerId: 'mgrA',
+      truckId: 't',
+    };
+    async function socketOf(id: string, role: string) {
+      prisma.user.findUnique.mockResolvedValue({
+        id,
+        role,
+        companyId: 'cA',
+        isActive: true,
+        deletedAt: null,
+      });
+      jwt.verify.mockReturnValueOnce({ sub: id });
+      const s = fakeSocket('good');
+      await authenticateSocket(s, jwt as never, prisma as never);
+      return s;
+    }
+
+    it.each([
+      ['a team lead who is not on the trip', 'tl1', 'TEAMLEAD'],
+      ['another manager of the company', 'mgrB', 'MANAGER'],
+    ])('refuses %s', async (_n, id, role) => {
+      const s = await socketOf(id, role);
+      prisma.trip.findFirst.mockResolvedValue(trip);
+      await expect(
+        gateway.handleJoinTrip(s, { tripId: 'tA' }),
+      ).resolves.toEqual({ error: 'errors.tripNotFound' });
+      expect(s.join).not.toHaveBeenCalled();
+    });
+
+    it('lets a team lead in when they ARE the trip’s manager', async () => {
+      const s = await socketOf('tl1', 'TEAMLEAD');
+      prisma.trip.findFirst.mockResolvedValue({ ...trip, managerId: 'tl1' });
+      await expect(
+        gateway.handleJoinTrip(s, { tripId: 'tA' }),
+      ).resolves.toEqual({ ok: true });
+    });
+  });
+
+  describe('emitTripUnread fan-out', () => {
+    const signal = {
+      tripId: 'tA',
+      truckId: 't',
+      senderId: 'drv',
+      senderName: 'Driver D',
+      content: 'secret text',
+    };
+    function wire() {
+      const calls: { rooms: unknown; except?: unknown; payload?: unknown }[] =
+        [];
+      (gateway as unknown as { server: unknown }).server = {
+        to: (rooms: unknown) => {
+          const c: { rooms: unknown; except?: unknown; payload?: unknown } = {
+            rooms,
+          };
+          calls.push(c);
+          const chain = {
+            except: (e: unknown) => {
+              c.except = e;
+              return chain;
+            },
+            emit: (_ev: string, payload: unknown) => {
+              c.payload = payload;
+            },
+          };
+          return chain;
+        },
+      };
+      return calls;
+    }
+
+    it('signals only the trip’s manager with sender + text, never a team lead room', () => {
+      const calls = wire();
+      gateway.emitTripUnread(signal, {
+        companyId: 'cA',
+        driverId: 'drv',
+        managerId: 'mgrA',
+      });
+      const full = calls.find((c) => c.payload === signal);
+      expect(full?.rooms).toEqual(['mgrA']);
+      // The ADMIN room only gets a bare badge nudge — nothing that can chime.
+      const admin = calls.find((c) => c.rooms === 'company-admin-cA');
+      expect(admin?.payload).toEqual({ tripId: 'tA' });
+      expect(admin?.except).toEqual(['mgrA']);
+    });
+  });
 });

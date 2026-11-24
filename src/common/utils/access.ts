@@ -76,6 +76,12 @@ export async function assertTripAccess(
      * endpoints and to their past trip's files, nothing live (audit N1).
      */
     currentDriverOnly?: boolean;
+    /**
+     * Live socket room: only the trip's CURRENT driver or manager (and
+     * ADMIN) may listen in. A team lead or another manager of the company
+     * has no business in someone else's live chat.
+     */
+    liveParticipantOnly?: boolean;
   } = {},
 ): Promise<TripAccessRow> {
   const trip = isId(tripId)
@@ -100,6 +106,14 @@ export async function assertTripAccess(
     opts.currentDriverOnly &&
     requester.role === 'DRIVER' &&
     trip.driverId !== requester.id
+  ) {
+    throw new NotFoundException('errors.tripNotFound');
+  }
+  if (
+    opts.liveParticipantOnly &&
+    requester.role !== 'ADMIN' &&
+    trip.driverId !== requester.id &&
+    trip.managerId !== requester.id
   ) {
     throw new NotFoundException('errors.tripNotFound');
   }
