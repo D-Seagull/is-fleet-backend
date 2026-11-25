@@ -645,6 +645,91 @@ export class AdminService {
    * (`TripStop.windowDate`), or of `createdAt` when that stop has no date.
    * Deleted trips don't count. Months are UTC.
    */
+  /**
+   * AI report for one month (UTC), per company and in total: requests and
+   * failures, trips created from an order with AI (Trip.importKey), tokens,
+   * what it cost us (AiUsage.costUsd) and what the company owes for it
+   * (AI trips × Company.aiPricePerTrip). All money in USD. Every company,
+   * the admin's own included — this is a cost report, not a client list.
+   */
+  async getAiUsage(month: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new BadRequestException('errors.invalidMonth');
+    }
+    const [y, m] = month.split('-').map(Number);
+    const from = new Date(Date.UTC(y, m - 1, 1));
+    const to = new Date(Date.UTC(y, m, 1));
+    const inMonth = { gte: from, lt: to };
+
+    const [companies, usage, failed, trips] = await Promise.all([
+      this.prisma.company.findMany({
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, aiEnabled: true, aiPricePerTrip: true },
+      }),
+      this.prisma.aiUsage.groupBy({
+        by: ['companyId'],
+        where: { createdAt: inMonth },
+        _count: { _all: true },
+        _sum: { inputTokens: true, outputTokens: true, costUsd: true },
+      }),
+      this.prisma.aiUsage.groupBy({
+        by: ['companyId'],
+        where: { createdAt: inMonth, status: { not: 'OK' } },
+        _count: { _all: true },
+      }),
+      this.prisma.trip.groupBy({
+        by: ['companyId'],
+        where: { createdAt: inMonth, importKey: { not: null }, deletedAt: null },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const usageBy = new Map(usage.map((u) => [u.companyId, u]));
+    const failedBy = new Map(failed.map((f) => [f.companyId, f._count._all]));
+    const tripsBy = new Map(trips.map((t) => [t.companyId, t._count._all]));
+    const usd = (n: number) => Math.round(n * 100) / 100;
+
+    const rows = companies.map((c) => {
+      const u = usageBy.get(c.id);
+      const aiTrips = tripsBy.get(c.id) ?? 0;
+      const price = c.aiPricePerTrip === null ? null : Number(c.aiPricePerTrip);
+      const cost = Number(u?._sum.costUsd ?? 0);
+      const revenue = price === null ? null : usd(price * aiTrips);
+      return {
+        companyId: c.id,
+        name: c.name,
+        aiEnabled: c.aiEnabled,
+        aiPricePerTrip: price,
+        requests: u?._count._all ?? 0,
+        failed: failedBy.get(c.id) ?? 0,
+        aiTrips,
+        inputTokens: u?._sum.inputTokens ?? 0,
+        outputTokens: u?._sum.outputTokens ?? 0,
+        costUsd: usd(cost),
+        revenueUsd: revenue,
+        marginUsd: revenue === null ? null : usd(revenue - cost),
+      };
+    });
+
+    const sum = (pick: (r: (typeof rows)[number]) => number | null) =>
+      rows.reduce((acc, r) => acc + (pick(r) ?? 0), 0);
+    return {
+      month,
+      currency: 'USD',
+      totals: {
+        requests: sum((r) => r.requests),
+        failed: sum((r) => r.failed),
+        aiTrips: sum((r) => r.aiTrips),
+        inputTokens: sum((r) => r.inputTokens),
+        outputTokens: sum((r) => r.outputTokens),
+        costUsd: usd(sum((r) => r.costUsd)),
+        revenueUsd: usd(sum((r) => r.revenueUsd)),
+        marginUsd: usd(sum((r) => r.revenueUsd) - sum((r) => r.costUsd)),
+      },
+      companies: rows,
+    };
+  }
+
   async getBilling(month: string, adminId?: string) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new BadRequestException('errors.invalidMonth');
@@ -764,6 +849,7 @@ export class AdminService {
             : new Date(dto.pilotEndsAt),
       adminNote: dto.adminNote === undefined ? undefined : dto.adminNote?.trim() || null,
       aiEnabled: dto.aiEnabled,
+      aiPricePerTrip: dto.aiPricePerTrip,
     };
     // "Deactivated" billing status and the access switch are one thing.
     if (dto.billingStatus === 'DEACTIVATED') data.isActive = false;

@@ -76,6 +76,13 @@ export class AdminController {
     return this.adminService.getBilling(month, adminId);
   }
 
+  /** Monthly AI report: requests, AI trips, tokens, cost and price (USD). */
+  @Roles('ADMIN')
+  @Get('ai-usage')
+  getAiUsage(@Query('month') month: string) {
+    return this.adminService.getAiUsage(month);
+  }
+
   @Roles('ADMIN')
   @Patch('companies/:id/billing')
   updateBilling(@Param('id') id: string, @Body() dto: UpdateBillingDto) {

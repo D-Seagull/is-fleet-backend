@@ -32,6 +32,7 @@ model Company {
   alarms             Alarm[]
   bugReports         BugReport[]
   driverTransfersIn  DriverTransfer[]
+  aiUsage            AiUsage[]
   /// Platform billing — set by hand in the admin panel.
   billingStatus      BillingStatus       @default(TRIAL)
   pricePerTruck      Decimal?            @db.Decimal(10, 2)
@@ -41,6 +42,9 @@ model Company {
   /// AI features (fill a trip from an order, …) for this company — switched
   /// by the platform ADMIN in the admin panel; off until switched on.
   aiEnabled          Boolean             @default(false)
+  /// What the company pays per trip created from an order with AI, in USD
+  /// (set by the platform ADMIN; null = not priced yet).
+  aiPricePerTrip     Decimal?            @db.Decimal(10, 2)
 }
 
 model TruckNote {
@@ -644,6 +648,30 @@ model TripFinance {
 
   trip      Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
   updatedBy User @relation("TripFinanceEditor", fields: [updatedById], references: [id])
+}
+
+// One AI request (today: reading a transport order) — tokens and what it
+// cost us, for the admin's monthly AI report. Never the order's content.
+model AiUsage {
+  id           String   @id @default(uuid())
+  companyId    String?
+  userId       String
+  /// "ORDER_PARSE" — room for more AI features.
+  feature      String
+  /// The model that answered (a refusal fallback can differ from the one asked).
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  /// What the request cost at the model's list price, in USD.
+  costUsd      Decimal  @db.Decimal(12, 6)
+  /// OK | NOT_ORDER | REFUSED | FAILED
+  status       String
+  createdAt    DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([createdAt])
 }
 
 model TripComment {

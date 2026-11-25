@@ -12,10 +12,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   DEFAULT_ORDER_MODEL,
+  OrderParseBilledError,
   OrderParseEmpty,
   OrderParseRefused,
   parseOrder,
 } from './order-parser';
+import { costUsd, modelPrice } from './ai-pricing';
+
+type UsageStatus = 'OK' | 'NOT_ORDER' | 'REFUSED' | 'FAILED';
 import { UnsupportedOrderInput, type OrderSource } from './order-input';
 import type { OrderDraft } from './order-draft.schema';
 
@@ -54,11 +58,51 @@ export class OrderImportService {
    * request's companyId: AdminInterceptor nulls that for an ADMIN.
    */
   async companyAiEnabled(userId: string): Promise<boolean> {
+    return (await this.companyOf(userId))?.aiEnabled === true;
+  }
+
+  private async companyOf(
+    userId: string,
+  ): Promise<{ id: string; aiEnabled: boolean } | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { company: { select: { aiEnabled: true } } },
+      select: { company: { select: { id: true, aiEnabled: true } } },
     });
-    return user?.company?.aiEnabled === true;
+    return user?.company ?? null;
+  }
+
+  /**
+   * One row in the AI log per request we were billed for (or that failed
+   * on the way). Never fails the request it describes.
+   */
+  private async recordUsage(
+    userId: string,
+    companyId: string | null,
+    status: UsageStatus,
+    model: string,
+    usage: { inputTokens: number; outputTokens: number },
+  ): Promise<void> {
+    try {
+      if (!modelPrice(model).known) {
+        this.logger.warn(`AI price unknown for model ${model}, using default`);
+      }
+      await this.prisma.aiUsage.create({
+        data: {
+          companyId,
+          userId,
+          feature: 'ORDER_PARSE',
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          costUsd: costUsd(model, usage.inputTokens, usage.outputTokens),
+          status,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `AI usage not recorded: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Both switches on → the web shows "fill from order". */
@@ -79,9 +123,11 @@ export class OrderImportService {
     if (!this.client) {
       throw new ServiceUnavailableException('errors.orderImportDisabled');
     }
-    if (!(await this.companyAiEnabled(ctx.userId))) {
+    const company = await this.companyOf(ctx.userId);
+    if (company?.aiEnabled !== true) {
       throw new ForbiddenException('errors.aiDisabledForCompany');
     }
+    const companyId = company.id;
     const started = Date.now();
     try {
       const driverLocale = await this.driverLocale(ctx.driverId, ctx.companyId);
@@ -104,11 +150,34 @@ export class OrderImportService {
         stops: draft.stops.length,
         ms: Date.now() - started,
       });
+      await this.recordUsage(
+        ctx.userId,
+        companyId,
+        draft.isTransportOrder ? 'OK' : 'NOT_ORDER',
+        model,
+        usage,
+      );
       if (!draft.isTransportOrder) {
         throw new UnprocessableEntityException('errors.orderNotRecognised');
       }
       return draft;
     } catch (err) {
+      if (err instanceof OrderParseBilledError) {
+        await this.recordUsage(
+          ctx.userId,
+          companyId,
+          err instanceof OrderParseRefused ? 'REFUSED' : 'FAILED',
+          err.model,
+          err.usage,
+        );
+      } else if (!(err instanceof UnprocessableEntityException)) {
+        // Rate limit, outage, bad input: nothing billed, but the admin
+        // still sees a failed attempt.
+        await this.recordUsage(ctx.userId, companyId, 'FAILED', this.model, {
+          inputTokens: 0,
+          outputTokens: 0,
+        });
+      }
       throw this.toHttpError(err);
     }
   }
