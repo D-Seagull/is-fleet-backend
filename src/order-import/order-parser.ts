@@ -64,8 +64,17 @@ export interface ParseResult {
   usage: { inputTokens: number; outputTokens: number };
 }
 
-export class OrderParseRefused extends Error {}
-export class OrderParseEmpty extends Error {}
+/** A billed answer we could not use — carries what it cost, for the AI log. */
+export class OrderParseBilledError extends Error {
+  constructor(
+    public readonly model: string,
+    public readonly usage: { inputTokens: number; outputTokens: number },
+  ) {
+    super();
+  }
+}
+export class OrderParseRefused extends OrderParseBilledError {}
+export class OrderParseEmpty extends OrderParseBilledError {}
 
 /**
  * One request: the order in, a normalised draft out. Stores nothing.
@@ -118,9 +127,15 @@ export async function parseOrder(
     ],
   });
 
-  if (response.stop_reason === 'refusal') throw new OrderParseRefused();
+  const billed = {
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  };
+  if (response.stop_reason === 'refusal') {
+    throw new OrderParseRefused(response.model, billed);
+  }
   const parsed = response.parsed_output;
-  if (!parsed) throw new OrderParseEmpty();
+  if (!parsed) throw new OrderParseEmpty(response.model, billed);
 
   return {
     draft: normaliseDraft(parsed),

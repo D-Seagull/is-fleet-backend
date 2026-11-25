@@ -42,4 +42,11 @@ export class UpdateBillingDto {
   @IsOptional()
   @IsBoolean()
   aiEnabled?: boolean;
+
+  /** USD the company pays per trip created from an order with AI; null clears. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(10000)
+  aiPricePerTrip?: number | null;
 }
