@@ -5,6 +5,8 @@ import { EDIT_WINDOW_MS } from '../common/constants';
 import { ReactionsService } from '../reactions/reactions.service';
 import { assertReplyTargets } from 'src/common/utils/reply-targets';
 import { voicePreviewSql } from 'src/common/utils/attachment-kind';
+import { PushService } from '../push/push.service';
+import { chatTag } from '../push/chat-tag';
 
 @Injectable()
 export class DirectMessagesService {
@@ -12,6 +14,7 @@ export class DirectMessagesService {
   constructor(
     private prisma: PrismaService,
     private reactions: ReactionsService,
+    private push: PushService,
   ) {}
 
   // Pagination: fetches the latest `take` messages older than `before`
@@ -340,7 +343,7 @@ export class DirectMessagesService {
     // Mark text messages AND documents in this conversation as read in
     // parallel. The two updates are independent so wall time is max(t1, t2)
     // instead of t1 + t2 — saves one round-trip on every DM open.
-    const [messages] = await Promise.all([
+    const [messages, docs] = await Promise.all([
       this.prisma.directMessage.updateMany({
         where: { senderId, receiverId: userId, isRead: false },
         data: { isRead: true },
@@ -350,6 +353,10 @@ export class DirectMessagesService {
         data: { isRead: true },
       }),
     ]);
+    // Read here or on another device: the reader's phones drop the tray entry.
+    if (messages.count + docs.count > 0) {
+      void this.push.signalChatRead(userId, chatTag.dm(senderId));
+    }
     return messages;
   }
   async softDelete(messageId: string, userId: string) {

@@ -1,5 +1,8 @@
 import { DirectMessagesService } from './direct-messages.service';
 
+// expo-server-sdk is ESM-only, pulled in via PushService (mocked here).
+jest.mock('expo-server-sdk', () => ({ Expo: class {} }));
+
 // P1-5: the DM list a DRIVER gets carries no other driver's phone.
 describe('DirectMessagesService.getConversations — driver view', () => {
   const peer = (role: string) => ({
@@ -23,7 +26,11 @@ describe('DirectMessagesService.getConversations — driver view', () => {
         { user: peer('MANAGER'), last_message: {}, unread_count: 0 },
       ]),
     };
-    service = new DirectMessagesService(prisma as never, {} as never);
+    service = new DirectMessagesService(
+      prisma as never,
+      {} as never,
+      { signalChatRead: jest.fn() } as never,
+    );
   });
 
   it('blanks another driver’s phone, keeps the truck plate and staff phones', async () => {

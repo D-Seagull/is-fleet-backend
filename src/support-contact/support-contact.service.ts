@@ -5,6 +5,7 @@ import { DirectMessagesService } from 'src/direct-messages/direct-messages.servi
 import { DirectMessagesGateway } from 'src/direct-messages/direct-messages.gateway';
 import { pushTitle } from 'src/push/push-titles';
 import { t } from 'src/i18n/i18n';
+import { chatTag } from '../push/chat-tag';
 
 export const CONTACT_NAME = { firstName: 'IS Fleet', lastName: 'contact' };
 
@@ -113,6 +114,7 @@ export class SupportContactService {
         channelId: 'chat',
         // Same as any chat message: the open chat shows it itself.
         whenActive: 'skip',
+        tag: chatTag.dm(contactId),
         data: { type: 'DM_MESSAGE', userId: contactId, messageId: message.id },
       },
     );

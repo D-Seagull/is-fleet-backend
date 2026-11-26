@@ -23,6 +23,7 @@ import {
 } from '../common/utils/access';
 import { assertReplyTargets } from '../common/utils/reply-targets';
 import { voicePreviewSql } from 'src/common/utils/attachment-kind';
+import { chatTag } from '../push/chat-tag';
 
 @Injectable()
 export class MessagesService {
@@ -160,6 +161,7 @@ export class MessagesService {
             sound: 'push_message.mp3',
             channelId: 'chat',
             whenActive: 'skip',
+            tag: chatTag.trip(dto.tripId),
             data: {
               type: 'MESSAGE',
               tripId: dto.tripId,
@@ -584,6 +586,10 @@ export class MessagesService {
       documentsPromise,
     ]);
 
+    // Read here or on another device: the reader's phones drop the tray entry.
+    if (updatedMessages.length + updatedDocs.length > 0) {
+      void this.push.signalChatRead(readerId, chatTag.trip(tripId));
+    }
     return {
       messageIds: updatedMessages.map((r) => r.id),
       documentIds: updatedDocs.map((r) => r.id),

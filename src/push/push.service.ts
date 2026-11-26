@@ -36,6 +36,8 @@ export interface PushPayload {
   interruptionLevel?: 'active' | 'time-sensitive';
   /** Recipient using the app right now — see {@link WhenActive}. */
   whenActive?: WhenActive;
+  /** Android tray tag (see `chatTag`): replaces the entry with the same tag. */
+  tag?: string;
 }
 
 /**
@@ -109,6 +111,7 @@ export class PushService {
         ignoreDnd: payload.ignoreDnd,
         interruptionLevel: payload.interruptionLevel,
         whenActive: payload.whenActive,
+        tag: payload.tag,
       },
     );
   }
@@ -130,6 +133,7 @@ export class PushService {
       ignoreDnd?: boolean;
       interruptionLevel?: 'active' | 'time-sensitive';
       whenActive?: WhenActive;
+      tag?: string;
     } = {},
   ): Promise<void> {
     if (userIds.length === 0) return;
@@ -234,6 +238,9 @@ export class PushService {
         ...(extra.interruptionLevel
           ? { interruptionLevel: extra.interruptionLevel }
           : {}),
+        // One tray entry per chat: a newer message replaces the older one
+        // (Android; FCM `notification.tag`), and the app can clear it by tag.
+        ...(extra.tag ? { tag: extra.tag } : {}),
       });
     }
 
@@ -285,6 +292,40 @@ export class PushService {
         }
       }),
     );
+  }
+
+  /**
+   * `userId` has read the chat tagged `tag` (on any device): their phones
+   * should drop its tray entry, which also lowers the launcher badge.
+   *  - app alive: the `chat_read` socket event;
+   *  - app in background / closed: a silent data-only push (no title, sound
+   *    or channel — nothing shows), handled by the app's background task.
+   * No presence / DND gates: it only removes things. Never throws.
+   */
+  async signalChatRead(userId: string, tag: string): Promise<void> {
+    try {
+      this.presence.emitToUser(userId, 'chat_read', { tag });
+      const tokens = await this.prisma.pushToken.findMany({
+        where: { userId, platform: { in: ['android', 'ios'] } },
+        select: { token: true, platform: true },
+      });
+      const messages: ExpoPushMessage[] = tokens
+        .filter((t) => Expo.isExpoPushToken(t.token))
+        .map((t) => ({
+          to: t.token,
+          data: { type: 'CHAT_READ', tag },
+          // Android: high, or Doze holds it back. iOS: a background
+          // (content-available) push must not be high priority.
+          priority: t.platform === 'ios' ? 'normal' : 'high',
+          _contentAvailable: true,
+        }));
+      if (messages.length === 0) return;
+      for (const chunk of this.expo.chunkPushNotifications(messages)) {
+        await this.expo.sendPushNotificationsAsync(chunk);
+      }
+    } catch (e) {
+      this.logger.warn(`Chat-read signal failed: ${(e as Error).message}`);
+    }
   }
 
   /**

@@ -28,6 +28,11 @@ export class PresenceService {
     this.server = server;
   }
 
+  /** Emit to every socket of this user (each sits in a room named after it). */
+  emitToUser(userId: string, event: string, payload: unknown) {
+    this.server?.to(userId).emit(event, payload);
+  }
+
   /** The sockets of each given user that are actively in use right now. */
   async activeSockets(userIds: string[]): Promise<Map<string, AnySocket[]>> {
     const active = new Map<string, AnySocket[]>();
