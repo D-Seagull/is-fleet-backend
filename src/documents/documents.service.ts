@@ -26,6 +26,7 @@ import { PushService } from '../push/push.service';
 import { pushTitle } from '../push/push-titles';
 import { t } from '../i18n/i18n';
 import { fullName } from '../common/utils/full-name';
+import { chatTag } from '../push/chat-tag';
 
 @Injectable()
 export class DocumentsService {
@@ -237,6 +238,7 @@ export class DocumentsService {
           sound: 'push_message.mp3',
           channelId: 'chat',
           whenActive: 'skip',
+          tag: chatTag.trip(trip.id),
           data: {
             type: 'MESSAGE',
             tripId: trip.id,

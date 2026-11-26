@@ -33,6 +33,7 @@ const msgRow = (over: Record<string, unknown> = {}) => ({
 
 describe('MessagesService', () => {
   let service: MessagesService;
+  const push = { signalChatRead: jest.fn() };
   let prisma: {
     message: Record<string, jest.Mock>;
     tripChatSession: Record<string, jest.Mock>;
@@ -59,7 +60,7 @@ describe('MessagesService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: TranslationService, useValue: {} },
         { provide: TripChatSessionsService, useValue: {} },
-        { provide: PushService, useValue: {} },
+        { provide: PushService, useValue: push },
         { provide: MessagesGateway, useValue: { server: { to: jest.fn() } } },
       ],
     }).compile();
@@ -85,6 +86,7 @@ describe('MessagesService', () => {
       );
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
       expect(res).toEqual({ messageIds: [], documentIds: [] });
+      expect(push.signalChatRead).not.toHaveBeenCalled();
     });
 
     it("the trip's manager marks the driver's messages and documents read", async () => {
@@ -98,6 +100,8 @@ describe('MessagesService', () => {
 
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
       expect(res).toEqual({ messageIds: ['msg1'], documentIds: ['doc1'] });
+      // The reader's phones drop the trip's tray entry.
+      expect(push.signalChatRead).toHaveBeenCalledWith('m1', 'trip:t1');
     });
   });
 

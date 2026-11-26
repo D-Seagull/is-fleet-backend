@@ -25,7 +25,7 @@ describe('PushService', () => {
     user: { findMany: jest.Mock };
     pushToken: { findMany: jest.Mock; deleteMany: jest.Mock };
   };
-  let presence: { activeSockets: jest.Mock };
+  let presence: { activeSockets: jest.Mock; emitToUser: jest.Mock };
 
   beforeEach(async () => {
     sent.length = 0;
@@ -45,7 +45,10 @@ describe('PushService', () => {
       },
     };
     // Nobody is using the app unless a test says otherwise.
-    presence = { activeSockets: jest.fn().mockResolvedValue(new Map()) };
+    presence = {
+      activeSockets: jest.fn().mockResolvedValue(new Map()),
+      emitToUser: jest.fn(),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         PushService,
@@ -281,6 +284,47 @@ describe('PushService', () => {
       expect(recipients()).toEqual(['tok-inApp']);
       expect(presence.activeSockets).not.toHaveBeenCalled();
     });
+  });
+
+  it('passes the tray tag through to the push', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'u', status: 'ONLINE', statusUntil: null, language: 'uk' },
+    ]);
+    await service.sendToUsers(['u'], { title: 't', body: 'b', tag: 'dm:x' });
+    expect((sent as { tag?: string }[])[0].tag).toBe('dm:x');
+  });
+
+  it('signalChatRead: socket event + a silent push to the reader phones', async () => {
+    prisma.pushToken.findMany.mockResolvedValue([
+      { token: 'tok-and', platform: 'android' },
+      { token: 'tok-ios', platform: 'ios' },
+    ]);
+
+    await service.signalChatRead('r', 'group:g1');
+
+    expect(presence.emitToUser).toHaveBeenCalledWith('r', 'chat_read', {
+      tag: 'group:g1',
+    });
+    expect(prisma.pushToken.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'r', platform: { in: ['android', 'ios'] } },
+      }),
+    );
+    // Nothing to show: no title, body, sound or channel.
+    expect(sent).toEqual([
+      {
+        to: 'tok-and',
+        data: { type: 'CHAT_READ', tag: 'group:g1' },
+        priority: 'high',
+        _contentAvailable: true,
+      },
+      {
+        to: 'tok-ios',
+        data: { type: 'CHAT_READ', tag: 'group:g1' },
+        priority: 'normal',
+        _contentAvailable: true,
+      },
+    ]);
   });
 
   it('channelFor falls back for older app versions, passes others through', () => {

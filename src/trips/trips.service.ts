@@ -114,6 +114,7 @@ function departResetFor(status?: TripStatus) {
 }
 
 import { driverStillInCompany } from '../common/utils/access';
+import { chatTag } from '../push/chat-tag';
 
 @Injectable()
 export class TripsService {
@@ -1533,6 +1534,7 @@ export class TripsService {
                 sound: 'push_message.mp3',
                 channelId: 'chat',
                 whenActive: 'skip',
+                tag: chatTag.trip(trip.id),
                 data: {
                   type: 'MESSAGE',
                   tripId: trip.id,

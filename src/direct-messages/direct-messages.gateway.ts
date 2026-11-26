@@ -26,6 +26,7 @@ import {
 } from 'src/common/utils/access';
 import { pushTitle } from '../push/push-titles';
 import { dedupeSend } from 'src/common/utils/send-dedupe';
+import { chatTag } from '../push/chat-tag';
 
 @WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class DirectMessagesGateway
@@ -170,6 +171,7 @@ export class DirectMessagesGateway
             sound: 'push_message.mp3',
             channelId: 'chat',
             whenActive: 'skip',
+            tag: chatTag.dm(senderId),
             data: {
               type: 'DM_MESSAGE',
               userId: senderId,
@@ -391,6 +393,7 @@ export class DirectMessagesGateway
               sound: 'push_message.mp3',
               channelId: 'chat',
               whenActive: 'skip',
+              tag: chatTag.group(data.groupId),
               data: {
                 type: 'GROUP_MESSAGE',
                 groupId: data.groupId,

@@ -6,12 +6,15 @@ import { ReactionsService } from 'src/reactions/reactions.service';
 import { fullName } from 'src/common/utils/full-name';
 import { assertReplyTargets } from 'src/common/utils/reply-targets';
 import { voicePreviewSql } from 'src/common/utils/attachment-kind';
+import { PushService } from '../push/push.service';
+import { chatTag } from '../push/chat-tag';
 
 @Injectable()
 export class GroupMessagesService {
   constructor(
     private prisma: PrismaService,
     private reactions: ReactionsService,
+    private push: PushService,
   ) {}
 
   // Pagination: fetches the latest `take` messages older than `before`
@@ -230,7 +233,10 @@ export class GroupMessagesService {
       }),
     ]);
 
-    return { count: unread.length + docs.count };
+    const count = unread.length + docs.count;
+    // Read here or on another device: the reader's phones drop the tray entry.
+    if (count > 0) void this.push.signalChatRead(userId, chatTag.group(groupId));
+    return { count };
   }
 
   /**
