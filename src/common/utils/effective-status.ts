@@ -23,5 +23,5 @@ export function shouldSuppressPush(user: {
   statusUntil: Date | null;
 }): boolean {
   const eff = effectiveStatus(user);
-  return eff === 'BUSY' || eff === 'SLEEP';
+  return eff === 'VACATION';
 }
