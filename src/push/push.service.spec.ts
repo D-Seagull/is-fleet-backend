@@ -61,7 +61,7 @@ describe('PushService', () => {
 
   const recipients = () => (sent as { to: string }[]).map((m) => m.to);
 
-  it('rings ONLINE, AWAY and BUSY users, but not SLEEP / VACATION', async () => {
+  it('rings every status except VACATION', async () => {
     prisma.user.findMany.mockResolvedValue([
       { id: 'on', status: 'ONLINE', statusUntil: null, language: 'uk' },
       // Web sets AWAY after 15 min idle — that's when the phone must ring.
@@ -76,7 +76,34 @@ describe('PushService', () => {
       body: 'b',
     });
 
-    expect(recipients().sort()).toEqual(['tok-away', 'tok-busy', 'tok-on']);
+    // SLEEP rings too (2026-11-28) — only VACATION is silenced.
+    expect(recipients().sort()).toEqual([
+      'tok-away',
+      'tok-busy',
+      'tok-on',
+      'tok-sleep',
+    ]);
+  });
+
+  it('rings a VACATION user whose timer has already expired', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      {
+        id: 'vac',
+        status: 'VACATION',
+        statusUntil: new Date(Date.now() - 60_000),
+        language: 'uk',
+      },
+      {
+        id: 'vac2',
+        status: 'VACATION',
+        statusUntil: new Date(Date.now() + 3_600_000),
+        language: 'uk',
+      },
+    ]);
+
+    await service.sendToUsers(['vac', 'vac2'], { title: 't', body: 'b' });
+
+    expect(recipients()).toEqual(['tok-vac']);
   });
 
   it('names the wav twin of a bundled mp3 for iOS devices only', async () => {

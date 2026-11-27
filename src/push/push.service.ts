@@ -29,7 +29,7 @@ export interface PushPayload {
   /** Android notification channel. On Android 8+ the SOUND comes from the
    *  channel (created by the app), not from `sound` — e.g. `messages`. */
   channelId?: string;
-  /** Bypass the SLEEP/VACATION do-not-disturb gate. Use for
+  /** Bypass the VACATION do-not-disturb gate. Use for
    *  alarms — an alarm clock must ring regardless of presence status. */
   ignoreDnd?: boolean;
   /** iOS: `time-sensitive` breaks through Focus modes (alarms). */
@@ -156,27 +156,23 @@ export class PushService {
     );
     if (recipients.length === 0) return;
 
-    // Skip recipients who are SLEEP / VACATION (with a still-valid
-    // statusUntil, or no timer at all). This is the do-not-disturb gate
-    // — the message itself still lands via socket; we only silence the
-    // banner. ONLINE / AWAY / BUSY recipients and those whose timer already
-    // expired stay in the list.
+    // Skip recipients who are on VACATION (with a still-valid statusUntil,
+    // or no timer at all). This is the do-not-disturb gate — the message
+    // itself still lands via socket; we only silence the banner. Every other
+    // status (ONLINE / AWAY / BUSY / SLEEP) gets pushes (user decision
+    // 2026-11-28: SLEEP no longer silences) and so does a VACATION whose
+    // timer already expired.
     const now = Date.now();
     // Alarms bypass do-not-disturb entirely — an alarm clock must ring in
-    // every status (incl. VACATION/SLEEP). Otherwise apply the DND gate.
+    // every status (incl. VACATION). Otherwise apply the DND gate.
     const deliver = extra.ignoreDnd
       ? recipients
       : recipients.filter((u) => {
           // AWAY is presence (web sets it after 15 min idle — exactly when the
-          // phone must ring) and BUSY still wants work pushes (user decision
-          // 2026-09-29). Only SLEEP / VACATION silence the banner.
-          if (
-            u.status === 'ONLINE' ||
-            u.status === 'AWAY' ||
-            u.status === 'BUSY'
-          )
-            return true;
-          // SLEEP / VACATION: deliver only if the timer already expired.
+          // phone must ring), BUSY still wants work pushes (2026-09-29) and
+          // so does SLEEP (2026-11-28). Only VACATION silences the banner.
+          if (u.status !== 'VACATION') return true;
+          // VACATION: deliver only if the timer already expired.
           return !!u.statusUntil && u.statusUntil.getTime() <= now;
         });
     const langById = new Map<string, string>(
@@ -185,7 +181,7 @@ export class PushService {
     const deliverIds = deliver.map((u) => u.id);
     if (deliverIds.length === 0) {
       this.logger.log(
-        `Push "${label}" suppressed for all ${recipients.length} recipient(s) (SLEEP/VACATION)`,
+        `Push "${label}" suppressed for all ${recipients.length} recipient(s) (VACATION)`,
       );
       return;
     }
