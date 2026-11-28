@@ -197,7 +197,7 @@ export class MailService {
       )
       .join('');
     await this.send({
-      to: this.config.get<string>('SALES_EMAIL') ?? 'isfleet.eu@gmail.com',
+      to: this.config.get<string>('SALES_EMAIL') ?? 'info@isfleet.eu',
       replyTo,
       subject: oneLine(subject),
       html: rows,
